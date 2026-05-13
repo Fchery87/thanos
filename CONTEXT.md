@@ -1,12 +1,12 @@
-# Harness Extension — Context
+# Thanos — Context
 
 ## Glossary
 
-**Harness**
-The Pi extension being built at `~/.pi/agent/extensions/harness/`. Adds capability-based permissions, an ambient spec lifecycle, and subagent delegation to Pi.
+**Thanos**
+The Pi config/harness layer living at `~/.pi`. Adds capability-based permissions, an ambient spec lifecycle, and subagent delegation to Pi. Distributed at `github.com/fchery87/thanos`. Installed via `curl -fsSL https://raw.githubusercontent.com/fchery87/thanos/master/scripts/install.sh | sh` or `npx thanos-install`.
 
 **Team-grade Governance Layer**
-The intended product position for Harness: a policy, verification, audit, and delegation layer that makes Pi safe and predictable enough for shared team use. "Team-grade" describes adoption pattern and quality bar — each developer runs the Harness locally, but teams share a `harness.policy.json` committed to the project repo. There is no central policy server or multi-tenant runtime; governance is per-developer but coordinated via version-controlled policy.
+The intended product position for Thanos: a policy, verification, audit, and delegation layer that makes Pi safe and predictable enough for shared team use. "Team-grade" describes adoption pattern and quality bar — each developer runs the Harness locally, but teams share a `harness.policy.json` committed to the project repo. There is no central policy server or multi-tenant runtime; governance is per-developer but coordinated via version-controlled policy.
 _Avoid_: Personal productivity harness, multi-tenant runtime
 
 **Pi**
@@ -98,11 +98,11 @@ Pi lifecycle event fired after each tool execution. Used to collect tool output 
 
 ## Relationships
 
-- **Harness** is positioned as a **Team-grade Governance Layer** for **Pi**.
+- **Thanos** is positioned as a **Team-grade Governance Layer** for **Pi**.
 - A **Team-grade Governance Layer** requires durable **PermissionRule** configuration, auditable **tool_call** decisions, and trustworthy **SpecEngine** verification.
 - A **Policy File** is the source of durable team governance, while session approvals only provide temporary exceptions.
 - A **Policy File** conforms to a **Policy Schema** before Harness applies any of its rules.
-- **Policy-first Teaching Docs** explain **Harness** through practical governance questions, one mental model at a time.
+- **Policy-first Teaching Docs** explain **Thanos** through practical governance questions, one mental model at a time.
 - A **Sensitive Read** is governed by the **Policy File** before normal low-risk read defaults apply.
 - **Sensitive Read Default** is deny-first for known secret patterns, with explicit narrow allow rules for exceptions.
 - A **Policy Denial** reports the matched rule, rule source, and remediation path while withholding protected content.
@@ -121,7 +121,7 @@ Pi lifecycle event fired after each tool execution. Used to collect tool output 
 
 ## Flagged ambiguities
 
-- "Harness system" has been resolved as **Team-grade Governance Layer**, not a personal productivity harness.
+- "Thanos system" has been resolved as **Team-grade Governance Layer**, not a personal productivity harness.
 - "Governance" now implies durable policy, auditability, and verification stronger than the current heuristic implementation.
 - "Permission rules" now means durable **Policy File** rules by default; session rules are temporary prompt-cycle decisions.
 - "Policy config" has been resolved as declarative JSON validated by **Policy Schema**, not executable TypeScript.
