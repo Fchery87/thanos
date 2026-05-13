@@ -4,9 +4,13 @@ mcp-secrets.json
 mcp.json
 agent/auth.json
 
+# ── Dependencies ──────────────────────────────────────────────────────
+node_modules/
+
 # ── Runtime and state files ───────────────────────────────────────────
 mcp-state.json
 agent/sessions/
+context-mode/sessions/
 
 # ── Binaries ──────────────────────────────────────────────────────────
 agent/bin/
