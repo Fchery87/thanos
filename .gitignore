@@ -11,12 +11,6 @@ agent/sessions/
 # ── Binaries ──────────────────────────────────────────────────────────
 agent/bin/
 
-# ── Harness extension (has its own git repo) ──────────────────────────
-# Tracked as a nested git repository, not as files in this repo.
-# To include it, register it as a submodule:
-#   git submodule add <remote-url> agent/extensions/harness
-agent/extensions/harness/
-
 # ── Conversation artifacts ────────────────────────────────────────────
 agent/can-you-give-me-virtual-pixel.md
 
