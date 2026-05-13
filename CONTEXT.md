@@ -6,8 +6,8 @@
 The Pi extension being built at `~/.pi/agent/extensions/harness/`. Adds capability-based permissions, an ambient spec lifecycle, and subagent delegation to Pi.
 
 **Team-grade Governance Layer**
-The intended product position for Harness: a policy, verification, audit, and delegation layer that makes Pi safe and predictable enough for shared team use.
-_Avoid_: Personal productivity harness
+The intended product position for Harness: a policy, verification, audit, and delegation layer that makes Pi safe and predictable enough for shared team use. "Team-grade" describes adoption pattern and quality bar — each developer runs the Harness locally, but teams share a `harness.policy.json` committed to the project repo. There is no central policy server or multi-tenant runtime; governance is per-developer but coordinated via version-controlled policy.
+_Avoid_: Personal productivity harness, multi-tenant runtime
 
 **Pi**
 The installed coding agent CLI — package `@earendil-works/pi-coding-agent` v0.74.0. Loaded via nvm node v24.15.0. Binary at `~/.nvm/versions/node/v24.15.0/bin/pi`.

@@ -2,7 +2,9 @@
   "lastChangelogVersion": "0.74.0",
   "packages": [
     "extensions/harness",
-    "npm:@victor-software-house/pi-curated-themes"
+    "npm:@victor-software-house/pi-curated-themes",
+    "npm:context-mode",
+    "npm:pi-depo"
   ],
   "theme": "brogrammer",
   "defaultThinkingLevel": "medium",
