@@ -1,0 +1,45 @@
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "type": "stdio",
+      "command": "chrome-devtools-mcp",
+      "args": [],
+      "env": []
+    },
+    "context7": {
+      "type": "stdio",
+      "command": "context7-mcp",
+      "args": ["--api-key", "<YOUR_CONTEXT7_API_KEY>"],
+      "env": []
+    },
+    "sequential-thinking": {
+      "type": "stdio",
+      "command": "mcp-server-sequential-thinking",
+      "args": [],
+      "env": []
+    },
+    "convex-mcp": {
+      "type": "stdio",
+      "command": "convex",
+      "args": ["mcp", "start"],
+      "env": []
+    },
+    "mgrep": {
+      "type": "stdio",
+      "command": "mgrep",
+      "args": ["mcp"],
+      "env": []
+    },
+    "neon": {
+      "type": "sse",
+      "url": "https://mcp.neon.tech/mcp"
+    },
+    "stitch": {
+      "type": "sse",
+      "url": "https://stitch.googleapis.com/mcp",
+      "headers": {
+        "X-Goog-Api-Key": "<YOUR_GOOGLE_STITCH_API_KEY>"
+      }
+    }
+  }
+}

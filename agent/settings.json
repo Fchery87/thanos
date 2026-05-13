@@ -1,0 +1,12 @@
+{
+  "lastChangelogVersion": "0.74.0",
+  "packages": [
+    "extensions/harness",
+    "npm:@victor-software-house/pi-curated-themes"
+  ],
+  "theme": "brogrammer",
+  "defaultThinkingLevel": "medium",
+  "defaultProvider": "theclawbay",
+  "defaultModel": "gpt-5.5",
+  "treeFilterMode": "default"
+}

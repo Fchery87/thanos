@@ -1,0 +1,33 @@
+# ── Secrets and credentials ──────────────────────────────────────────
+# NEVER commit these — they contain live API keys and bearer tokens
+mcp-secrets.json
+mcp.json
+agent/auth.json
+
+# ── Runtime and state files ───────────────────────────────────────────
+mcp-state.json
+agent/sessions/
+
+# ── Binaries ──────────────────────────────────────────────────────────
+agent/bin/
+
+# ── Harness extension (has its own git repo) ──────────────────────────
+# Tracked as a nested git repository, not as files in this repo.
+# To include it, register it as a submodule:
+#   git submodule add <remote-url> agent/extensions/harness
+agent/extensions/harness/
+
+# ── Conversation artifacts ────────────────────────────────────────────
+agent/can-you-give-me-virtual-pixel.md
+
+# ── Harness audit and runtime data (root-level, if ever run here) ─────
+.harness/
+
+# ── OS and editor ─────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
