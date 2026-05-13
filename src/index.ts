@@ -1,5 +1,6 @@
 // src/index.ts
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
 
 import { AuditLogger } from "./audit/logger";
@@ -16,13 +17,24 @@ import { MCPManager } from "./mcp/manager";
 import { loadMcpConfigs, mcpConfigPaths } from "./mcp/config";
 import { writeServerSecrets, readServerSecrets } from "./mcp/state";
 import { runOAuthFlow, probeOAuth } from "./mcp/oauth";
-import { formatBadge, formatLabel, formatValue, formatSpecForApproval, formatPanel, noopTheme } from "./ui-utils";
+import { formatBadge, formatLabel, formatValue, formatSpecForApproval, formatPanel, noopTheme, stripAnsi } from "./ui-utils";
 import { MemoryStore } from "./memory/store";
 import { shouldSaveMemory, extractCorrection, formatMemoriesForInjection } from "./memory/injector";
 import { routeModel, formatRouteStatus, formatRouteNotice } from "./models/router";
 import { scanContent, formatScanResult } from "./security/scanner";
 import { createSnapshot } from "./security/snapshot";
 import { classifyRisk } from "./permissions/risk";
+
+function formatTimeAgo(date: Date): string {
+  const diff = Date.now() - date.getTime();
+  const m = Math.floor(diff / 60000);
+  const h = Math.floor(m / 60);
+  const d = Math.floor(h / 24);
+  if (d > 0) return `${d}d ago`;
+  if (h > 0) return `${h}h ago`;
+  if (m > 0) return `${m}m ago`;
+  return "just now";
+}
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
@@ -61,21 +73,20 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   // ── MCP server management (main session only) ───────────────────────
   const mcpManager = isSubagent ? null : new MCPManager();
 
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", async (event, ctx) => {
     if (!mcpManager) return;
+
+    const theme = ctx.ui.theme;
+    let mcpCount = 0;
+
     try {
       await mcpManager.initialize(pi, ctx.cwd);
       const statuses = mcpManager.getStatuses();
       const connected = statuses.filter((s) => !s.error);
       const failed = statuses.filter((s) => s.error);
-      const theme = ctx.ui.theme;
+      mcpCount = connected.length;
       if (connected.length > 0) {
-        const summary = connected
-          .map((s) => `${theme.fg("accent", s.name)} ${theme.fg("dim", `(${s.toolCount} tools, ${s.source})`)}`)
-          .join("\n  ");
         ctx.ui.setStatus("harness-mcp", theme.fg("accent", `mcp:${connected.length}`));
-        const panel = formatPanel(theme, "MCP Connected", summary, "dim");
-        ctx.ui.notify(panel, "info");
       }
       if (failed.length > 0) {
         const summary = failed.map((s) => `${theme.fg("error", s.name)}: ${s.error}`).join("\n  ");
@@ -84,6 +95,89 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       }
     } catch (err) {
       ctx.ui.notify(`MCP init failed: ${String(err)}`, "warning");
+    }
+
+    // ── Thanos welcome header — two-column layout, clears on first prompt ─
+    if (event.reason === "startup" || event.reason === "new") {
+      const model = ctx.model;
+      const modelStr = model ? (model.name || model.id) : "—";
+      const thinkingStr = (pi.getThinkingLevel() as string) || "off";
+      const mcpRaw = mcpCount > 0 ? `${mcpCount} connected` : "none";
+
+      // Load recent sessions (raw data — colors applied inside factory)
+      type SessionRow = { label: string; age: string };
+      let recentRows: SessionRow[] = [];
+      try {
+        const sessions = await SessionManager.list(ctx.cwd, ctx.sessionManager.getSessionDir());
+        recentRows = sessions
+          .sort((a, b) => b.modified.getTime() - a.modified.getTime())
+          .slice(0, 5)
+          .map((s) => ({
+            label: (s.name || s.firstMessage || "Untitled").slice(0, 38),
+            age: formatTimeAgo(s.modified),
+          }));
+      } catch { /* session dir may not exist yet */ }
+
+      ctx.ui.setHeader((_tui, t) => {
+        const ac = (s: string) => t.fg("accent", s);
+        const dm = (s: string) => t.fg("dim", s);
+        const bd = (s: string) => t.bold(s);
+        const sc = (s: string) => t.fg("success", s);
+
+        const PADDING = 5;
+        const LEFT_W = 62;
+        const GAP = 4;
+
+        // Left column: padding + logo + model/shortcut rows
+        const left: string[] = [
+          ...Array(PADDING).fill(""),
+          ac(" ████████╗██╗  ██╗  █████╗ ███╗   ██╗  ██████╗ ███████╗"),
+          ac("    ██╔══╝██║  ██║ ██╔══██╗████╗  ██║ ██╔═══██╗██╔════╝"),
+          ac("    ██║   ███████║ ███████║██╔██╗ ██║ ██║   ██║ ███████╗"),
+          ac("    ██║   ██╔══██║ ██╔══██║██║╚██╗██║ ██║   ██║ ╚════██║"),
+          ac("    ██║   ██║  ██║ ██║  ██║██║ ╚████║ ╚██████╔╝ ███████║"),
+          ac("    ╚═╝   ╚═╝  ╚═╝ ╚═╝  ╚═╝╚═╝  ╚═══╝  ╚═════╝ ╚══════╝"),
+          "",
+          `  ${bd("model")} ${ac(modelStr)}   ${bd("thinking")} ${ac(thinkingStr)}   ${bd("mcp")} ${mcpCount > 0 ? sc(mcpRaw) : dm(mcpRaw)}`,
+          "",
+          `  ${dm("^T")} thinking  ${dm("^S")} snapshot  ${dm("^R")} review`,
+          `  ${dm("^E")} spec  ${dm("^P")} policy  ${dm("^Y")} yolo`,
+          "",
+        ];
+
+        // Right column: Tips + LSP Servers + Recent sessions
+        const right: string[] = [
+          ...Array(PADDING).fill(""),
+          bd("  Tips"),
+          `  ${dm("/")}        slash commands`,
+          `  ${dm("!")}        run bash inline`,
+          `  ${dm("!!")}       bash (excluded from context)`,
+          `  ${dm("/hotkeys")} all keyboard shortcuts`,
+          `  ${dm("ctrl+o")}   help & loaded resources`,
+          "",
+          bd("  LSP Servers"),
+          dm("  No LSP servers"),
+          "",
+          bd("  Recent sessions"),
+          ...(recentRows.length > 0
+            ? recentRows.map(({ label, age }) => `  ${ac("•")} ${label} ${dm(`(${age})`)}`)
+            : [dm("  No recent sessions")]),
+        ];
+
+        return {
+          render: (_width: number) => {
+            const rows = Math.max(left.length, right.length);
+            const result: string[] = [];
+            for (let i = 0; i < rows; i++) {
+              const l = left[i] ?? "";
+              const r = right[i] ?? "";
+              const pad = " ".repeat(Math.max(0, LEFT_W - stripAnsi(l).length + GAP));
+              result.push(l + pad + r);
+            }
+            return result;
+          },
+        };
+      });
     }
   });
 
@@ -841,6 +935,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
 
   // ── Spec classification + session reset on each prompt ─────────────
   pi.on("before_agent_start", async (event, ctx) => {
+    ctx.ui.setHeader(undefined);
     permissions.clearSessionRules();  // clear deny rules from any prior rejection
     spec.reset();
     const specFlag = pi.getFlag("spec") === true;

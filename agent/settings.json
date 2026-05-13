@@ -4,11 +4,13 @@
     "extensions/harness",
     "npm:@victor-software-house/pi-curated-themes",
     "npm:context-mode",
-    "npm:pi-depo"
+    "npm:pi-depo",
+    ".."
   ],
   "theme": "brogrammer",
   "defaultThinkingLevel": "medium",
   "defaultProvider": "theclawbay",
   "defaultModel": "gpt-5.5",
-  "treeFilterMode": "default"
+  "treeFilterMode": "default",
+  "quietStartup": true
 }

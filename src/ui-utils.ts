@@ -69,7 +69,7 @@ export function formatSpecForApproval(spec: FormalSpec, theme: TUITheme): string
   ].join("\n");
 }
 
-function stripAnsi(str: string): string {
+export function stripAnsi(str: string): string {
   return str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "");
 }
 
