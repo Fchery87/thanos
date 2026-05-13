@@ -844,7 +844,8 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     permissions.clearSessionRules();  // clear deny rules from any prior rejection
     spec.reset();
     const specFlag = pi.getFlag("spec") === true;
-    spec.classify(event.prompt, specFlag);
+    const tier = spec.classify(event.prompt, specFlag);
+    spec.generate(event.prompt, tier);
 
     // ── Memory: save corrections, inject preferences ───────────────
     const memoryPath = join(process.cwd(), ".harness", "memory.json");
@@ -865,12 +866,12 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     const injected = formatMemoriesForInjection(memories);
 
     // ── Model routing: switch for explicit specs, recommend for others ─
-    const tier = spec.activeSpec?.tier ?? "ambient";
-    const route = routeModel(tier);
+    const routingTier = spec.activeSpec?.tier ?? "ambient";
+    const route = routeModel(routingTier);
     const currentModel = ctx.model;
     let modelSwitched = false;
 
-    if (currentModel && tier === "explicit" && currentModel.id !== route.modelId) {
+    if (currentModel && routingTier === "explicit" && currentModel.id !== route.modelId) {
       const switched = await pi.setModel({
         ...currentModel,
         id: route.modelId,
@@ -892,7 +893,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     const theme = ctx.ui.theme ?? noopTheme;
     ctx.ui.setStatus("harness-route", theme.fg("dim", formatRouteStatus(route)));
     if (currentModel && currentModel.id !== route.modelId) {
-      ctx.ui.notify(formatRouteNotice(tier, route, modelSwitched), "info");
+      ctx.ui.notify(formatRouteNotice(routingTier, route, modelSwitched), "info");
     }
 
     return injected ? { systemPrompt: injected } : undefined;
