@@ -1,6 +1,39 @@
 # Thanos
 
-Personal [Pi coding agent](https://earendil.works) configuration — includes the **Harness** governance extension that adds capability-based permissions, spec lifecycle management, and specialist subagent delegation to every Pi session.
+Personal [Pi coding agent](https://earendil.works) configuration — includes the **Thanos Harness** governance extension that adds capability-based permissions, spec lifecycle management, and specialist subagent delegation to every Pi session.
+
+---
+
+## Install
+
+### One-liner (recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fchery87/thanos/master/scripts/install.sh | sh
+```
+
+Installs Pi (if missing), clones Thanos to `~/.pi`, installs the harness extension, and adds the `thanos` command to your PATH.
+
+### Manual clone
+
+```bash
+git clone https://github.com/fchery87/thanos.git ~/.pi
+~/.pi/scripts/install.sh --skip-clone
+```
+
+### npm / npx
+
+```bash
+npx thanos-install
+```
+
+After any install method, open a new terminal and run:
+
+```bash
+thanos
+```
+
+Run `thanos update` anytime to pull the latest config and reinstall the extension.
 
 ---
 
@@ -9,72 +42,35 @@ Personal [Pi coding agent](https://earendil.works) configuration — includes th
 ```
 .pi/
 ├── agent/
-│   ├── extensions/harness/     # Pi governance extension (separate git repo — see note below)
-│   ├── skills/                 # Installed Pi skills (mix of symlinks and local dirs)
+│   ├── skills/                 # Installed Pi skills
 │   ├── models.json             # Provider and model configuration
 │   └── settings.json           # Pi agent settings
+├── src/                        # Thanos Harness extension source
+├── tests/                      # Harness test suite
 ├── docs/
 │   ├── adr/                    # Architecture Decision Records
 │   └── plans/                  # Implementation planning documents
-├── CONTEXT.md                  # Harness design glossary and approved direction
-├── harness.policy.json         # Active governance policy (root-level default)
+├── scripts/
+│   ├── install.sh              # POSIX installer
+│   ├── install.ps1             # Windows installer
+│   └── npm-install.mjs         # npx entry point
+├── CONTEXT.md                  # Thanos design glossary and approved direction
 ├── mcp.example.json            # MCP server config template — copy to mcp.json and add your keys
 └── .gitignore
 ```
-
-> **Note on `agent/extensions/harness/`:** The Harness extension is a separate git repository nested inside this one. It is intentionally excluded from this repo's tracking. To work with it, `cd agent/extensions/harness` and use git commands there directly.
 
 ---
 
 ## Prerequisites
 
-- [Pi coding agent](https://earendil.works) v0.74.0+
-- Node.js v24+ (via [nvm](https://github.com/nvm-sh/nvm))
+- [Pi coding agent](https://earendil.works) v0.74.0+ (installed automatically by `install.sh`)
+- Node.js v24+ or [Bun](https://bun.sh) v1.3+
 
 ---
 
-## Setup
+## Thanos Harness
 
-**1. Clone to `~/.pi`**
-
-```bash
-git clone https://github.com/fchery87/Thanos.git ~/.pi
-```
-
-**2. Configure MCP servers**
-
-```bash
-cp ~/.pi/mcp.example.json ~/.pi/mcp.json
-# Open mcp.json and fill in your API keys where placeholders appear
-```
-
-For servers that use bearer tokens (like Neon), use Pi's built-in auth command after starting a session:
-
-```bash
-/mcp auth neon
-```
-
-This stores the token in `mcp-secrets.json`, which is gitignored and never committed.
-
-**3. Install the Harness extension**
-
-```bash
-cd ~/.pi/agent/extensions/harness
-npm install
-pi install ~/.pi/agent/extensions/harness
-```
-
-**4. Start Pi**
-
-```bash
-pi
-```
-
----
-
-## Harness extension
-
-The Harness extension (`agent/extensions/harness/`) adds three layers to every Pi session:
+The Harness extension (`src/`) adds three layers to every Pi session:
 
 ### Permission gate
 
@@ -91,15 +87,15 @@ Edit and exec tools require confirmation by default. Sensitive file paths (crede
 
 ### Spec lifecycle
 
-Pi automatically derives acceptance criteria from your prompt and verifies them after each run. Use `--spec` to require explicit approval before the first write:
+Thanos automatically derives acceptance criteria from your prompt and verifies them after each run. Use `--spec` to require explicit approval before the first write:
 
 ```bash
-pi --spec
+thanos --spec
 ```
 
 ### Subagent delegation
 
-The `task` tool lets Pi hand off focused work to specialists:
+The `task` tool lets Thanos hand off focused work to specialists:
 
 | Type | Tools available | Use for |
 |------|----------------|---------|
@@ -111,7 +107,7 @@ The `task` tool lets Pi hand off focused work to specialists:
 
 ### MCP management
 
-Use `/mcp` within Pi to manage server connections:
+Use `/mcp` within Thanos to manage server connections:
 
 ```
 /mcp list                   # show all servers and status
@@ -120,8 +116,6 @@ Use `/mcp` within Pi to manage server connections:
 /mcp auth <name>            # set or update credentials
 /mcp reload                 # reload all servers from config
 ```
-
-See [agent/extensions/harness/README.md](agent/extensions/harness/README.md) for full documentation.
 
 ---
 
@@ -151,7 +145,7 @@ Add rules to restrict or allow specific capabilities, paths, or command families
 }
 ```
 
-Audit events are written to `.harness/audit.jsonl` (gitignored). View the last 10 entries with `Ctrl+Shift+A` inside Pi.
+Audit events are written to `.harness/audit.jsonl` (gitignored). View the last 10 entries with `Ctrl+Shift+A` inside Thanos.
 
 ---
 
@@ -167,11 +161,11 @@ Audit events are written to `.harness/audit.jsonl` (gitignored). View the last 1
 | neon | SSE | Neon Postgres database |
 | stitch | SSE | Google Stitch design tools |
 
-Copy `mcp.example.json` to `mcp.json` and fill in your API keys. Use `/mcp auth <server>` within Pi to store bearer tokens securely in `mcp-secrets.json`.
+Copy `mcp.example.json` to `mcp.json` and fill in your API keys. Use `/mcp auth <server>` within Thanos to store bearer tokens securely in `mcp-secrets.json`.
 
 ---
 
-## Keyboard shortcuts (Harness)
+## Keyboard shortcuts
 
 | Shortcut | Action |
 |----------|--------|
