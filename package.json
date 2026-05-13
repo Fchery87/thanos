@@ -1,7 +1,11 @@
 {
-  "name": "harness",
+  "name": "thanos-install",
   "version": "0.1.0",
+  "description": "Thanos — Pi harness config layer. One-command installer.",
   "type": "module",
+  "bin": {
+    "thanos-install": "./scripts/npm-install.mjs"
+  },
   "pi": {
     "extensions": ["./src/index.ts"]
   },
