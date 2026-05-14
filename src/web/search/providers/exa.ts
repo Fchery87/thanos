@@ -37,8 +37,13 @@ export class ExaProvider extends SearchProvider {
     if (params.includeDomains?.length) body.includeDomains = params.includeDomains;
     if (params.excludeDomains?.length) body.excludeDomains = params.excludeDomains;
     if (params.recency) {
-      const map: Record<string, string> = { day: "1d", week: "1w", month: "1mo", year: "1y" };
-      body.startPublishedDate = map[params.recency];
+      const msMap: Record<string, number> = {
+        day:   86_400_000,
+        week:  7 * 86_400_000,
+        month: 30 * 86_400_000,
+        year:  365 * 86_400_000,
+      };
+      body.startPublishedDate = new Date(Date.now() - (msMap[params.recency] ?? 0)).toISOString();
     }
 
     const res = await fetch("https://api.exa.ai/search", {
@@ -54,6 +59,9 @@ export class ExaProvider extends SearchProvider {
 
     const data = await res.json() as ExaApiResponse;
     const count = params.count ?? 10;
+    if (!Array.isArray(data.results)) {
+      throw new SearchProviderError("exa", "Unexpected response: missing results array");
+    }
     const results = data.results.slice(0, count);
 
     const sources: SearchSource[] = results.map((r) => ({
