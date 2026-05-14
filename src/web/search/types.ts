@@ -1,10 +1,10 @@
-export type SearchProviderId = "exa" | "brave" | "tavily" | "perplexity" | "gemini";
+export const SEARCH_PROVIDER_ORDER = [
+  "exa", "brave", "tavily", "perplexity", "gemini",
+] as const;
+
+export type SearchProviderId = (typeof SEARCH_PROVIDER_ORDER)[number];
 
 export type SearchProviderPreference = SearchProviderId | "auto";
-
-export const SEARCH_PROVIDER_ORDER: SearchProviderId[] = [
-  "exa", "brave", "tavily", "perplexity", "gemini",
-];
 
 export interface SearchParams {
   query: string;
