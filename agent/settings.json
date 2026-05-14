@@ -8,9 +8,9 @@
     ".."
   ],
   "theme": "brogrammer",
-  "defaultThinkingLevel": "medium",
+  "defaultThinkingLevel": "high",
   "defaultProvider": "theclawbay",
-  "defaultModel": "gpt-5.5",
+  "defaultModel": "gpt-5.4-mini",
   "treeFilterMode": "default",
   "quietStartup": true
 }
