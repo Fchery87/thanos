@@ -3,7 +3,7 @@ import { resolveProviderChain, getSearchProvider } from "../../../src/web/search
 
 describe("getSearchProvider", () => {
   it("throws for unknown provider id", async () => {
-    await expect(getSearchProvider("unknown" as any)).rejects.toThrow("Unknown search provider");
+    await expect(getSearchProvider("unknown")).rejects.toThrow("Unknown search provider");
   });
 
   it("returns an ExaProvider for 'exa'", async () => {

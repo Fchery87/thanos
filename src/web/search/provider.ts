@@ -15,18 +15,16 @@ const PROVIDER_META: ProviderMeta[] = [
   { id: "gemini",     label: "Gemini",        load: async () => new (await import("./providers/gemini")).GeminiProvider() },
 ];
 
-const cache = new Map<SearchProviderId, SearchProvider>();
+const cache = new Map<SearchProviderId, Promise<SearchProvider>>();
 
-export async function getSearchProvider(id: SearchProviderId): Promise<SearchProvider> {
-  const cached = cache.get(id);
-  if (cached) return cached;
-
-  const meta = PROVIDER_META.find((m) => m.id === id);
-  if (!meta) throw new Error(`Unknown search provider: ${id}`);
-
-  const provider = await meta.load();
-  cache.set(id, provider);
-  return provider;
+export function getSearchProvider(id: string): Promise<SearchProvider> {
+  if (!isSearchProviderId(id)) return Promise.reject(new Error(`Unknown search provider: ${id}`));
+  const hit = cache.get(id);
+  if (hit) return hit;
+  const meta = PROVIDER_META.find((m) => m.id === id)!;
+  const p = meta.load();
+  cache.set(id, p);
+  return p;
 }
 
 export async function resolveProviderChain(
