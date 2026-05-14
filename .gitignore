@@ -21,6 +21,9 @@ agent/can-you-give-me-virtual-pixel.md
 # ── Harness audit and runtime data (root-level, if ever run here) ─────
 .harness/
 
+# ── Worktrees ─────────────────────────────────────────────────────────
+.worktrees/
+
 # ── OS and editor ─────────────────────────────────────────────────────
 .DS_Store
 .DS_Store?
