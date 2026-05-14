@@ -26,15 +26,15 @@ export class GeminiProvider extends SearchProvider {
     const key = process.env.GEMINI_API_KEY;
     if (!key) throw new SearchProviderError("gemini", "GEMINI_API_KEY is not set");
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
+    const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
     const body = {
       contents: [{ parts: [{ text: params.query }] }],
-      tools: [{ google_search: {} }],
+      tools: [{ googleSearch: {} }],
     };
 
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify(body),
     });
 

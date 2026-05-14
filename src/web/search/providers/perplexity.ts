@@ -49,6 +49,7 @@ export class PerplexityProvider extends SearchProvider {
     const answer = data.choices[0]?.message.content;
     const citations = data.citations ?? [];
 
+    // Perplexity citations are URLs only — no title metadata available from the API
     const sources: SearchSource[] = citations.map((url) => ({ title: url, url }));
 
     return { provider: "perplexity", answer, sources };
