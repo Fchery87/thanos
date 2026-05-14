@@ -24,6 +24,7 @@ import { routeModel, formatRouteStatus, formatRouteNotice } from "./models/route
 import { scanContent, formatScanResult } from "./security/scanner";
 import { createSnapshot } from "./security/snapshot";
 import { classifyRisk } from "./permissions/risk";
+import { registerSearchTool } from "./web/search/index";
 
 function formatTimeAgo(date: Date): string {
   const diff = Date.now() - date.getTime();
@@ -1099,6 +1100,9 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     );
     ctx.ui.setStatus("harness-route", undefined);
   });
+
+  // ── Web search tool ────────────────────────────────────────────────
+  registerSearchTool(pi);
 
   // ── Task tool (main sessions + reviewer subagents) ────────────────
   // Reviewers get the task tool so they can spawn explore agents.
