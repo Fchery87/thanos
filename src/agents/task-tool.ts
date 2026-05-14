@@ -109,7 +109,7 @@ export async function executeTask(
   onUpdate: OnUpdate | undefined,
   parentPolicy?: HarnessPolicy,
 ): Promise<string> {
-  const agent = loadAgent(params.type);
+  const agent = await loadAgent(params.type);
   const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), "harness-subagent-"));
 
   const repoDir = process.cwd();

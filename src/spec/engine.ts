@@ -1,5 +1,6 @@
 import { generateSpec } from "./generator";
 import type { FormalSpec, SpecTier, AcceptanceCriterion } from "./types";
+import type { EvidenceRecord } from "./evidence";
 
 export interface VerificationResult {
   criterion: AcceptanceCriterion;
@@ -9,7 +10,7 @@ export interface VerificationResult {
 
 export class SpecEngine {
   activeSpec: FormalSpec | undefined;
-  private collectedOutput: string[] = [];
+  private evidence: EvidenceRecord[] = [];
 
   classify(prompt: string, explicitFlag: boolean): SpecTier {
     const lower = prompt.trim().toLowerCase();
@@ -23,24 +24,34 @@ export class SpecEngine {
   generate(prompt: string, tier: SpecTier): void {
     if (tier === "instant") return;
     this.activeSpec = generateSpec(prompt, tier);
-    this.collectedOutput = [];
+    this.evidence = [];
   }
 
   reset(): void {
     this.activeSpec = undefined;
-    this.collectedOutput = [];
+    this.evidence = [];
   }
 
   collectOutput(text: string): void {
-    this.collectedOutput.push(text);
+    const summary = text.trim();
+    if (!summary) return;
+    this.recordEvidence({ type: "manual", source: "assistant", summary, passed: true });
+  }
+
+  recordEvidence(evidence: EvidenceRecord): void {
+    this.evidence.push(evidence);
   }
 
   verify(): VerificationResult[] {
     if (!this.activeSpec) return [];
-    const combined = this.collectedOutput.join(" ").toLowerCase();
     return this.activeSpec.acceptanceCriteria.map((criterion) => {
-      const passed = (criterion.keywords ?? []).some((kw) => combined.includes(kw));
-      return { criterion, passed, evidence: passed ? [combined.slice(0, 100)] : [] };
+      const matchingEvidence = this.evidence.filter((record) =>
+        record.passed && criterion.evidenceRequired.includes(record.type),
+      );
+      const passed = criterion.evidenceRequired.every((type) =>
+        matchingEvidence.some((record) => record.type === type),
+      );
+      return { criterion, passed, evidence: matchingEvidence.map((record) => record.summary) };
     });
   }
 }

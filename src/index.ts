@@ -59,6 +59,24 @@ function setThinkingStatus(pi: ExtensionAPI, ctx: ExtensionContext): void {
   ctx.ui.setStatus("harness-thinking", level && level !== "off" ? ctx.ui.theme.fg("accent", `thinking:${level}`) : undefined);
 }
 
+function extractAssistantText(messages: unknown): string[] {
+  if (!Array.isArray(messages)) return [];
+  const text: string[] = [];
+  for (const message of messages) {
+    if (!message || typeof message !== "object") continue;
+    const record = message as { role?: unknown; content?: unknown };
+    if (record.role !== "assistant" || !Array.isArray(record.content)) continue;
+    for (const part of record.content) {
+      if (!part || typeof part !== "object") continue;
+      const content = part as { type?: unknown; text?: unknown };
+      if (content.type === "text" && typeof content.text === "string" && content.text.trim()) {
+        text.push(content.text.trim());
+      }
+    }
+  }
+  return text;
+}
+
 export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof executeTask }) {
   const _executeTask = deps?.executeTask ?? executeTask;
   const subagentRole = process.env.HARNESS_SUBAGENT; // undefined | "1" | "reviewer"
@@ -165,6 +183,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         ];
 
         return {
+          invalidate: () => {},
           render: (_width: number) => {
             const rows = Math.max(left.length, right.length);
             const result: string[] = [];
@@ -398,6 +417,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
           await writeServerSecrets(name, { env: { [key.trim()]: val } });
         } else {
           // HTTP server: check for OAuth first
+          if (!config.url) { ctx.ui.notify(`${theme.fg("error", name)} is missing a URL.`, "warning"); return; }
           const needsOAuth = await probeOAuth(config.url);
           if (needsOAuth) {
             ctx.ui.notify(
@@ -549,6 +569,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
             await writeServerSecrets(sName, { env: { [key.trim()]: val } });
           } else {
             // HTTP server: probe for OAuth, run browser flow if detected
+            if (!config.url) { ctx.ui.notify(`${theme.fg("error", sName)} is missing a URL.`, "warning"); return; }
             const needsOAuth = await probeOAuth(config.url);
             if (needsOAuth) {
               ctx.ui.notify(
@@ -1049,11 +1070,14 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
 
   // ── Spec output collection ─────────────────────────────────────────
   pi.on("tool_result", async (event) => {
-    await makeAfterToolHandler(spec)(event as any);
+    await makeAfterToolHandler(spec)(event);
   });
 
   // ── Spec verification after each run ───────────────────────────────
-  pi.on("agent_end", async (_event, ctx: ExtensionContext) => {
+  pi.on("agent_end", async (event, ctx: ExtensionContext) => {
+    for (const text of extractAssistantText(event.messages)) {
+      spec.collectOutput(text);
+    }
     const results = spec.verify();
     if (results.length === 0) return;
     const theme = ctx.ui.theme ?? noopTheme;

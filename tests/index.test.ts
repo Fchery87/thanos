@@ -91,7 +91,7 @@ describe("register", () => {
 
     await beforeAgentStart?.({ prompt: "Refactor the auth module" }, {
       model: undefined,
-      ui: { setStatus: vi.fn(), notify: vi.fn() },
+      ui: { setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() },
     });
     await toolCall?.(
       { toolName: "write", input: { file_path: "src/auth.ts" } },
@@ -136,7 +136,7 @@ describe("register", () => {
 
     await beforeAgentStart?.({ prompt: "Add pagination with tests" }, {
       model: undefined,
-      ui: { setStatus: vi.fn(), notify: vi.fn() },
+      ui: { setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() },
     });
     await agentEnd?.(
       {},
@@ -149,6 +149,48 @@ describe("register", () => {
     expect(notify).toHaveBeenCalledWith(
       expect.stringContaining("Spec failed:"),
       "warning",
+    );
+  });
+
+  it("uses the final assistant message as manual completion evidence", async () => {
+    type AnyHandler = (...args: unknown[]) => unknown;
+    const handlers = new Map<string, AnyHandler>();
+    const notify = vi.fn();
+    const fakePi = {
+      registerFlag: vi.fn(),
+      getFlag: vi.fn(() => false),
+      on: vi.fn((name: string, handler: AnyHandler) => {
+        handlers.set(name, handler);
+      }),
+      registerTool: vi.fn(),
+      registerCommand: vi.fn(),
+      registerShortcut: vi.fn(),
+    };
+
+    register(fakePi as any);
+
+    const beforeAgentStart = handlers.get("before_agent_start");
+    const agentEnd = handlers.get("agent_end");
+
+    await beforeAgentStart?.({ prompt: "Confirm the latest HEAD passes all checks" }, {
+      model: undefined,
+      ui: { setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() },
+    });
+    await agentEnd?.(
+      {
+        messages: [
+          { role: "assistant", content: [{ type: "text", text: "Done: latest HEAD passes all checks." }] },
+        ],
+      },
+      {
+        hasUI: true,
+        ui: { notify, setStatus: vi.fn(), theme: { fg: (_kind: string, text: string) => text, bold: (text: string) => text } },
+      },
+    );
+
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("Spec: 1/1 passed"),
+      "info",
     );
   });
 });
