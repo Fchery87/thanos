@@ -46,7 +46,9 @@ describe("executeSearch", () => {
 
     vi.spyOn(providerModule, "resolveProviderChain").mockResolvedValue([p1, p2]);
 
-    await expect(executeSearch({ query: "fail" })).rejects.toThrow("All web search providers failed");
+    await expect(executeSearch({ query: "fail" })).rejects.toThrow(
+      /All web search providers failed[\s\S]*exa[\s\S]*brave/,
+    );
   });
 
   it("throws with no-providers message when chain is empty", async () => {

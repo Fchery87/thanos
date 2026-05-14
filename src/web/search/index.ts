@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolveProviderChain } from "./provider";
+import { SearchProviderError } from "./providers/base";
 import type { SearchParams, SearchProviderPreference, SearchResponse } from "./types";
 import { isSearchProviderPreference } from "./types";
 
@@ -20,7 +21,10 @@ export async function executeSearch(
     try {
       return await provider.search(params);
     } catch (err) {
-      errors.push(`${provider.id}: ${String(err)}`);
+      const detail = err instanceof SearchProviderError && err.status != null
+        ? `${provider.id} [${err.status}]: ${err.message}`
+        : `${provider.id}: ${String(err)}`;
+      errors.push(detail);
     }
   }
 
