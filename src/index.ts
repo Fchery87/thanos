@@ -1041,7 +1041,14 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
 
   // ── Spec output collection ─────────────────────────────────────────
   pi.on("tool_result", async (event) => {
-    await makeAfterToolHandler(spec)(event);
+    const policy = await policyPromise;
+    const auditLogger = policy.audit.enabled
+      ? new AuditLogger(policy.audit.path ?? join(process.cwd(), ".harness", "audit.jsonl"))
+      : undefined;
+    await makeAfterToolHandler(spec, auditLogger, {
+      sessionId: "unknown",
+      agentType: isSubagent ? "subagent" : "parent",
+    })(event);
   });
 
   pi.on("agent_end", async (event, ctx: ExtensionContext) => {

@@ -13,4 +13,5 @@ export interface AuditEvent {
   decision: "allow" | "deny" | "ask";
   ruleId?: string;
   target: AuditTarget;
+  metadata?: Record<string, unknown>;
 }

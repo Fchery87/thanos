@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeGovernedToolCall, evaluateGovernedToolCall } from "../../src/governance/tool-call";
+import { capabilityForTool, describeGovernedToolCall, evaluateGovernedToolCall } from "../../src/governance/tool-call";
 import type { HarnessPolicy } from "../../src/policy/types";
 
 describe("describeGovernedToolCall", () => {
@@ -24,6 +24,28 @@ describe("describeGovernedToolCall", () => {
     const call = describeGovernedToolCall("mystery", { command: "echo hi" });
     expect(call.capability).toBe("exec");
     expect(call.target).toBe("echo hi");
+  });
+});
+
+describe("governed interaction tools", () => {
+  it("classifies ask as interaction", () => {
+    expect(capabilityForTool("ask")).toBe("interaction");
+  });
+
+  it("classifies todo as interaction", () => {
+    expect(capabilityForTool("todo")).toBe("interaction");
+  });
+
+  it("classifies report_finding as interaction", () => {
+    expect(capabilityForTool("report_finding")).toBe("interaction");
+  });
+
+  it("keeps unknown tools conservative as exec", () => {
+    expect(capabilityForTool("unknown_tool")).toBe("exec");
+  });
+
+  it("uses medium risk for interaction tools", () => {
+    expect(describeGovernedToolCall("ask", { question: "Pick one" }).riskTier).toBe("medium");
   });
 });
 
