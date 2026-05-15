@@ -3,11 +3,15 @@
 ## Glossary
 
 **Thanos**
-The Pi config/harness layer living at `~/.pi`. Adds capability-based permissions, an ambient spec lifecycle, and subagent delegation to Pi. Distributed at `github.com/fchery87/thanos` with a low-friction bootstrap installer that should install from pinned, integrity-checked releases rather than mutable branch tips.
+The Pi config/harness layer living at `~/.pi`. Thanos is now intended to grow from a governance extension into a broader Oh-my-pi-style **Agent Distribution** while preserving governance as a first-class differentiator. Distributed at `github.com/fchery87/thanos` with a low-friction bootstrap installer that should install from pinned, integrity-checked releases rather than mutable branch tips.
+
+**Agent Distribution**
+The broadened product boundary for Thanos: a bundled local agent environment that may include productivity/runtime tools, richer virtual filesystems, model routing, memory, review, commit, debug, and protocol integrations in addition to governance. Governance remains a core pillar, but it is no longer the only product boundary.
+_Avoid_: Treating every non-governance feature as out of scope
 
 **Team-grade Governance Layer**
-The intended product position for Thanos: a policy, verification, audit, and delegation layer that makes Pi safe and predictable enough for shared team use. "Team-grade" describes adoption pattern and quality bar — each developer runs the Harness locally, but teams share a `harness.policy.json` committed to the project repo. There is no central policy server or multi-tenant runtime; governance is per-developer but coordinated via version-controlled policy.
-_Avoid_: Personal productivity harness, multi-tenant runtime
+The governance pillar inside Thanos: policy, verification, audit, and delegation controls that make local agent use safe and predictable enough for shared team use. "Team-grade" describes adoption pattern and quality bar — each developer runs the Harness locally, but teams share a `harness.policy.json` committed to the project repo. There is no central policy server or multi-tenant runtime; governance is per-developer but coordinated via version-controlled policy.
+_Avoid_: Multi-tenant runtime
 
 **Pi**
 The installed coding agent CLI — package `@earendil-works/pi-coding-agent` v0.74.0. Loaded via nvm node v24.15.0. Binary at `~/.nvm/versions/node/v24.15.0/bin/pi`.
@@ -34,11 +38,16 @@ Harness documentation style where each feature is explained by the risk it contr
 _Avoid_: Feature-list documentation, abstract architecture notes
 
 **Capability**
-One of four values: `read | edit | exec | task`. Maps to Pi built-in tools as follows:
-- `read` → `read`, `ls`, `find`, `grep` (all low-risk, always allowed before rule check)
+One of five values: `read | edit | exec | task | interaction`. Maps to Pi and Thanos tools as follows:
+- `read` → `read`, `ls`, `find`, `grep` (low-risk except **Sensitive Read** paths)
 - `edit` → `write`, `edit`
 - `exec` → `bash`
-- `task` → `task` (custom registered tool)
+- `task` → `task` subagent delegation
+- `interaction` → `ask`, `todo`, `report_finding`
+
+**Interaction Capability**
+The `interaction` capability covers governed agent-human or reviewer-state interactions such as `ask`, `todo`, and `report_finding`. It is separate from `task` because these tools do not spawn subagents and should not inherit subagent delegation policy.
+_Avoid_: Mapping interaction tools to `task` or `exec`
 
 **Governed Tool Call**
 The normalized representation of a Pi `tool_call` before execution: tool name, input, safe target, **Capability**, **Risk Tier**, command family when applicable, matching **Policy File** rule, and **Audit Log** target. This is the domain concept for concentrating tool governance behaviour before permission prompts, policy denials, secret scanning, snapshots, and evidence capture.
@@ -102,7 +111,8 @@ Pi lifecycle event fired after each tool execution. Used to collect tool output 
 
 ## Relationships
 
-- **Thanos** is positioned as a **Team-grade Governance Layer** for **Pi**.
+- **Thanos** is positioned as an **Agent Distribution** for **Pi**, with **Team-grade Governance Layer** capabilities as its differentiating pillar.
+- An **Agent Distribution** may include productivity/runtime tools, protocol integrations, model routing, memory, and virtual filesystems when they improve the local agent workflow.
 - A **Team-grade Governance Layer** requires durable **PermissionRule** configuration, auditable **tool_call** decisions, and trustworthy **SpecEngine** verification.
 - A **Policy File** is the source of durable team governance, while session approvals only provide temporary exceptions.
 - A **Policy File** conforms to a **Policy Schema** before Harness applies any of its rules.
@@ -113,6 +123,26 @@ Pi lifecycle event fired after each tool execution. Used to collect tool output 
 - An **Audit Log** records policy decisions from parent agents, subagents, interactive sessions, and headless runs.
 - A **Rule ID** is the join key between **Policy File** rules, **Policy Denial** messages, and **Audit Log** entries.
 
+**Extension-first Hybrid Strategy**
+Thanos should remain Pi-based and prefer extension, slash-command, MCP, policy, installer, and configuration surfaces for new capabilities. Vendoring or forking runtime pieces is allowed only when a target capability is impossible, unsafe, or ergonomically broken through Pi's extension API, and should copy the smallest subsystem needed.
+_Avoid_: Wholesale runtime fork, vendoring by default
+
+**Governed Interaction Primitives**
+The first Oh-my-pi-inspired capability tranche for Thanos: typed user questions, structured task/todo state, structured review findings, and policy-aware subagent coordination. These primitives should improve how agents ask, plan, report, and delegate under governance rather than adding broad runtime power first.
+_Avoid_: Starting with eval/debug/runtime tools before interaction and governance workflows are coherent
+
+**Ask Tool**
+A governed interaction primitive that lets the agent ask typed, option-based questions when user input is genuinely required. The tool returns a structured decision record: selected value(s), optional rationale, recommended option, timeout/default behavior, and safe metadata suitable for audit/spec evidence. In headless mode, policy decides behavior: team/CI presets fail closed by default; personal preset may auto-select a recommended option after a configured timeout. Ask v1 is single-question only. Batched form mode is a future extension and must not appear in the tool schema until both interactive and headless behavior are implemented end to end.
+_Avoid_: Ad-hoc prose questions, transient UI-only prompts, unstructured decisions that cannot be audited
+
+**Todo Tool**
+A governed interaction primitive for phased task state. Todos are grouped into named phases and identified by stable content text, with statuses `pending | in_progress | completed | abandoned`, optional notes, markdown import/export, and completion reminders.
+_Avoid_: Silent project-file writes, synthetic task IDs as the only identity, untracked work-in-progress
+
+**Report Finding Tool**
+A reviewer-only structured reporting primitive. Findings include priority `P0 | P1 | P2 | P3`, file/line evidence when applicable, summary, rationale, and suggested fix; the review verdict is derived from the collected findings.
+_Avoid_: Unstructured review prose that cannot be aggregated or audited
+
 ## Approved direction
 
 - **Policy and audit**: Audit logs use safe representations by default; policy rules have stable **Rule ID** values; headless mode fails closed; session approvals never create durable policy; Harness ships `personal`, `team`, and `ci` policy presets.
@@ -121,14 +151,41 @@ Pi lifecycle event fired after each tool execution. Used to collect tool output 
 - **Spec system**: Specs become structured JSON; verification requires evidence from diffs, command exit codes, tests, or explicit evidence records; unmet criteria warn in interactive mode and fail in CI/headless governance mode; explicit spec approval includes scope, allowed capabilities, and verification plan.
 - **Subagents**: Subagents inherit parent policy as a ceiling; each subagent has a capability ceiling; subagents have timeouts and max turns; subagent results include structured metadata; transcripts are retained with policy-safe redaction.
 - **Docs**: Documentation starts with concrete risks, uses question-led teaching, provides copy-pasteable JSON examples, separates team policy from personal preference, and explains what happens when policy blocks an action.
+- **Integration strategy**: Use an **Extension-first Hybrid Strategy**. Classify borrowed Oh-my-pi capabilities as configure, extend, wrap, vendor, or fork; default to configure/extend/wrap and require explicit trade-off review before vendor/fork.
+- **First capability tranche**: Prioritize **Governed Interaction Primitives** before runtime power tools, distribution polish, or external research features.
+- **Ask tool semantics**: Implement the **Ask Tool** as a governed decision record, not just a wrapper around `ctx.ui.select` or freeform chat.
+- **Ask headless behavior**: Ask follows policy in non-interactive contexts; team/CI fail closed by default, while personal workflows may use configured timeout/default selection.
+- **Ask v1 scope**: Ship single-question Ask first; defer batched forms until the whole form contract is implemented.
+- **Ask schema**: Use stable option IDs and a shape equivalent to `{ question, options[], recommended, allowOther?, rationale?, timeoutSeconds?, evidenceScope? }`; recommendation is required for headless-eligible asks.
+- **Ask privacy and audit**: Audit question text, option IDs, selected IDs, recommendation/default source, and explicitly provided rationale; do not log hidden option metadata or sensitive freeform text without opt-in.
+- **Ask permissions**: Classify ask separately from edit/exec; policy may deny questions that request secrets or credentials.
+- **Interaction capability**: Governed interaction primitives use a distinct `interaction` capability. `ask`, `todo`, and `report_finding` must be explicitly classified before registration.
+- **Todo tool semantics**: Model todos as phased tasks with stable content identity, `pending | in_progress | completed | abandoned` statuses, notes, markdown import/export, and completion reminders.
+- **Todo persistence**: Keep todos session-local by default; only write project files through explicit export/import.
+- **Review findings**: Add a reviewer-only **Report Finding Tool**; final review verdict aggregates structured P0-P3 findings.
+- **Task tool evolution**: Evolve `task` toward typed parallel batches, structured outputs, policy ceilings, artifact references, and reviewer-to-explore delegation; do not permit recursive arbitrary subagents.
+- **Governed interaction build order**: Build **Ask Tool**, then **Todo Tool**, then **Report Finding Tool** review flow, then task batching and structured outputs.
 - **Distribution**: Keep the bootstrap install UX. By default, the bootstrap resolves and prints the latest stable release version, downloads a versioned release source tarball (`thanos-vX.Y.Z.tar.gz`), and verifies it against a `SHA256SUMS` file published as a GitHub Release asset by release automation after typecheck, lint, and tests pass. Teams can pin with `THANOS_VERSION=vX.Y.Z`. The installer fails closed when neither `sha256sum` nor `shasum -a 256` is available, prints release version, artifact URL, checksum URL, computed checksum, install directory, and Pi version, and may auto-install Pi through the available `bun` or `npm` package manager. Mutable `master`/branch-tip shell installs are too weak for a **Team-grade Governance Layer** trust boundary; signatures can be added later when release key management is mature.
 - **Installer verification**: Treat `scripts/install.sh` as a security boundary. Add static validation when available and fixture-driven tests for version resolution, checksum verification, and checksum failure behavior.
 - **Build order**: Policy schema and loader, sensitive-read deny rules, policy denial shape, audit log, headless fail-closed behavior, command governance, structured spec generation, evidence-based verification, subagent policy inheritance, then policy-first docs.
 
 ## Flagged ambiguities
 
-- "Thanos system" has been resolved as **Team-grade Governance Layer**, not a personal productivity harness.
-- "Governance" now implies durable policy, auditability, and verification stronger than the current heuristic implementation.
+- "Thanos system" has been resolved as an **Agent Distribution**, not only a **Team-grade Governance Layer**.
+- "Governance" remains a first-class pillar, but broader productivity/runtime tools are no longer out of scope when they fit the local agent distribution direction.
+- "Integration strategy" has been resolved as **Extension-first Hybrid Strategy**, not a wholesale Oh-my-pi runtime fork.
+- "First tranche" has been resolved as **Governed Interaction Primitives**: native ask tool, richer todo, structured review findings, and policy-aware task improvements.
+- "Ask tool" has been resolved as a governed decision-record primitive: selections, optional rationale, recommendation/default metadata, and audit/spec evidence.
+- "Ask headless behavior" has been resolved as policy-controlled, not always-block or always-default.
+- "Ask v1 scope" has been resolved as single-question only; batched forms are deferred until the whole form contract is implemented.
+- "Ask schema" has been resolved as stable option IDs with recommendation metadata and optional allowOther/rationale/timeout/evidence fields.
+- "Ask privacy" has been resolved as safe audit metadata only unless sensitive freeform logging is explicitly opted in.
+- "Ask permissions" has been resolved as a separate governed interaction classification with policy denial for secret/credential requests.
+- "Todo tool" has been resolved as phased task state with stable content identity, statuses, notes, markdown import/export, and reminders.
+- "Todo persistence" has been resolved as session-local by default, with explicit project-file export/import only.
+- "Review findings" has been resolved as reviewer-only structured P0-P3 findings with evidence and aggregate verdict.
+- "Task tool evolution" has been resolved as typed batches, structured outputs, policy ceilings, artifacts, and bounded reviewer-to-explore delegation without arbitrary recursion.
+- "Governed interaction build order" has been resolved as Ask → Todo → Report Finding/review → Task batching/structured outputs.
 - "Permission rules" now means durable **Policy File** rules by default; session rules are temporary prompt-cycle decisions.
 - "Policy config" has been resolved as declarative JSON validated by **Policy Schema**, not executable TypeScript.
 - Harness docs should follow a question-led teaching style inspired by Matt Pocock's public TypeScript writing: precise questions, tight mental models, small examples, and team-shareable rules.

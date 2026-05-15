@@ -84,6 +84,7 @@ Every tool call is classified by risk tier before it runs:
 | `write`, `edit` | high | `edit` |
 | `bash` | critical | `exec` |
 | `task` | medium | `task` |
+| `ask`, `todo`, `report_finding` | medium | `interaction` |
 
 Edit and exec tools require confirmation by default. Sensitive file paths (credentials, secrets) are denied before any generic read allowance kicks in.
 
@@ -107,6 +108,15 @@ The `task` tool lets Thanos hand off focused work to specialists:
 | `reviewer` | read + can spawn explore | Code review |
 | `designer` | read + write | UI/UX work |
 
+### Governed interaction primitives
+
+Thanos also ships governed interaction tools for structured human decisions and review flow:
+
+| Tool | Purpose |
+|------|---------|
+| `ask` | Ask one typed, option-based question and return a governed decision record |
+| `todo` | Track phased task state with explicit export/import |
+| `report_finding` | Record reviewer findings as structured P0-P3 evidence |
 ### MCP management
 
 Use `/mcp` within Thanos to manage server connections:

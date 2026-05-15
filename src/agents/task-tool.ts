@@ -38,16 +38,54 @@ export const TaskParamsSchema = Type.Object({
   ),
 });
 
+export const TaskBatchItemSchema = Type.Object({
+  id: Type.String({ minLength: 1 }),
+  type: Type.Optional(Type.Union(AGENT_TYPES.map((t) => Type.Literal(t)))),
+  goal: Type.String({ minLength: 1 }),
+  context: Type.Optional(Type.String()),
+});
+
+export const TaskBatchParamsSchema = Type.Object({
+  tasks: Type.Array(TaskBatchItemSchema, { minItems: 1 }),
+});
+
 export interface TaskParams {
   type?: AgentType;
   goal: string;
   context?: string;
 }
 
-type ResolvedTaskParams = Omit<TaskParams, "type"> & { type: AgentType };
+export interface TaskRunResult {
+  id?: string;
+  type: AgentType;
+  goal: string;
+  text: string;
+  ok: boolean;
+  artifact?: string;
+  metadata?: Record<string, unknown>;
+}
 
+export interface TaskBatchItem {
+  id: string;
+  type?: AgentType;
+  goal: string;
+  context?: string;
+}
+
+type ResolvedTaskParams = Omit<TaskParams, "type"> & { type: AgentType };
 type OnUpdate = (partial: { content: { type: "text"; text: string }[] }) => void;
 
+export function formatTaskRunResult(result: TaskRunResult): TaskRunResult {
+  return result;
+}
+
+export function validateTaskBatch(tasks: TaskBatchItem[]): void {
+  const seen = new Set<string>();
+  for (const task of tasks) {
+    if (seen.has(task.id)) throw new Error(`duplicate task id: ${task.id}`);
+    seen.add(task.id);
+  }
+}
 export async function executeTask(
   params: ResolvedTaskParams,
   signal: AbortSignal | undefined,
@@ -155,7 +193,7 @@ export async function executeTask(
         endedAt,
         metadata: parsed.metadata,
       }).catch(() => {});
-      resolve(parsed.text);
+      resolve(parsed.metadata ? JSON.stringify(parsed) : parsed.text);
     });
     child.on("error", (err) => {
       cleanup();
