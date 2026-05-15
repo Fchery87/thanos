@@ -30,6 +30,9 @@ const TOOL_CAPABILITY: Record<string, Capability> = {
   edit: "edit",
   bash: "exec",
   task: "task",
+  ask: "interaction",
+  todo: "interaction",
+  report_finding: "interaction",
 };
 
 export function capabilityForTool(toolName: string): Capability {

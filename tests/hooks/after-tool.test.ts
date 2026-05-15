@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { makeAfterToolHandler } from "../../src/hooks/after-tool";
 import { SpecEngine } from "../../src/spec/engine";
@@ -42,5 +42,28 @@ describe("makeAfterToolHandler", () => {
 
     expect(addResult?.passed).toBe(true);
     expect(addResult?.evidence).toContain("edit changed src/pagination.ts");
+  });
+});
+
+describe("after tool interaction audit", () => {
+  it("records safe ask metadata after execution", async () => {
+    const spec = { recordToolResult: vi.fn() };
+    const auditLogger = { record: vi.fn(async () => undefined) };
+    const handler = makeAfterToolHandler(spec as any, auditLogger as any, {
+      sessionId: "s1",
+      agentType: "parent",
+    });
+
+    await handler({
+      toolName: "ask",
+      content: [{ type: "text", text: JSON.stringify({ question: "Pick", selected: ["a"], recommended: "a", source: "user" }) }],
+    });
+
+    expect(auditLogger.record).toHaveBeenCalledWith(expect.objectContaining({
+      toolName: "ask",
+      capability: "interaction",
+      decision: "allow",
+      metadata: expect.objectContaining({ selected: ["a"], recommended: "a", source: "user" }),
+    }));
   });
 });

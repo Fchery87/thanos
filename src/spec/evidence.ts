@@ -41,6 +41,37 @@ function commandFamily(command: string): EvidenceType {
   return /\b(test|vitest|pytest|playwright|bats)\b/.test(command) ? "test" : "command";
 }
 
+export function safeInteractionMetadata(event: ToolResultEventLike): Record<string, unknown> | undefined {
+  const output = textFromContent(event.content) || event.output?.trim() || "";
+  if (!output) return undefined;
+
+  try {
+    const parsed = JSON.parse(output) as Record<string, unknown>;
+    if (event.toolName === "ask") {
+      return {
+        ...(typeof parsed.question === "string" ? { question: parsed.question } : {}),
+        ...(Array.isArray(parsed.options) ? { options: parsed.options } : {}),
+        ...(Array.isArray(parsed.selected) ? { selected: parsed.selected } : {}),
+        ...(typeof parsed.recommended === "string" ? { recommended: parsed.recommended } : {}),
+        ...(typeof parsed.source === "string" ? { source: parsed.source } : {}),
+        ...(typeof parsed.rationale === "string" ? { rationale: parsed.rationale } : {}),
+      };
+    }
+
+    if (event.toolName === "report_finding") {
+      return {
+        ...(typeof parsed.priority === "string" ? { priority: parsed.priority } : {}),
+        ...(typeof parsed.summary === "string" ? { summary: parsed.summary } : {}),
+        ...(typeof parsed.verdict === "string" ? { verdict: parsed.verdict } : {}),
+      };
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+}
+
 export function evidenceFromToolResult(event: ToolResultEventLike): EvidenceRecord | undefined {
   const passed = event.isError !== true;
   const output = textFromContent(event.content) || event.output?.trim() || "";

@@ -1,5 +1,5 @@
 export type PolicyPreset = "personal" | "team" | "ci";
-export type Capability = "read" | "edit" | "exec" | "task";
+export type Capability = "read" | "edit" | "exec" | "task" | "interaction";
 export type Decision = "allow" | "ask" | "deny";
 
 export interface PolicyRule {
