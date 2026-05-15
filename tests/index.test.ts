@@ -10,6 +10,25 @@ afterEach(() => {
   process.chdir(originalCwd);
 });
 
+type Handler = (...args: unknown[]) => unknown;
+type RegisterApi = Parameters<typeof register>[0];
+
+function createFakePi(overrides?: Partial<RegisterApi>) {
+  const handlers = new Map<string, Handler>();
+  const api = {
+    registerFlag: vi.fn(),
+    getFlag: vi.fn(() => false),
+    on: vi.fn((name: string, handler: Handler) => {
+      handlers.set(name, handler);
+    }),
+    registerTool: vi.fn(),
+    registerCommand: vi.fn(),
+    registerShortcut: vi.fn(),
+    ...overrides,
+  };
+  return { api: api as unknown as RegisterApi, handlers };
+}
+
 describe("register", () => {
   it("loads policy and blocks a sensitive read through the tool_call hook", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "harness-index-"));
@@ -34,20 +53,8 @@ describe("register", () => {
     );
     process.chdir(cwd);
 
-    type AnyHandler = (...args: unknown[]) => unknown;
-    const handlers = new Map<string, AnyHandler>();
-    const fakePi = {
-      registerFlag: vi.fn(),
-      getFlag: vi.fn(() => false),
-      on: vi.fn((name: string, handler: AnyHandler) => {
-        handlers.set(name, handler);
-      }),
-      registerTool: vi.fn(),
-      registerCommand: vi.fn(),
-      registerShortcut: vi.fn(),
-    };
-
-    register(fakePi as any);
+    const { api, handlers } = createFakePi();
+    register(api);
 
     const toolCall = handlers.get("tool_call");
     expect(toolCall).toBeTypeOf("function");
@@ -70,21 +77,11 @@ describe("register", () => {
   });
 
   it("formats explicit spec approval with scope and evidence", async () => {
-    type AnyHandler = (...args: unknown[]) => unknown;
-    const handlers = new Map<string, AnyHandler>();
     const confirm = vi.fn(async () => true);
-    const fakePi = {
-      registerFlag: vi.fn(),
+    const { api, handlers } = createFakePi({
       getFlag: vi.fn(() => true),
-      on: vi.fn((name: string, handler: AnyHandler) => {
-        handlers.set(name, handler);
-      }),
-      registerTool: vi.fn(),
-      registerCommand: vi.fn(),
-      registerShortcut: vi.fn(),
-    };
-
-    register(fakePi as any);
+    });
+    register(api);
 
     const beforeAgentStart = handlers.get("before_agent_start");
     const toolCall = handlers.get("tool_call");
@@ -115,21 +112,9 @@ describe("register", () => {
   });
 
   it("uses failure-grade verification messaging in headless runs", async () => {
-    type AnyHandler = (...args: unknown[]) => unknown;
-    const handlers = new Map<string, AnyHandler>();
     const notify = vi.fn();
-    const fakePi = {
-      registerFlag: vi.fn(),
-      getFlag: vi.fn(() => false),
-      on: vi.fn((name: string, handler: AnyHandler) => {
-        handlers.set(name, handler);
-      }),
-      registerTool: vi.fn(),
-      registerCommand: vi.fn(),
-      registerShortcut: vi.fn(),
-    };
-
-    register(fakePi as any);
+    const { api, handlers } = createFakePi();
+    register(api);
 
     const beforeAgentStart = handlers.get("before_agent_start");
     const agentEnd = handlers.get("agent_end");
@@ -153,21 +138,9 @@ describe("register", () => {
   });
 
   it("uses the final assistant message as manual completion evidence", async () => {
-    type AnyHandler = (...args: unknown[]) => unknown;
-    const handlers = new Map<string, AnyHandler>();
     const notify = vi.fn();
-    const fakePi = {
-      registerFlag: vi.fn(),
-      getFlag: vi.fn(() => false),
-      on: vi.fn((name: string, handler: AnyHandler) => {
-        handlers.set(name, handler);
-      }),
-      registerTool: vi.fn(),
-      registerCommand: vi.fn(),
-      registerShortcut: vi.fn(),
-    };
-
-    register(fakePi as any);
+    const { api, handlers } = createFakePi();
+    register(api);
 
     const beforeAgentStart = handlers.get("before_agent_start");
     const agentEnd = handlers.get("agent_end");

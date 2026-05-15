@@ -1,35 +1,38 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-
 import register from "../src/index";
 
-type AnyHandler = (...args: unknown[]) => unknown;
-
-const originalCwd = process.cwd();
+type Handler = (...args: unknown[]) => unknown;
+type RegisterApi = Parameters<typeof register>[0];
 
 afterEach(() => {
-  process.chdir(originalCwd);
   vi.clearAllMocks();
 });
 
+function createFakePi(overrides?: Partial<RegisterApi>) {
+  const handlers = new Map<string, Handler>();
+  const api = {
+    registerFlag: vi.fn(),
+    getFlag: vi.fn(() => false),
+    on: vi.fn(),
+    registerTool: vi.fn((definition: { name: string; execute: Handler }) => {
+      handlers.set(definition.name, definition.execute);
+    }),
+    registerCommand: vi.fn((name: string, definition: { handler: Handler }) => {
+      handlers.set(name, definition.handler);
+    }),
+    registerShortcut: vi.fn(),
+    ...overrides,
+  };
+  return { api: api as unknown as RegisterApi, handlers };
+}
+
 describe("register /modes command", () => {
   it("opens a selector and stores the chosen default task mode for the session", async () => {
-    const handlers = new Map<string, AnyHandler>();
-    const registerTool = vi.fn();
-    const registerCommand = vi.fn((name: string, definition: any) => {
-      handlers.set(name, definition.handler);
-    });
     const select = vi.fn(async () => "plan");
     const notify = vi.fn();
-    const fakePi = {
-      registerFlag: vi.fn(),
-      getFlag: vi.fn(() => false),
-      on: vi.fn(),
-      registerTool,
-      registerCommand,
-      registerShortcut: vi.fn(),
-    };
+    const { api, handlers } = createFakePi();
 
-    register(fakePi as any);
+    register(api);
 
     const modesHandler = handlers.get("modes");
     expect(modesHandler).toBeTypeOf("function");
@@ -50,24 +53,10 @@ describe("register /modes command", () => {
 
   it("reuses the selected mode for task calls that omit type", async () => {
     const mockExecuteTask = vi.fn(async () => "task result");
-    const handlers = new Map<string, AnyHandler>();
-    const registerTool = vi.fn((definition: any) => {
-      handlers.set(definition.name, definition.execute);
-    });
-    const registerCommand = vi.fn((name: string, definition: any) => {
-      handlers.set(name, definition.handler);
-    });
     const select = vi.fn(async () => "build");
-    const fakePi = {
-      registerFlag: vi.fn(),
-      getFlag: vi.fn(() => false),
-      on: vi.fn(),
-      registerTool,
-      registerCommand,
-      registerShortcut: vi.fn(),
-    };
+    const { api, handlers } = createFakePi();
 
-    register(fakePi as any, { executeTask: mockExecuteTask });
+    register(api, { executeTask: mockExecuteTask });
 
     await handlers.get("modes")?.("", {
       hasUI: true,
