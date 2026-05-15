@@ -35,6 +35,9 @@ import { scanContent, formatScanResult } from "./security/scanner";
 import { createSnapshot } from "./security/snapshot";
 import { classifyRisk } from "./permissions/risk";
 import { registerSearchTool } from "./web/search/index";
+import { AskParamsSchema, buildAskDecision, resolveHeadlessAsk, type AskQuestion } from "./interaction/ask";
+import { createTodoState, applyTodoOperation, exportTodoMarkdown, TodoParamsSchema, type TodoOperation, type TodoState } from "./interaction/todo";
+import { FindingParamsSchema, addFinding, formatReviewSummary, type ReviewFinding } from "./review/findings";
 
 function formatTimeAgo(date: Date): string {
   const diff = Date.now() - date.getTime();
@@ -77,6 +80,8 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   const isSubagent = !!subagentRole;
   const isReviewer = subagentRole === "reviewer";
   let defaultTaskType: TaskParams["type"] | undefined;
+  let todoState: TodoState = createTodoState([]);
+  let reviewFindings: ReviewFinding[] = [];
 
   const permissions = new PermissionManager();
   const spec = new SpecEngine();
@@ -850,7 +855,17 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
           undefined,
           policy,
         );
-        ctx.ui.notify(result, "info");
+        try {
+          const parsed = JSON.parse(result) as { text?: string; metadata?: { verdict?: string; findings?: unknown[] } };
+          if (parsed.metadata) {
+            const findingCount = Array.isArray(parsed.metadata.findings) ? parsed.metadata.findings.length : 0;
+            ctx.ui.notify(`Review verdict: ${parsed.metadata.verdict ?? "unknown"}\nFindings: ${findingCount}`, "info");
+          } else {
+            ctx.ui.notify(result, "info");
+          }
+        } catch {
+          ctx.ui.notify(result, "info");
+        }
       } catch (err) {
         ctx.ui.notify(`Review failed: ${String(err)}`, "warning");
       }
@@ -1077,6 +1092,77 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   // ── Web search tool ────────────────────────────────────────────────
   registerSearchTool(pi);
 
+  if (!isSubagent) {
+    pi.registerTool({
+      name: "todo",
+      label: "Manage todo state",
+      description: "Track phased tasks with a single in-progress item and explicit export/import.",
+      parameters: TodoParamsSchema,
+      async execute(_toolCallId, params: TodoOperation) {
+        try {
+          if (params.op === "export") {
+            return { content: [{ type: "text" as const, text: exportTodoMarkdown(todoState) }], details: undefined };
+          }
+          todoState = applyTodoOperation(todoState, params);
+          return { content: [{ type: "text" as const, text: JSON.stringify(todoState) }], details: undefined };
+        } catch (err) {
+          return { content: [{ type: "text" as const, text: String(err) }], isError: true, details: undefined };
+        }
+      },
+    });
+
+    pi.registerTool({
+      name: "ask",
+      label: "Ask structured question",
+      description: "Ask the user one typed, option-based question and return a governed decision record.",
+      parameters: AskParamsSchema,
+      async execute(_toolCallId, params: AskQuestion, _signal, _onUpdate, toolCtx) {
+        try {
+          const policy = await policyPromise;
+          if (!toolCtx.hasUI) {
+            const resolved = resolveHeadlessAsk(params, policy.preset);
+            if (resolved.kind === "blocked") {
+              return {
+                content: [{ type: "text" as const, text: resolved.reason }],
+                isError: true,
+                details: undefined,
+              };
+            }
+            const decision = buildAskDecision(params, resolved.selected, resolved.source);
+            return { content: [{ type: "text" as const, text: JSON.stringify(decision) }], details: undefined };
+          }
+
+          const optionIds = params.options.map((option) => option.id);
+          const selected = await toolCtx.ui.select(params.question, optionIds);
+          if (!selected) {
+            return { content: [{ type: "text" as const, text: "ask cancelled" }], isError: true, details: undefined };
+          }
+          const decision = buildAskDecision(params, [selected], "user");
+          return { content: [{ type: "text" as const, text: JSON.stringify(decision) }], details: undefined };
+        } catch (err) {
+          return { content: [{ type: "text" as const, text: String(err) }], isError: true, details: undefined };
+        }
+      },
+    });
+  }
+
+  if (isReviewer) {
+    pi.registerTool({
+      name: "report_finding",
+      label: "Report review finding",
+      description: "Record a structured review finding and return the aggregate review verdict.",
+      parameters: FindingParamsSchema,
+      async execute(_toolCallId, params, _signal, _onUpdate) {
+        try {
+          reviewFindings = addFinding(reviewFindings, params);
+          return { content: [{ type: "text" as const, text: formatReviewSummary(reviewFindings) }], details: undefined };
+        } catch (err) {
+          return { content: [{ type: "text" as const, text: String(err) }], isError: true, details: undefined };
+        }
+      },
+    });
+  }
+
   // ── Task tool (main sessions + reviewer subagents) ────────────────
   // Reviewers get the task tool so they can spawn explore agents.
   // All other subagents are leaves and cannot spawn further.
@@ -1092,7 +1178,6 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       async execute(_toolCallId, params: TaskParams, signal, onUpdate, _ctx) {
         try {
           const policy = await policyPromise;
-          // Reviewers may only spawn explore agents — enforce this regardless of what params.type says.
           const type = isReviewer
             ? "explore"
             : (params.type ?? defaultTaskType ?? await chooseTaskType(_ctx.hasUI, _ctx.ui));
