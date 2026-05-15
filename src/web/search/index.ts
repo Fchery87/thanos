@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { resolveProviderChain } from "./provider";
+import { defaultSearchProviderRegistry, type SearchProviderRegistry } from "./provider";
 import { SearchProviderError } from "./providers/base";
 import type { SearchParams, SearchProviderPreference, SearchResponse } from "./types";
 import { isSearchProviderPreference } from "./types";
@@ -7,8 +7,9 @@ import { isSearchProviderPreference } from "./types";
 export async function executeSearch(
   params: SearchParams,
   preference?: SearchProviderPreference,
+  registry: SearchProviderRegistry = defaultSearchProviderRegistry,
 ): Promise<SearchResponse> {
-  const chain = await resolveProviderChain(preference);
+  const chain = await registry.resolveProviderChain(preference);
 
   if (chain.length === 0) {
     throw new Error(

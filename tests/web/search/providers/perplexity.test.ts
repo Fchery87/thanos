@@ -3,11 +3,12 @@ import { PerplexityProvider } from "../../../../src/web/search/providers/perplex
 
 describe("PerplexityProvider", () => {
   const originalEnv = process.env.PERPLEXITY_API_KEY;
+  const originalFetch = globalThis.fetch;
 
   afterEach(() => {
     if (originalEnv === undefined) delete process.env.PERPLEXITY_API_KEY;
     else process.env.PERPLEXITY_API_KEY = originalEnv;
-    vi.unstubAllGlobals();
+    globalThis.fetch = originalFetch;
   });
 
   it("reports unavailable when key is missing", () => {
@@ -28,13 +29,13 @@ describe("PerplexityProvider", () => {
 
   it("extracts answer and citations from chat response", async () => {
     process.env.PERPLEXITY_API_KEY = "pplx-test";
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
         choices: [{ message: { content: "The synthesized answer." } }],
         citations: ["https://a.com", "https://b.com"],
       }),
-    }));
+    }) as unknown as typeof fetch;
 
     const result = await new PerplexityProvider().search({ query: "what is 42" });
     expect(result.provider).toBe("perplexity");
@@ -45,9 +46,9 @@ describe("PerplexityProvider", () => {
 
   it("throws on HTTP error", async () => {
     process.env.PERPLEXITY_API_KEY = "pplx-test";
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false, status: 401, text: async () => "Invalid key",
-    }));
+    }) as unknown as typeof fetch;
     await expect(new PerplexityProvider().search({ query: "x" })).rejects.toThrow("Invalid key");
   });
 });

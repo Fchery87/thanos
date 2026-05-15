@@ -1,11 +1,28 @@
 import { generateSpec } from "./generator";
-import type { FormalSpec, SpecTier, AcceptanceCriterion } from "./types";
-import type { EvidenceRecord } from "./evidence";
+import { evidenceFromToolResult, type EvidenceRecord, type ToolResultEventLike } from "./evidence";
+import { verifyCriteria, type VerificationResult } from "./verification";
+import type { FormalSpec, SpecTier } from "./types";
 
-export interface VerificationResult {
-  criterion: AcceptanceCriterion;
-  passed: boolean;
-  evidence: string[];
+function assistantTexts(messages: unknown): string[] {
+  if (!Array.isArray(messages)) return [];
+  const text: string[] = [];
+
+  for (const message of messages) {
+    if (typeof message !== "object" || message === null) continue;
+    if ((message as { role?: unknown }).role !== "assistant") continue;
+    const content = (message as { content?: unknown }).content;
+    if (!Array.isArray(content)) continue;
+
+    const summary = content
+      .filter((part): part is { type: string; text?: string } => Boolean(part) && part.type === "text" && typeof part.text === "string")
+      .map((part) => part.text)
+      .join("\n")
+      .trim();
+
+    if (summary) text.push(summary);
+  }
+
+  return text;
 }
 
 export class SpecEngine {
@@ -22,9 +39,15 @@ export class SpecEngine {
   }
 
   generate(prompt: string, tier: SpecTier): void {
+    this.reset();
     if (tier === "instant") return;
     this.activeSpec = generateSpec(prompt, tier);
-    this.evidence = [];
+  }
+
+  startTurn(prompt: string, explicitFlag: boolean): FormalSpec | undefined {
+    const tier = this.classify(prompt, explicitFlag);
+    this.generate(prompt, tier);
+    return this.activeSpec;
   }
 
   reset(): void {
@@ -33,25 +56,32 @@ export class SpecEngine {
   }
 
   collectOutput(text: string): void {
+    if (!this.activeSpec) return;
     const summary = text.trim();
     if (!summary) return;
     this.recordEvidence({ type: "manual", source: "assistant", summary, passed: true });
   }
 
+  recordToolResult(event: ToolResultEventLike): void {
+    if (!this.activeSpec) return;
+    const evidence = evidenceFromToolResult(event);
+    if (evidence) this.recordEvidence(evidence);
+  }
+
   recordEvidence(evidence: EvidenceRecord): void {
+    if (!this.activeSpec) return;
     this.evidence.push(evidence);
+  }
+
+  finishTurn(messages: unknown): VerificationResult[] {
+    for (const text of assistantTexts(messages)) {
+      this.collectOutput(text);
+    }
+    return this.verify();
   }
 
   verify(): VerificationResult[] {
     if (!this.activeSpec) return [];
-    return this.activeSpec.acceptanceCriteria.map((criterion) => {
-      const matchingEvidence = this.evidence.filter((record) =>
-        record.passed && criterion.evidenceRequired.includes(record.type),
-      );
-      const passed = criterion.evidenceRequired.every((type) =>
-        matchingEvidence.some((record) => record.type === type),
-      );
-      return { criterion, passed, evidence: matchingEvidence.map((record) => record.summary) };
-    });
+    return verifyCriteria(this.activeSpec, this.evidence);
   }
 }

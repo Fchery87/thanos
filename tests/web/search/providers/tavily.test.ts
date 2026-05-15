@@ -3,11 +3,12 @@ import { TavilyProvider } from "../../../../src/web/search/providers/tavily";
 
 describe("TavilyProvider", () => {
   const originalEnv = process.env.TAVILY_API_KEY;
+  const originalFetch = globalThis.fetch;
 
   afterEach(() => {
     if (originalEnv === undefined) delete process.env.TAVILY_API_KEY;
     else process.env.TAVILY_API_KEY = originalEnv;
-    vi.unstubAllGlobals();
+    globalThis.fetch = originalFetch;
   });
 
   it("reports unavailable when key is missing", () => {
@@ -28,13 +29,13 @@ describe("TavilyProvider", () => {
 
   it("calls Tavily API, returns answer and sources", async () => {
     process.env.TAVILY_API_KEY = "tvly-test";
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
         answer: "The answer is 42",
         results: [{ title: "T1", url: "https://t.com", content: "snippet text", published_date: "2024-03-01" }],
       }),
-    }));
+    }) as unknown as typeof fetch;
 
     const result = await new TavilyProvider().search({ query: "meaning of life" });
     expect(result.provider).toBe("tavily");
@@ -45,9 +46,9 @@ describe("TavilyProvider", () => {
 
   it("throws on HTTP error", async () => {
     process.env.TAVILY_API_KEY = "tvly-test";
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false, status: 403, text: async () => "Forbidden",
-    }));
+    }) as unknown as typeof fetch;
     await expect(new TavilyProvider().search({ query: "x" })).rejects.toThrow("Forbidden");
   });
 });

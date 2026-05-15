@@ -1,54 +1,86 @@
-import { SEARCH_PROVIDER_ORDER, isSearchProviderId, type SearchProviderId, type SearchProviderPreference } from "./types";
 import type { SearchProvider } from "./providers/base";
+import { isSearchProviderId, type SearchProviderId, type SearchProviderPreference } from "./types";
 
-interface ProviderMeta {
+export interface SearchProviderMetadata {
   id: SearchProviderId;
   label: string;
   load: () => Promise<SearchProvider>;
 }
 
-const PROVIDER_META: ProviderMeta[] = [
-  { id: "exa",        label: "Exa",          load: async () => new (await import("./providers/exa")).ExaProvider() },
-  { id: "brave",      label: "Brave Search",  load: async () => new (await import("./providers/brave")).BraveProvider() },
-  { id: "tavily",     label: "Tavily",        load: async () => new (await import("./providers/tavily")).TavilyProvider() },
-  { id: "perplexity", label: "Perplexity",    load: async () => new (await import("./providers/perplexity")).PerplexityProvider() },
-  { id: "gemini",     label: "Gemini",        load: async () => new (await import("./providers/gemini")).GeminiProvider() },
-];
+const DEFAULT_PROVIDER_METADATA: readonly SearchProviderMetadata[] = [
+  { id: "exa", label: "Exa", load: async () => new (await import("./providers/exa")).ExaProvider() },
+  { id: "brave", label: "Brave Search", load: async () => new (await import("./providers/brave")).BraveProvider() },
+  { id: "tavily", label: "Tavily", load: async () => new (await import("./providers/tavily")).TavilyProvider() },
+  { id: "perplexity", label: "Perplexity", load: async () => new (await import("./providers/perplexity")).PerplexityProvider() },
+  { id: "gemini", label: "Gemini", load: async () => new (await import("./providers/gemini")).GeminiProvider() },
+] as const;
 
-const cache = new Map<SearchProviderId, Promise<SearchProvider>>();
+export class SearchProviderRegistry {
+  private readonly cache = new Map<SearchProviderId, Promise<SearchProvider>>();
+  private readonly metadataById: Map<SearchProviderId, SearchProviderMetadata>;
 
-export function getSearchProvider(id: string): Promise<SearchProvider> {
-  if (!isSearchProviderId(id)) return Promise.reject(new Error(`Unknown search provider: ${id}`));
-  const hit = cache.get(id);
-  if (hit) return hit;
-  const meta = PROVIDER_META.find((m) => m.id === id)!;
-  const p = meta.load();
-  cache.set(id, p);
-  return p;
+  constructor(private readonly metadata: readonly SearchProviderMetadata[] = DEFAULT_PROVIDER_METADATA) {
+    this.metadataById = new Map(metadata.map((provider) => [provider.id, provider]));
+  }
+
+  getSearchProvider(id: string): Promise<SearchProvider> {
+    if (!isSearchProviderId(id)) return Promise.reject(new Error(`Unknown search provider: ${id}`));
+
+    const cached = this.cache.get(id);
+    if (cached) return cached;
+
+    const provider = this.metadataById.get(id);
+    if (!provider) return Promise.reject(new Error(`Unknown search provider: ${id}`));
+
+    const loaded = provider.load();
+    this.cache.set(id, loaded);
+    return loaded;
+  }
+
+  async resolveProviderChain(preference?: SearchProviderPreference): Promise<SearchProvider[]> {
+    const chain: SearchProvider[] = [];
+    const seen = new Set<SearchProviderId>();
+
+    if (preference && preference !== "auto") {
+      const preferred = await this.tryGetSearchProvider(preference);
+      if (preferred && await preferred.isAvailable()) {
+        chain.push(preferred);
+        seen.add(preference);
+      }
+    }
+
+    for (const { id } of this.metadata) {
+      if (seen.has(id)) continue;
+
+      const provider = await this.getSearchProvider(id);
+      if (await provider.isAvailable()) {
+        chain.push(provider);
+        seen.add(id);
+      }
+    }
+
+    return chain;
+  }
+
+  private async tryGetSearchProvider(id: SearchProviderId): Promise<SearchProvider | undefined> {
+    const cached = this.cache.get(id);
+    if (cached) return cached;
+
+    const provider = this.metadataById.get(id);
+    if (!provider) return undefined;
+
+    const loaded = provider.load();
+    this.cache.set(id, loaded);
+    return loaded;
+  }
 }
 
-export async function resolveProviderChain(
-  preference?: SearchProviderPreference,
-): Promise<SearchProvider[]> {
-  const chain: SearchProvider[] = [];
-  const seen = new Set<SearchProviderId>();
+export const defaultSearchProviderRegistry = new SearchProviderRegistry();
 
-  if (preference && preference !== "auto" && isSearchProviderId(preference)) {
-    const p = await getSearchProvider(preference);
-    if (await p.isAvailable()) {
-      chain.push(p);
-      seen.add(preference);
-    }
-  }
+export function getSearchProvider(id: string): Promise<SearchProvider> {
+  return defaultSearchProviderRegistry.getSearchProvider(id);
+}
 
-  for (const id of SEARCH_PROVIDER_ORDER) {
-    if (seen.has(id)) continue;
-    const p = await getSearchProvider(id);
-    if (await p.isAvailable()) {
-      chain.push(p);
-      seen.add(id);
-    }
-  }
-
-  return chain;
+export function resolveProviderChain(preference?: SearchProviderPreference): Promise<SearchProvider[]> {
+  return defaultSearchProviderRegistry.resolveProviderChain(preference);
 }

@@ -3,11 +3,12 @@ import { GeminiProvider } from "../../../../src/web/search/providers/gemini";
 
 describe("GeminiProvider", () => {
   const originalEnv = process.env.GEMINI_API_KEY;
+  const originalFetch = globalThis.fetch;
 
   afterEach(() => {
     if (originalEnv === undefined) delete process.env.GEMINI_API_KEY;
     else process.env.GEMINI_API_KEY = originalEnv;
-    vi.unstubAllGlobals();
+    globalThis.fetch = originalFetch;
   });
 
   it("reports unavailable when key is missing", () => {
@@ -28,7 +29,7 @@ describe("GeminiProvider", () => {
 
   it("extracts grounded answer and sources", async () => {
     process.env.GEMINI_API_KEY = "aistudio-test";
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
         candidates: [{
@@ -40,7 +41,7 @@ describe("GeminiProvider", () => {
           },
         }],
       }),
-    }));
+    }) as unknown as typeof fetch;
 
     const result = await new GeminiProvider().search({ query: "grounded query" });
     expect(result.provider).toBe("gemini");
@@ -51,9 +52,9 @@ describe("GeminiProvider", () => {
 
   it("throws on HTTP error", async () => {
     process.env.GEMINI_API_KEY = "aistudio-test";
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false, status: 500, text: async () => "Internal error",
-    }));
+    }) as unknown as typeof fetch;
     await expect(new GeminiProvider().search({ query: "x" })).rejects.toThrow("Internal error");
   });
 });

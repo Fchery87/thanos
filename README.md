@@ -9,10 +9,18 @@ Personal [Pi coding agent](https://earendil.works) configuration — includes th
 ### One-liner (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/fchery87/thanos/master/scripts/install.sh | sh
+npx thanos-install
 ```
 
-Installs Pi (if missing), clones Thanos to `~/.pi`, installs the harness extension, and adds the `thanos` command to your PATH.
+Installs Pi (if missing), downloads the latest stable Thanos release, verifies the release tarball against published SHA256 checksums, installs the harness extension into `~/.pi`, and adds the `thanos` command to your PATH.
+
+### Pinned install
+
+```bash
+THANOS_VERSION=v0.1.0 npx thanos-install
+```
+
+Use this form when you want a reproducible install from a specific release.
 
 ### Manual clone
 
@@ -21,19 +29,13 @@ git clone https://github.com/fchery87/thanos.git ~/.pi
 ~/.pi/scripts/install.sh --skip-clone
 ```
 
-### npm / npx
-
-```bash
-npx thanos-install
-```
-
 After any install method, open a new terminal and run:
 
 ```bash
 thanos
 ```
 
-Run `thanos update` anytime to pull the latest config and reinstall the extension.
+Run `thanos update` anytime to pull the latest stable config, or set `THANOS_VERSION=vX.Y.Z` to pin the update.
 
 ---
 

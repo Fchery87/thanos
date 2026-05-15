@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { executeSearch } from "../../../src/web/search/index";
-import * as providerModule from "../../../src/web/search/provider";
+import { SearchProviderRegistry } from "../../../src/web/search/provider";
 import type { SearchProvider } from "../../../src/web/search/providers/base";
-import type { SearchResponse } from "../../../src/web/search/types";
+import type { SearchProviderId, SearchResponse } from "../../../src/web/search/types";
 
-function makeMockProvider(id: string, result: SearchResponse, available = true): SearchProvider {
+function makeMockProvider(id: SearchProviderId, result: SearchResponse, available = true): SearchProvider {
   return {
     id,
     label: id,
@@ -19,22 +19,27 @@ describe("executeSearch", () => {
   it("returns result from first available provider", async () => {
     const mockResult: SearchResponse = { provider: "exa", sources: [{ title: "T", url: "https://x.com" }] };
     const mockProvider = makeMockProvider("exa", mockResult);
-    vi.spyOn(providerModule, "resolveProviderChain").mockResolvedValue([mockProvider]);
+    const registry = new SearchProviderRegistry([
+      { id: "exa", label: "Exa", load: vi.fn(async () => mockProvider) },
+    ]);
 
-    const result = await executeSearch({ query: "hello" });
+    const result = await executeSearch({ query: "hello" }, undefined, registry);
     expect(result.provider).toBe("exa");
     expect(result.sources).toHaveLength(1);
   });
 
-  it("falls back to second provider when first throws", async () => {
+  it("falls back to the next provider when the first throws", async () => {
     const failingProvider = makeMockProvider("exa", { provider: "exa", sources: [] });
     (failingProvider.search as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("exa down"));
+
     const successResult: SearchResponse = { provider: "brave", sources: [{ title: "B", url: "https://b.com" }] };
     const successProvider = makeMockProvider("brave", successResult);
+    const registry = new SearchProviderRegistry([
+      { id: "exa", label: "Exa", load: vi.fn(async () => failingProvider) },
+      { id: "brave", label: "Brave", load: vi.fn(async () => successProvider) },
+    ]);
 
-    vi.spyOn(providerModule, "resolveProviderChain").mockResolvedValue([failingProvider, successProvider]);
-
-    const result = await executeSearch({ query: "fallback test" });
+    const result = await executeSearch({ query: "fallback test" }, undefined, registry);
     expect(result.provider).toBe("brave");
   });
 
@@ -44,15 +49,24 @@ describe("executeSearch", () => {
     (p1.search as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("exa error"));
     (p2.search as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("brave error"));
 
-    vi.spyOn(providerModule, "resolveProviderChain").mockResolvedValue([p1, p2]);
+    const registry = new SearchProviderRegistry([
+      { id: "exa", label: "Exa", load: vi.fn(async () => p1) },
+      { id: "brave", label: "Brave", load: vi.fn(async () => p2) },
+    ]);
 
-    await expect(executeSearch({ query: "fail" })).rejects.toThrow(
+    await expect(executeSearch({ query: "fail" }, undefined, registry)).rejects.toThrow(
       /All web search providers failed[\s\S]*exa[\s\S]*brave/,
     );
   });
 
   it("throws with no-providers message when chain is empty", async () => {
-    vi.spyOn(providerModule, "resolveProviderChain").mockResolvedValue([]);
-    await expect(executeSearch({ query: "empty" })).rejects.toThrow("No web search providers available");
+    const unavailableProvider = makeMockProvider("exa", { provider: "exa", sources: [] }, false);
+    const registry = new SearchProviderRegistry([
+      { id: "exa", label: "Exa", load: vi.fn(async () => unavailableProvider) },
+    ]);
+
+    await expect(executeSearch({ query: "empty" }, undefined, registry)).rejects.toThrow(
+      "No web search providers available",
+    );
   });
 });

@@ -3,24 +3,16 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AuditEvent } from "../audit/types";
 import type { PermissionManager } from "../permissions/manager";
+import { capabilityForTool } from "../governance/tool-call";
 import type { HarnessPolicy } from "../policy/types";
 import type { SpecEngine } from "../spec/engine";
 import type { TaskParams } from "../agents/task-tool";
 import { formatBadge, formatLabel, formatValue, formatPanel } from "../ui-utils";
+import { renderAuditPanel, renderPolicyPanel, renderSessionSnapshotPanel, renderSpecVerificationPanel } from "../commands/presenters";
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
-// Maps tool names to the capability the policy engine evaluates them under.
-const TOOL_CAPABILITY: Record<string, "read" | "edit" | "exec" | "task"> = {
-  read:  "read",
-  ls:    "read",
-  find:  "read",
-  grep:  "read",
-  write: "edit",
-  edit:  "edit",
-  bash:  "exec",
-  task:  "task",
-};
+
 
 function fmtN(n: number): string {
   return n.toLocaleString();
@@ -90,32 +82,7 @@ export function registerSlashCommands(
     handler: async (_args, ctx) => {
       const policy = await policyPromise;
       const theme = ctx.ui.theme;
-      const count = (d: string) => policy.rules.filter(r => r.decision === d).length;
-      const auditStr = policy.audit.enabled
-        ? `${theme.fg("success", "on")}  ${theme.fg("dim", "→")}  ${theme.fg("accent", policy.audit.path ?? ".harness/audit.jsonl")}`
-        : theme.fg("dim", "off");
-
-      const lines = [
-        `${formatLabel(theme, "Preset:", 10)} ${formatValue(theme, policy.preset, "accent")}`,
-        `${formatLabel(theme, "Rules:", 10)} ${policy.rules.length} total  ${theme.fg("dim", "(")}${theme.fg("success", String(count("allow")))} allow / ${theme.fg("warning", String(count("ask")))} ask / ${theme.fg("error", String(count("deny")))} deny${theme.fg("dim", ")")}`,
-        `${formatLabel(theme, "Audit:", 10)} ${auditStr}`,
-        `${formatLabel(theme, "Headless:", 10)} ${formatValue(theme, policy.headless.defaultDecision, "accent")} by default`,
-      ];
-
-      if (policy.rules.length > 0) {
-        lines.push("", theme.bold("Rules:"));
-        for (const rule of policy.rules) {
-          const target = rule.pattern
-            ? `${rule.capability}:${rule.pattern}`
-            : rule.commandFamily
-              ? `${rule.capability}[${rule.commandFamily}]`
-              : rule.capability;
-          lines.push(`  ${formatBadge(theme, rule.decision)} ${theme.fg("dim", rule.id.padEnd(20, " "))} ${theme.fg("accent", target)}`);
-        }
-      }
-
-      const panel = formatPanel(theme, "Active Policy", lines, "dim");
-      ctx.ui.notify(panel, "info");
+      ctx.ui.notify(renderPolicyPanel(theme, policy), "info");
     },
   });
 
@@ -134,7 +101,7 @@ export function registerSlashCommands(
       }
 
       const lines = allTools.map(tool => {
-        const cap = TOOL_CAPABILITY[tool.name] ?? "exec";
+        const cap = capabilityForTool(tool.name);
         const decision = permissions.evaluate(cap, tool.name);
         const activeLabel = activeNames.has(tool.name) ? "" : theme.fg("dim", " (inactive)");
         const toolNameFormatted = activeNames.has(tool.name) ? theme.fg("accent", tool.name.padEnd(12, " ")) : theme.fg("dim", tool.name.padEnd(12, " "));
@@ -162,34 +129,8 @@ export function registerSlashCommands(
         );
         return;
       }
-
-      const results = spec.verify();
-      const passed = results.filter(r => r.passed).length;
-      const total = results.length;
-
-      const criteriaLines = results.map(r =>
-        `  ${r.passed ? theme.fg("success", "✓") : theme.fg("dim", "·")} ${theme.fg("muted", `[${r.criterion.id}]`)}  ${r.criterion.statement}`,
-      );
-
-      const statusColor = passed === total && total > 0 ? "success" : "warning";
-      
-      const lines = [
-        `${formatLabel(theme, "Spec ID:", 10)}  ${theme.fg("dim", active.id)}`,
-        `${formatLabel(theme, "Tier:", 10)}  ${formatValue(theme, active.tier, "accent")}  ${theme.fg("dim", `[${active.approvalStatus}]`)}`,
-        `${formatLabel(theme, "Goal:", 10)}  ${active.goal}`,
-        `${formatLabel(theme, "Criteria:", 10)}  ${theme.fg(statusColor, `${passed}/${total}`)} passed`,
-        ...criteriaLines,
-      ];
-
-      if (active.constraints.length > 0) {
-        lines.push(`${formatLabel(theme, "Constraints:", 12)} ${active.constraints.map(c => theme.fg("accent", c)).join(", ")}`);
-      }
-      if (active.risks.length > 0) {
-        lines.push(`${formatLabel(theme, "Risks:", 12)} ${active.risks.map(r => theme.fg("error", r)).join(", ")}`);
-      }
-
-      const panel = formatPanel(theme, "Active Spec", lines, statusColor);
-      ctx.ui.notify(panel, total > 0 && passed === total ? "info" : "warning");
+      const presentation = renderSpecVerificationPanel(theme, active, spec.verify());
+      ctx.ui.notify(presentation.panel, presentation.notification);
     },
   });
 
@@ -243,14 +184,7 @@ export function registerSlashCommands(
         return;
       }
 
-      const rows = entries.map(e => {
-        const time = new Date(e.timestamp).toLocaleTimeString();
-        const decisionFormatted = e.decision === "allow" ? theme.fg("success", e.decision) : e.decision === "deny" ? theme.fg("error", e.decision) : theme.fg("warning", e.decision);
-        return `  ${formatBadge(theme, e.decision)} ${theme.fg("dim", `[${time}]`)}  ${theme.fg("accent", e.toolName.padEnd(8, " "))} ${theme.fg("dim", "→")}  ${e.target.value}  ${theme.fg("dim", "[")}${decisionFormatted}${theme.fg("dim", "]")}`;
-      });
-
-      const panel = formatPanel(theme, `Audit Log (${entries.length})`, rows, "dim");
-      ctx.ui.notify(panel, "info");
+      ctx.ui.notify(renderAuditPanel(theme, entries), "info");
     },
   });
 
@@ -285,9 +219,6 @@ export function registerSlashCommands(
       const modelStr = model ? (model.name || model.id) : "none";
       const thinkingStr = thinking && thinking !== "off" ? thinking : "off";
       const modeStr = String(getDefaultTaskType() ?? "ask (default)");
-      const specStr = active
-        ? `${formatValue(theme, active.tier, "accent")} ${theme.fg("dim", "—")} "${active.goal.length > 60 ? `${active.goal.slice(0, 57)}…` : active.goal}"`
-        : theme.fg("dim", "none");
 
       let contextStr = theme.fg("dim", "unknown");
       if (usage) {
@@ -297,18 +228,15 @@ export function registerSlashCommands(
         contextStr = `${formatValue(theme, tok, "accent")} tokens  ${theme.fg("dim", "(")}${usage.percent && usage.percent > 0.8 ? theme.fg("warning", pct) : theme.fg("success", pct)} of ${wk}k${theme.fg("dim", ")")}`;
       }
 
-      const policyStr = `${formatValue(theme, policy.preset, "accent")}  ${theme.fg("dim", "—")}  ${policy.rules.length} rules  ${theme.fg("dim", "—")}  audit ${policy.audit.enabled ? theme.fg("success", "on") : theme.fg("dim", "off")}`;
-
-      const lines = [
-        `${formatLabel(theme, "Model:", 10)} ${formatValue(theme, modelStr, "accent")}`,
-        `${formatLabel(theme, "Thinking:", 10)} ${formatValue(theme, thinkingStr, "accent")}`,
-        `${formatLabel(theme, "Mode:", 10)} ${formatValue(theme, modeStr, "accent")}`,
-        `${formatLabel(theme, "Spec:", 10)} ${specStr}`,
-        `${formatLabel(theme, "Context:", 10)} ${contextStr}`,
-        `${formatLabel(theme, "Policy:", 10)} ${policyStr}`,
-      ];
-
-      const panel = formatPanel(theme, "Session Snapshot", lines, "dim");
+      const panel = renderSessionSnapshotPanel(theme, {
+        modelStr,
+        thinkingStr,
+        modeStr,
+        spec: active,
+        contextStr,
+        policy,
+        yolo: permissions.isYolo,
+      });
       ctx.ui.notify(panel, "info");
     },
   });

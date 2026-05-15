@@ -3,11 +3,12 @@ import { ExaProvider } from "../../../../src/web/search/providers/exa";
 
 describe("ExaProvider", () => {
   const originalEnv = process.env.EXA_API_KEY;
+  const originalFetch = globalThis.fetch;
 
   afterEach(() => {
     if (originalEnv === undefined) delete process.env.EXA_API_KEY;
     else process.env.EXA_API_KEY = originalEnv;
-    vi.unstubAllGlobals();
+    globalThis.fetch = originalFetch;
   });
 
   it("reports unavailable when EXA_API_KEY is not set", async () => {
@@ -41,10 +42,10 @@ describe("ExaProvider", () => {
         },
       ],
     };
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => mockResponse,
-    }));
+    }) as unknown as typeof fetch;
 
     const p = new ExaProvider();
     const result = await p.search({ query: "test query", count: 5 });
@@ -59,11 +60,11 @@ describe("ExaProvider", () => {
 
   it("throws SearchProviderError on HTTP failure", async () => {
     process.env.EXA_API_KEY = "test-key";
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 401,
       text: async () => "Unauthorized",
-    }));
+    }) as unknown as typeof fetch;
 
     const p = new ExaProvider();
     await expect(p.search({ query: "test" })).rejects.toThrow("Unauthorized");

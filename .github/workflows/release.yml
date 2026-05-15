@@ -44,11 +44,20 @@ jobs:
       - name: Run tests
         run: bun test
 
+      - name: Package release tarball and checksum
+        run: |
+          mkdir -p dist
+          git archive --format=tar.gz --prefix="thanos-${{ github.ref_name }}/" \
+            -o "dist/thanos-${{ github.ref_name }}.tar.gz" "${{ github.sha }}"
+          (cd dist && sha256sum "thanos-${{ github.ref_name }}.tar.gz" > SHA256SUMS)
+
       - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ github.ref_name }}" \
+            dist/thanos-${{ github.ref_name }}.tar.gz \
+            dist/SHA256SUMS \
             --title "Thanos ${{ github.ref_name }}" \
             --generate-notes
 

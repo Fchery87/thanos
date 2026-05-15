@@ -3,11 +3,12 @@ import { BraveProvider } from "../../../../src/web/search/providers/brave";
 
 describe("BraveProvider", () => {
   const originalEnv = process.env.BRAVE_API_KEY;
+  const originalFetch = globalThis.fetch;
 
   afterEach(() => {
     if (originalEnv === undefined) delete process.env.BRAVE_API_KEY;
     else process.env.BRAVE_API_KEY = originalEnv;
-    vi.unstubAllGlobals();
+    globalThis.fetch = originalFetch;
   });
 
   it("reports unavailable when BRAVE_API_KEY is not set", () => {
@@ -28,7 +29,7 @@ describe("BraveProvider", () => {
 
   it("calls Brave API and normalizes response", async () => {
     process.env.BRAVE_API_KEY = "test-key";
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
         web: {
@@ -37,7 +38,7 @@ describe("BraveProvider", () => {
           ],
         },
       }),
-    }));
+    }) as unknown as typeof fetch;
 
     const result = await new BraveProvider().search({ query: "brave test" });
     expect(result.provider).toBe("brave");
@@ -48,9 +49,9 @@ describe("BraveProvider", () => {
 
   it("throws on HTTP error", async () => {
     process.env.BRAVE_API_KEY = "test-key";
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false, status: 429, text: async () => "Rate limited",
-    }));
+    }) as unknown as typeof fetch;
     await expect(new BraveProvider().search({ query: "x" })).rejects.toThrow("Rate limited");
   });
 });

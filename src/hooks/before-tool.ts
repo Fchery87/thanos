@@ -1,36 +1,15 @@
 // src/hooks/before-tool.ts
-import { classifyRisk } from "../permissions/risk";
 import type { AuditLogger } from "../audit/logger";
-import { commandAuditTarget } from "../audit/target";
 import type { PermissionManager } from "../permissions/manager";
-import type { Capability } from "../permissions/rules";
 import { formatPolicyDenial } from "../policy/denial";
-import { evaluatePolicy } from "../policy/evaluator";
 import type { HarnessPolicy } from "../policy/types";
 import type { SpecEngine } from "../spec/engine";
 import type { FormalSpec } from "../spec/types";
+import { evaluateGovernedToolCall } from "../governance/tool-call";
 
 export interface BlockResult { block: true; reason: string; }
 type PromptUser = (message: string) => Promise<boolean>;
 type ApproveSpec = (spec: FormalSpec) => Promise<boolean>;
-
-const TOOL_CAPABILITY: Record<string, Capability> = {
-  read:  "read",
-  ls:    "read",
-  find:  "read",
-  grep:  "read",
-  write: "edit",
-  edit:  "edit",
-  bash:  "exec",
-  task:  "task",
-};
-
-function extractTarget(toolName: string, input: Record<string, unknown>): string {
-  const filePath = (input.file_path ?? input.path) as string | undefined;
-  if (filePath) return filePath;
-  if (input.command) return String(input.command);
-  return toolName;
-}
 
 export function makeBeforeToolHandler(
   permissions: PermissionManager,
@@ -43,15 +22,13 @@ export function makeBeforeToolHandler(
 ) {
   return async (event: { toolName: string; input: Record<string, unknown> }): Promise<BlockResult | undefined> => {
     const { toolName, input } = event;
-    const tier = classifyRisk(toolName, input);
-    const capability = TOOL_CAPABILITY[toolName] ?? "exec";
-    const target = extractTarget(toolName, input);
-    const policyDecision = policy ? evaluatePolicy(policy, capability, target) : null;
+    const governed = evaluateGovernedToolCall(toolName, input, policy);
+    const { call, policyDecision, auditTarget } = governed;
+    const { capability, target, riskTier: tier } = call;
 
     const recordAudit = async (
       decision: "allow" | "deny" | "ask",
       ruleId?: string,
-      pattern?: string,
     ) => {
       await auditLogger?.record({
         timestamp: new Date().toISOString(),
@@ -61,12 +38,7 @@ export function makeBeforeToolHandler(
         capability,
         decision,
         ruleId,
-        target:
-          toolName === "bash"
-            ? commandAuditTarget(target)
-            : pattern
-              ? { kind: "pattern", value: pattern }
-              : { kind: "literal", value: target },
+        target: auditTarget,
       });
     };
 
@@ -76,19 +48,18 @@ export function makeBeforeToolHandler(
       return;
     }
 
-
     if (policyDecision?.decision === "deny") {
-      await recordAudit("deny", policyDecision.ruleId, policyDecision.pattern);
+      await recordAudit("deny", policyDecision.ruleId);
       return { block: true, reason: formatPolicyDenial(policyDecision) };
     }
 
     if (policyDecision?.decision === "ask") {
-      await recordAudit("ask", policyDecision.ruleId, policyDecision.pattern);
+      await recordAudit("ask", policyDecision.ruleId);
     }
 
     // Low-risk: always allow
     if (tier === "low" && policyDecision?.decision !== "ask") {
-      await recordAudit("allow", policyDecision?.ruleId, policyDecision?.pattern);
+      await recordAudit("allow", policyDecision?.ruleId);
       return;
     }
 
@@ -139,6 +110,6 @@ export function makeBeforeToolHandler(
       return;
     }
 
-    await recordAudit("allow", policyDecision?.ruleId, policyDecision?.pattern);
+    await recordAudit("allow", policyDecision?.ruleId);
   };
 }

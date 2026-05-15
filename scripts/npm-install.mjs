@@ -1,18 +1,22 @@
 #!/usr/bin/env node
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { platform } from "node:os";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
 const isWindows = platform() === "win32";
+const here = dirname(fileURLToPath(import.meta.url));
 
 if (isWindows) {
-  const url =
-    "https://raw.githubusercontent.com/fchery87/thanos/master/scripts/install.ps1";
-  execSync(
-    `powershell -ExecutionPolicy Bypass -Command "irm ${url} | iex"`,
-    { stdio: "inherit" }
-  );
+  execFileSync("powershell", [
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    join(here, "install.ps1"),
+    ...process.argv.slice(2),
+  ], { stdio: "inherit" });
 } else {
-  const url =
-    "https://raw.githubusercontent.com/fchery87/thanos/master/scripts/install.sh";
-  execSync(`curl -fsSL ${url} | sh`, { stdio: "inherit" });
+  execFileSync("sh", [join(here, "install.sh"), ...process.argv.slice(2)], {
+    stdio: "inherit",
+  });
 }

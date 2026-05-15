@@ -3,7 +3,7 @@
 ## Glossary
 
 **Thanos**
-The Pi config/harness layer living at `~/.pi`. Adds capability-based permissions, an ambient spec lifecycle, and subagent delegation to Pi. Distributed at `github.com/fchery87/thanos`. Installed via `curl -fsSL https://raw.githubusercontent.com/fchery87/thanos/master/scripts/install.sh | sh` or `npx thanos-install`.
+The Pi config/harness layer living at `~/.pi`. Adds capability-based permissions, an ambient spec lifecycle, and subagent delegation to Pi. Distributed at `github.com/fchery87/thanos` with a low-friction bootstrap installer that should install from pinned, integrity-checked releases rather than mutable branch tips.
 
 **Team-grade Governance Layer**
 The intended product position for Thanos: a policy, verification, audit, and delegation layer that makes Pi safe and predictable enough for shared team use. "Team-grade" describes adoption pattern and quality bar — each developer runs the Harness locally, but teams share a `harness.policy.json` committed to the project repo. There is no central policy server or multi-tenant runtime; governance is per-developer but coordinated via version-controlled policy.
@@ -39,6 +39,10 @@ One of four values: `read | edit | exec | task`. Maps to Pi built-in tools as fo
 - `edit` → `write`, `edit`
 - `exec` → `bash`
 - `task` → `task` (custom registered tool)
+
+**Governed Tool Call**
+The normalized representation of a Pi `tool_call` before execution: tool name, input, safe target, **Capability**, **Risk Tier**, command family when applicable, matching **Policy File** rule, and **Audit Log** target. This is the domain concept for concentrating tool governance behaviour before permission prompts, policy denials, secret scanning, snapshots, and evidence capture.
+_Avoid_: Recomputing tool metadata separately in hooks, slash commands, audit code, or spec evidence code
 
 **Sensitive Read**
 A read-like tool call that targets credentials, secrets, auth material, token stores, or other files that team policy says the agent must not inspect.
@@ -117,6 +121,8 @@ Pi lifecycle event fired after each tool execution. Used to collect tool output 
 - **Spec system**: Specs become structured JSON; verification requires evidence from diffs, command exit codes, tests, or explicit evidence records; unmet criteria warn in interactive mode and fail in CI/headless governance mode; explicit spec approval includes scope, allowed capabilities, and verification plan.
 - **Subagents**: Subagents inherit parent policy as a ceiling; each subagent has a capability ceiling; subagents have timeouts and max turns; subagent results include structured metadata; transcripts are retained with policy-safe redaction.
 - **Docs**: Documentation starts with concrete risks, uses question-led teaching, provides copy-pasteable JSON examples, separates team policy from personal preference, and explains what happens when policy blocks an action.
+- **Distribution**: Keep the bootstrap install UX. By default, the bootstrap resolves and prints the latest stable release version, downloads a versioned release source tarball (`thanos-vX.Y.Z.tar.gz`), and verifies it against a `SHA256SUMS` file published as a GitHub Release asset by release automation after typecheck, lint, and tests pass. Teams can pin with `THANOS_VERSION=vX.Y.Z`. The installer fails closed when neither `sha256sum` nor `shasum -a 256` is available, prints release version, artifact URL, checksum URL, computed checksum, install directory, and Pi version, and may auto-install Pi through the available `bun` or `npm` package manager. Mutable `master`/branch-tip shell installs are too weak for a **Team-grade Governance Layer** trust boundary; signatures can be added later when release key management is mature.
+- **Installer verification**: Treat `scripts/install.sh` as a security boundary. Add static validation when available and fixture-driven tests for version resolution, checksum verification, and checksum failure behavior.
 - **Build order**: Policy schema and loader, sensitive-read deny rules, policy denial shape, audit log, headless fail-closed behavior, command governance, structured spec generation, evidence-based verification, subagent policy inheritance, then policy-first docs.
 
 ## Flagged ambiguities
@@ -131,3 +137,6 @@ Pi lifecycle event fired after each tool execution. Used to collect tool output 
 - Sensitive-read failures are visible **Policy Denial** events, not silent hard blocks.
 - Policy decisions must be durable **Audit Log** events, not just transient UI notifications.
 - The approved build order prioritizes governance core decisions before expanding subagent capability, because subagents amplify whatever policy model exists.
+- Installer distribution has been resolved as latest-stable-by-default bootstrap with an explicit `THANOS_VERSION=vX.Y.Z` override and SHA256-verified GitHub Release source tarballs, not clone-first install, mutable branch-tip `curl|sh`, silent latest installs, prerelease-by-default installs, unverified fallback installs, Pi version pinning, or signature verification from day one.
+- `thanos update` should update to latest stable by default and respect `THANOS_VERSION=vX.Y.Z` for pinned updates; prereleases are only installable when explicitly requested by version.
+- README/install docs should stop advertising raw `master` install URLs and instead document latest-release bootstrap plus optional `THANOS_VERSION` pinning.

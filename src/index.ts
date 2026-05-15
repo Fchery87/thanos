@@ -4,6 +4,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
 
 import { AuditLogger } from "./audit/logger";
+import type { AuditEvent } from "./audit/types";
 import { PermissionManager } from "./permissions/manager";
 import { SpecEngine } from "./spec/engine";
 import { makeBeforeToolHandler } from "./hooks/before-tool";
@@ -17,7 +18,16 @@ import { MCPManager } from "./mcp/manager";
 import { loadMcpConfigs, mcpConfigPaths } from "./mcp/config";
 import { writeServerSecrets, readServerSecrets } from "./mcp/state";
 import { runOAuthFlow, probeOAuth } from "./mcp/oauth";
-import { formatBadge, formatLabel, formatValue, formatSpecForApproval, formatPanel, noopTheme, stripAnsi } from "./ui-utils";
+import {
+  connectMcpServer,
+  disableMcpServer,
+  disconnectMcpServer,
+  enableMcpServer,
+  initializeMcpSession,
+  reloadMcpSession,
+} from "./mcp/lifecycle";
+import { formatLabel, formatValue, formatSpecForApproval, formatPanel, noopTheme, stripAnsi } from "./ui-utils";
+import { renderAuditPanel, renderPolicyPanel, renderSessionSnapshotPanel, renderSpecVerificationPanel } from "./commands/presenters";
 import { MemoryStore } from "./memory/store";
 import { shouldSaveMemory, extractCorrection, formatMemoriesForInjection } from "./memory/injector";
 import { routeModel, formatRouteStatus, formatRouteNotice } from "./models/router";
@@ -60,23 +70,6 @@ function setThinkingStatus(pi: ExtensionAPI, ctx: ExtensionContext): void {
   ctx.ui.setStatus("harness-thinking", level && level !== "off" ? ctx.ui.theme.fg("accent", `thinking:${level}`) : undefined);
 }
 
-function extractAssistantText(messages: unknown): string[] {
-  if (!Array.isArray(messages)) return [];
-  const text: string[] = [];
-  for (const message of messages) {
-    if (!message || typeof message !== "object") continue;
-    const record = message as { role?: unknown; content?: unknown };
-    if (record.role !== "assistant" || !Array.isArray(record.content)) continue;
-    for (const part of record.content) {
-      if (!part || typeof part !== "object") continue;
-      const content = part as { type?: unknown; text?: unknown };
-      if (content.type === "text" && typeof content.text === "string" && content.text.trim()) {
-        text.push(content.text.trim());
-      }
-    }
-  }
-  return text;
-}
 
 export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof executeTask }) {
   const _executeTask = deps?.executeTask ?? executeTask;
@@ -98,12 +91,14 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     const theme = ctx.ui.theme;
     let mcpCount = 0;
 
-    try {
-      await mcpManager.initialize(pi, ctx.cwd);
-      const statuses = mcpManager.getStatuses();
+    const init = await initializeMcpSession({ manager: mcpManager, pi, cwd: ctx.cwd });
+    if (init.kind === "failed") {
+      ctx.ui.notify(`MCP init failed: ${init.error}`, "warning");
+    } else {
+      const statuses = init.statuses;
       const connected = statuses.filter((s) => !s.error);
       const failed = statuses.filter((s) => s.error);
-      mcpCount = connected.length;
+      mcpCount = init.connectedCount;
       if (connected.length > 0) {
         ctx.ui.setStatus("harness-mcp", theme.fg("accent", `mcp:${connected.length}`));
       }
@@ -112,8 +107,6 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         const panel = formatPanel(theme, "MCP Failed", summary, "error");
         ctx.ui.notify(panel, "warning");
       }
-    } catch (err) {
-      ctx.ui.notify(`MCP init failed: ${String(err)}`, "warning");
     }
 
     // ── Thanos welcome header — two-column layout, clears on first prompt ─
@@ -317,13 +310,11 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       if (sub === "reload") {
         if (isSubagent) { ctx.ui.notify("/mcp reload is only available in the main session.", "warning"); return; }
         if (!mcpManager) return;
-        mcpManager.disconnect();
-        try {
-          await mcpManager.initialize(pi, ctx.cwd);
-          const connected = mcpManager.getStatuses().filter((s) => s.connected).length;
-          ctx.ui.notify(`${theme.bold("MCP reloaded")} ${theme.fg("dim", "—")} ${theme.fg("success", String(connected))} server(s) connected.`, "info");
-        } catch (err) {
-          ctx.ui.notify(`MCP reload failed: ${String(err)}`, "warning");
+        const result = await reloadMcpSession({ manager: mcpManager, pi, cwd: ctx.cwd });
+        if (result.kind === "failed") {
+          ctx.ui.notify(`MCP reload failed: ${result.error}`, "warning");
+        } else {
+          ctx.ui.notify(`${theme.bold("MCP reloaded")} ${theme.fg("dim", "—")} ${theme.fg("success", String(result.connectedCount))} server(s) connected.`, "info");
         }
         return;
       }
@@ -333,9 +324,10 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         if (isSubagent) { ctx.ui.notify("/mcp disable is only available in the main session.", "warning"); return; }
         if (!mcpManager) return;
         if (!name) { ctx.ui.notify("Usage: /mcp disable <server-name>", "warning"); return; }
-        const ok = await mcpManager.disableServer(name);
-        if (!ok) { ctx.ui.notify(`Unknown server: ${theme.fg("error", name)}`, "warning"); return; }
-        ctx.ui.setStatus("harness-mcp", theme.fg("accent", `mcp:${mcpManager.getStatuses().filter((s) => s.connected).length}`));
+        const result = await disableMcpServer({ manager: mcpManager, name });
+        if (result.kind === "unknown-server") { ctx.ui.notify(`Unknown server: ${theme.fg("error", name)}`, "warning"); return; }
+        if (result.kind === "failed") { ctx.ui.notify(`MCP disable failed: ${result.error}`, "warning"); return; }
+        ctx.ui.setStatus("harness-mcp", theme.fg("accent", `mcp:${result.connectedCount}`));
         ctx.ui.notify(formatPanel(theme, "MCP Disabled", `${theme.fg("error", name)} disconnected and marked disabled.`, "warning"), "info");
         return;
       }
@@ -346,15 +338,13 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         if (!mcpManager) return;
         if (!name) { ctx.ui.notify("Usage: /mcp enable <server-name>", "warning"); return; }
         ctx.ui.notify(`Connecting ${theme.fg("accent", name)}…`, "info");
-        const ok = await mcpManager.enableServer(pi, name);
-        if (!ok) { ctx.ui.notify(`Unknown server: ${theme.fg("error", name)}`, "warning"); return; }
-        const status = mcpManager.getStatuses().find((s) => s.name === name);
-        const connected = mcpManager.getStatuses().filter((s) => s.connected).length;
-        ctx.ui.setStatus("harness-mcp", theme.fg("accent", `mcp:${connected}`));
-        if (status?.error) {
-          ctx.ui.notify(formatPanel(theme, "MCP Enable Failed", `${theme.fg("error", name)}: ${status.error}`, "error"), "warning");
+        const result = await enableMcpServer({ manager: mcpManager, pi, name });
+        if (result.kind === "unknown-server") { ctx.ui.notify(`Unknown server: ${theme.fg("error", name)}`, "warning"); return; }
+        if (result.kind === "failed") {
+          ctx.ui.notify(formatPanel(theme, "MCP Enable Failed", `${theme.fg("error", name)}: ${result.status?.error ?? result.error}`, "error"), "warning");
         } else {
-          ctx.ui.notify(formatPanel(theme, "MCP Enabled", `${theme.fg("success", name)} connected — ${status?.toolCount ?? 0} tool(s).`, "dim"), "info");
+          ctx.ui.setStatus("harness-mcp", theme.fg("accent", `mcp:${result.connectedCount}`));
+          ctx.ui.notify(formatPanel(theme, "MCP Enabled", `${theme.fg("success", name)} connected — ${result.status?.toolCount ?? 0} tool(s).`, "dim"), "info");
         }
         return;
       }
@@ -365,13 +355,12 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         if (!mcpManager) return;
         if (!name) { ctx.ui.notify("Usage: /mcp connect <server-name>", "warning"); return; }
         ctx.ui.notify(`Connecting ${theme.fg("accent", name)}…`, "info");
-        const ok = await mcpManager.connectServer(pi, name);
-        if (!ok) { ctx.ui.notify(`Unknown server: ${theme.fg("error", name)}`, "warning"); return; }
-        const status = mcpManager.getStatuses().find((s) => s.name === name);
-        if (status?.error) {
-          ctx.ui.notify(formatPanel(theme, "MCP Connect Failed", `${theme.fg("error", name)}: ${status.error}`, "error"), "warning");
+        const result = await connectMcpServer({ manager: mcpManager, pi, name });
+        if (result.kind === "unknown-server") { ctx.ui.notify(`Unknown server: ${theme.fg("error", name)}`, "warning"); return; }
+        if (result.kind === "failed") {
+          ctx.ui.notify(formatPanel(theme, "MCP Connect Failed", `${theme.fg("error", name)}: ${result.status?.error ?? result.error}`, "error"), "warning");
         } else {
-          ctx.ui.notify(formatPanel(theme, "MCP Connected", `${theme.fg("success", name)} — ${status?.toolCount ?? 0} tool(s).`, "dim"), "info");
+          ctx.ui.notify(formatPanel(theme, "MCP Connected", `${theme.fg("success", name)} — ${result.status?.toolCount ?? 0} tool(s).`, "dim"), "info");
         }
         return;
       }
@@ -381,9 +370,13 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         if (isSubagent) { ctx.ui.notify("/mcp disconnect is only available in the main session.", "warning"); return; }
         if (!mcpManager) return;
         if (!name) { ctx.ui.notify("Usage: /mcp disconnect <server-name>", "warning"); return; }
-        const ok = mcpManager.disconnectServer(name);
-        if (!ok) { ctx.ui.notify(`${theme.fg("error", name)} is not connected.`, "warning"); return; }
-        ctx.ui.setStatus("harness-mcp", theme.fg("accent", `mcp:${mcpManager.getStatuses().filter((s) => s.connected).length}`));
+        const result = disconnectMcpServer({ manager: mcpManager, name });
+        if (result.kind === "unknown-server" || result.kind === "not-connected") {
+          ctx.ui.notify(`${theme.fg("error", name)} is not connected.`, "warning");
+          return;
+        }
+        if (result.kind === "failed") { ctx.ui.notify(`MCP disconnect failed: ${result.error}`, "warning"); return; }
+        ctx.ui.setStatus("harness-mcp", theme.fg("accent", `mcp:${result.connectedCount}`));
         ctx.ui.notify(formatPanel(theme, "MCP Disconnected", `${theme.fg("accent", name)} disconnected (not disabled — run /mcp connect ${name} to reconnect).`, "dim"), "info");
         return;
       }
@@ -450,12 +443,13 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
 
         // Reconnect to pick up new credentials
         ctx.ui.notify(`Credentials saved. Reconnecting ${theme.fg("accent", name)}…`, "info");
-        await mcpManager.connectServer(pi, name);
-        const status = mcpManager.getStatuses().find((s) => s.name === name);
-        if (status?.error) {
-          ctx.ui.notify(formatPanel(theme, "Reconnect Failed", `${theme.fg("error", name)}: ${status.error}`, "error"), "warning");
+        const reconnect = await connectMcpServer({ manager: mcpManager, pi, name });
+        if (reconnect.kind === "unknown-server") {
+          ctx.ui.notify(`Unknown server: ${theme.fg("error", name)}`, "warning");
+        } else if (reconnect.kind === "failed") {
+          ctx.ui.notify(formatPanel(theme, "Reconnect Failed", `${theme.fg("error", name)}: ${reconnect.status?.error ?? reconnect.error}`, "error"), "warning");
         } else {
-          ctx.ui.notify(formatPanel(theme, "Auth Complete", `${theme.fg("success", name)} — ${status?.toolCount ?? 0} tool(s) ready.`, "dim"), "info");
+          ctx.ui.notify(formatPanel(theme, "Auth Complete", `${theme.fg("success", name)} — ${reconnect.status?.toolCount ?? 0} tool(s) ready.`, "dim"), "info");
         }
         return;
       }
@@ -528,33 +522,62 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         if (!action) return;
         const verb = action.split(" ")[0]!;
 
-        // Dispatch to the same logic used by explicit subcommands
+        // Dispatch via the same lifecycle helpers used by explicit subcommands
         if (verb === "enable") {
           ctx.ui.notify(`Connecting ${theme.fg("accent", sName)}…`, "info");
-          await mcpManager.enableServer(pi, sName);
-          const s = mcpManager.getStatuses().find((x) => x.name === sName);
-          ctx.ui.setStatus("harness-mcp", theme.fg("accent", `mcp:${mcpManager.getStatuses().filter((x) => x.connected).length}`));
-          ctx.ui.notify(s?.error
-            ? formatPanel(theme, "Enable Failed", `${theme.fg("error", sName)}: ${s.error}`, "error")
-            : formatPanel(theme, "MCP Enabled", `${theme.fg("success", sName)} — ${s?.toolCount ?? 0} tool(s).`, "dim"), s?.error ? "warning" : "info");
+          const result = await enableMcpServer({ manager: mcpManager, pi, name: sName });
+          if (result.kind === "unknown-server") {
+            ctx.ui.notify(`Unknown server: ${theme.fg("error", sName)}`, "warning");
+          } else if (result.kind === "failed") {
+            ctx.ui.notify(
+              formatPanel(theme, "Enable Failed", `${theme.fg("error", sName)}: ${result.status?.error ?? result.error}`, "error"),
+              "warning",
+            );
+          } else {
+            ctx.ui.setStatus("harness-mcp", theme.fg("accent", `mcp:${result.connectedCount}`));
+            ctx.ui.notify(
+              result.status?.error
+                ? formatPanel(theme, "Enable Failed", `${theme.fg("error", sName)}: ${result.status.error}`, "error")
+                : formatPanel(theme, "MCP Enabled", `${theme.fg("success", sName)} — ${result.status?.toolCount ?? 0} tool(s).`, "dim"),
+              result.status?.error ? "warning" : "info",
+            );
+          }
 
         } else if (verb === "disable") {
-          await mcpManager.disableServer(sName);
-          ctx.ui.setStatus("harness-mcp", theme.fg("accent", `mcp:${mcpManager.getStatuses().filter((x) => x.connected).length}`));
-          ctx.ui.notify(formatPanel(theme, "MCP Disabled", `${theme.fg("error", sName)} disconnected and marked disabled.`, "warning"), "info");
+          const result = await disableMcpServer({ manager: mcpManager, name: sName });
+          if (result.kind === "unknown-server") {
+            ctx.ui.notify(`Unknown server: ${theme.fg("error", sName)}`, "warning");
+          } else if (result.kind === "failed") {
+            ctx.ui.notify(`MCP disable failed: ${result.error}`, "warning");
+          } else {
+            ctx.ui.setStatus("harness-mcp", theme.fg("accent", `mcp:${result.connectedCount}`));
+            ctx.ui.notify(formatPanel(theme, "MCP Disabled", `${theme.fg("error", sName)} disconnected and marked disabled.`, "warning"), "info");
+          }
 
         } else if (verb === "connect") {
           ctx.ui.notify(`Connecting ${theme.fg("accent", sName)}…`, "info");
-          await mcpManager.connectServer(pi, sName);
-          const s = mcpManager.getStatuses().find((x) => x.name === sName);
-          ctx.ui.notify(s?.error
-            ? formatPanel(theme, "Connect Failed", `${theme.fg("error", sName)}: ${s.error}`, "error")
-            : formatPanel(theme, "MCP Connected", `${theme.fg("success", sName)} — ${s?.toolCount ?? 0} tool(s).`, "dim"), s?.error ? "warning" : "info");
+          const result = await connectMcpServer({ manager: mcpManager, pi, name: sName });
+          if (result.kind === "unknown-server") {
+            ctx.ui.notify(`Unknown server: ${theme.fg("error", sName)}`, "warning");
+          } else if (result.kind === "failed") {
+            ctx.ui.notify(
+              formatPanel(theme, "Connect Failed", `${theme.fg("error", sName)}: ${result.status?.error ?? result.error}`, "error"),
+              "warning",
+            );
+          } else {
+            ctx.ui.notify(formatPanel(theme, "MCP Connected", `${theme.fg("success", sName)} — ${result.status?.toolCount ?? 0} tool(s).`, "dim"), "info");
+          }
 
         } else if (verb === "disconnect") {
-          mcpManager.disconnectServer(sName);
-          ctx.ui.setStatus("harness-mcp", theme.fg("accent", `mcp:${mcpManager.getStatuses().filter((x) => x.connected).length}`));
-          ctx.ui.notify(formatPanel(theme, "MCP Disconnected", `${theme.fg("accent", sName)} disconnected (run /mcp connect ${sName} to reconnect).`, "dim"), "info");
+          const result = disconnectMcpServer({ manager: mcpManager, name: sName });
+          if (result.kind === "unknown-server" || result.kind === "not-connected") {
+            ctx.ui.notify(`${theme.fg("error", sName)} is not connected.`, "warning");
+          } else if (result.kind === "failed") {
+            ctx.ui.notify(`MCP disconnect failed: ${result.error}`, "warning");
+          } else {
+            ctx.ui.setStatus("harness-mcp", theme.fg("accent", `mcp:${result.connectedCount}`));
+            ctx.ui.notify(formatPanel(theme, "MCP Disconnected", `${theme.fg("accent", sName)} disconnected (run /mcp connect ${sName} to reconnect).`, "dim"), "info");
+          }
 
         } else if (verb === "auth" || verb === "reauth") {
           const config = mcpManager.getConfig(sName);
@@ -600,11 +623,14 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
             }
           }
           ctx.ui.notify(`Credentials saved. Reconnecting ${theme.fg("accent", sName)}…`, "info");
-          await mcpManager.connectServer(pi, sName);
-          const s = mcpManager.getStatuses().find((x) => x.name === sName);
-          ctx.ui.notify(s?.error
-            ? formatPanel(theme, "Reconnect Failed", `${theme.fg("error", sName)}: ${s.error}`, "error")
-            : formatPanel(theme, "Auth Complete", `${theme.fg("success", sName)} — ${s?.toolCount ?? 0} tool(s) ready.`, "dim"), s?.error ? "warning" : "info");
+          const reconnect = await connectMcpServer({ manager: mcpManager, pi, name: sName });
+          if (reconnect.kind === "unknown-server") {
+            ctx.ui.notify(`Unknown server: ${theme.fg("error", sName)}`, "warning");
+          } else if (reconnect.kind === "failed") {
+            ctx.ui.notify(formatPanel(theme, "Reconnect Failed", `${theme.fg("error", sName)}: ${reconnect.status?.error ?? reconnect.error}`, "error"), "warning");
+          } else {
+            ctx.ui.notify(formatPanel(theme, "Auth Complete", `${theme.fg("success", sName)} — ${reconnect.status?.toolCount ?? 0} tool(s) ready.`, "dim"), "info");
+          }
         }
         return;
       }
@@ -723,9 +749,6 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       const modelStr = model ? (model.name || model.id) : "none";
       const thinkingStr = thinking && thinking !== "off" ? thinking : "off";
       const modeStr = String(defaultTaskType ?? "explore (default)");
-      const specStr = active
-        ? `${formatValue(theme, active.tier, "accent")} ${theme.fg("dim", "—")} "${active.goal.length > 60 ? `${active.goal.slice(0, 57)}…` : active.goal}"`
-        : theme.fg("dim", "none");
 
       let contextStr = theme.fg("dim", "unknown");
       if (usage) {
@@ -735,19 +758,15 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         contextStr = `${formatValue(theme, tok, "accent")} tokens  ${theme.fg("dim", "(")}${usage.percent && usage.percent > 0.8 ? theme.fg("warning", pct) : theme.fg("success", pct)} of ${wk}k${theme.fg("dim", ")")}`;
       }
 
-      const policyStr = `${formatValue(theme, policy.preset, "accent")}  ${theme.fg("dim", "—")}  ${policy.rules.length} rules  ${theme.fg("dim", "—")}  audit ${policy.audit.enabled ? theme.fg("success", "on") : theme.fg("dim", "off")}`;
-
-      const lines = [
-        `${formatLabel(theme, "Model:", 10)} ${formatValue(theme, modelStr, "accent")}`,
-        `${formatLabel(theme, "Thinking:", 10)} ${formatValue(theme, thinkingStr, "accent")}`,
-        `${formatLabel(theme, "Mode:", 10)} ${formatValue(theme, modeStr, "accent")}`,
-        `${formatLabel(theme, "Spec:", 10)} ${specStr}`,
-        `${formatLabel(theme, "Context:", 10)} ${contextStr}`,
-        `${formatLabel(theme, "Policy:", 10)} ${policyStr}`,
-        `${formatLabel(theme, "Yolo:", 10)} ${permissions.isYolo ? theme.fg("warning", "⚡ ON — all checks bypassed") : theme.fg("dim", "off")}`,
-      ];
-
-      const panel = formatPanel(theme, "Session Snapshot", lines, permissions.isYolo ? "warning" : "dim");
+      const panel = renderSessionSnapshotPanel(theme, {
+        modelStr,
+        thinkingStr,
+        modeStr,
+        spec: active,
+        contextStr,
+        policy,
+        yolo: permissions.isYolo,
+      });
       ctx.ui.notify(panel, "info");
     },
   });
@@ -764,26 +783,8 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         );
         return;
       }
-      const results = spec.verify();
-      const passed = results.filter(r => r.passed).length;
-      const total = results.length;
-      const criteriaLines = results.map(r =>
-        `  ${r.passed ? theme.fg("success", "✓") : theme.fg("dim", "·")} ${theme.fg("muted", `[${r.criterion.id}]`)}  ${r.criterion.statement}`,
-      );
-
-      const statusColor = passed === total && total > 0 ? "success" : "warning";
-      
-      const lines = [
-        `${formatLabel(theme, "Spec ID:", 10)}  ${theme.fg("dim", active.id)}`,
-        `${formatLabel(theme, "Tier:", 10)}  ${formatValue(theme, active.tier, "accent")}  ${theme.fg("dim", `[${active.approvalStatus}]`)}`,
-        `${formatLabel(theme, "Goal:", 10)}  ${active.goal}`,
-        `${formatLabel(theme, "Criteria:", 10)}  ${theme.fg(statusColor, `${passed}/${total}`)} passed`,
-        ...criteriaLines,
-      ];
-      if (active.constraints.length > 0) lines.push(`${formatLabel(theme, "Constraints:", 12)} ${active.constraints.map(c => theme.fg("accent", c)).join(", ")}`);
-      if (active.risks.length > 0) lines.push(`${formatLabel(theme, "Risks:", 12)} ${active.risks.map(r => theme.fg("error", r)).join(", ")}`);
-      const panel = formatPanel(theme, "Active Spec", lines, statusColor);
-      ctx.ui.notify(panel, total > 0 && passed === total ? "info" : "warning");
+      const presentation = renderSpecVerificationPanel(theme, active, spec.verify());
+      ctx.ui.notify(presentation.panel, presentation.notification);
     },
   });
 
@@ -792,29 +793,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     handler: async (ctx) => {
       const policy = await policyPromise;
       const theme = ctx.ui.theme;
-      const count = (d: string) => policy.rules.filter(r => r.decision === d).length;
-      const auditStr = policy.audit.enabled
-        ? `${theme.fg("success", "on")}  ${theme.fg("dim", "→")}  ${theme.fg("accent", policy.audit.path ?? ".harness/audit.jsonl")}`
-        : theme.fg("dim", "off");
-      const lines = [
-        `${formatLabel(theme, "Preset:", 10)} ${formatValue(theme, policy.preset, "accent")}`,
-        `${formatLabel(theme, "Rules:", 10)} ${policy.rules.length} total  ${theme.fg("dim", "(")}${theme.fg("success", String(count("allow")))} allow / ${theme.fg("warning", String(count("ask")))} ask / ${theme.fg("error", String(count("deny")))} deny${theme.fg("dim", ")")}`,
-        `${formatLabel(theme, "Audit:", 10)} ${auditStr}`,
-        `${formatLabel(theme, "Headless:", 10)} ${formatValue(theme, policy.headless.defaultDecision, "accent")} by default`,
-      ];
-      if (policy.rules.length > 0) {
-        lines.push("", theme.bold("Rules:"));
-        for (const rule of policy.rules) {
-          const target = rule.pattern
-            ? `${rule.capability}:${rule.pattern}`
-            : rule.commandFamily
-              ? `${rule.capability}[${rule.commandFamily}]`
-              : rule.capability;
-          lines.push(`  ${formatBadge(theme, rule.decision)} ${theme.fg("dim", rule.id.padEnd(20, " "))} ${theme.fg("accent", target)}`);
-        }
-      }
-      const panel = formatPanel(theme, "Active Policy", lines, "dim");
-      ctx.ui.notify(panel, "info");
+      ctx.ui.notify(renderPolicyPanel(theme, policy), "info");
     },
   });
 
@@ -846,15 +825,9 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         .filter(Boolean)
         .slice(-10)
         .map(line => { try { return JSON.parse(line); } catch { return null; } })
-        .filter(Boolean);
+        .filter((e): e is AuditEvent => e !== null);
       if (entries.length === 0) { ctx.ui.notify("Audit log is empty.", "info"); return; }
-      const rows = entries.map((e: any) => {
-        const time = new Date(e.timestamp).toLocaleTimeString();
-        const decisionFormatted = e.decision === "allow" ? theme.fg("success", e.decision) : e.decision === "deny" ? theme.fg("error", e.decision) : theme.fg("warning", e.decision);
-        return `  ${formatBadge(theme, e.decision)} ${theme.fg("dim", `[${time}]`)}  ${theme.fg("accent", e.toolName.padEnd(8, " "))} ${theme.fg("dim", "→")}  ${e.target.value}  ${theme.fg("dim", "[")}${decisionFormatted}${theme.fg("dim", "]")}`;
-      });
-      const panel = formatPanel(theme, `Audit Log (${entries.length})`, rows, "dim");
-      ctx.ui.notify(panel, "info");
+      ctx.ui.notify(renderAuditPanel(theme, entries), "info");
     },
   });
 
@@ -954,15 +927,12 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   pi.on("session_shutdown", () => {
     mcpManager?.disconnect();
   });
-
   // ── Spec classification + session reset on each prompt ─────────────
   pi.on("before_agent_start", async (event, ctx) => {
     ctx.ui.setHeader(undefined);
     permissions.clearSessionRules();  // clear deny rules from any prior rejection
-    spec.reset();
-    const specFlag = pi.getFlag("spec") === true;
-    const tier = spec.classify(event.prompt, specFlag);
-    spec.generate(event.prompt, tier);
+    spec.startTurn(event.prompt, pi.getFlag("spec") === true);
+
 
     // ── Memory: save corrections, inject preferences ───────────────
     const memoryPath = join(process.cwd(), ".harness", "memory.json");
@@ -1074,12 +1044,8 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     await makeAfterToolHandler(spec)(event);
   });
 
-  // ── Spec verification after each run ───────────────────────────────
   pi.on("agent_end", async (event, ctx: ExtensionContext) => {
-    for (const text of extractAssistantText(event.messages)) {
-      spec.collectOutput(text);
-    }
-    const results = spec.verify();
+    const results = spec.finishTurn(event.messages);
     if (results.length === 0) return;
     const theme = ctx.ui.theme ?? noopTheme;
     const passed = results.filter((r) => r.passed).length;
@@ -1124,7 +1090,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
             ? "explore"
             : (params.type ?? defaultTaskType ?? await chooseTaskType(_ctx.hasUI, _ctx.ui));
           const resolvedParams = { ...params, type } as { type: NonNullable<TaskParams["type"]>; goal: string; context?: string };
-          const result = await _executeTask(resolvedParams, signal, onUpdate as any, policy);
+          const result = await _executeTask(resolvedParams, signal, onUpdate as Parameters<typeof _executeTask>[2], policy);
           return { content: [{ type: "text" as const, text: result }], details: undefined };
         } catch (err) {
           return {
