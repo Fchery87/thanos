@@ -22,35 +22,38 @@ export const TodoInitPhaseSchema = Type.Object({
   items: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
 });
 
-export const TodoInitParamsSchema = Type.Object({
-  op: Type.Literal("init"),
-  list: Type.Array(TodoInitPhaseSchema, { minItems: 1 }),
+export const TodoParamsSchema = Type.Object({
+  op: Type.Union([
+    Type.Literal("init"),
+    Type.Literal("done"),
+    Type.Literal("drop"),
+    Type.Literal("append"),
+    Type.Literal("note"),
+    Type.Literal("export"),
+    Type.Literal("import"),
+  ], { description: "Operation to apply to the todo state" }),
+  list: Type.Optional(Type.Array(TodoInitPhaseSchema, {
+    minItems: 1,
+    description: "Required when op is init",
+  })),
+  task: Type.Optional(Type.String({
+    minLength: 1,
+    description: "Required when op is done, drop, or note",
+  })),
+  phase: Type.Optional(Type.String({
+    minLength: 1,
+    description: "Required when op is append",
+  })),
+  items: Type.Optional(Type.Array(Type.String({ minLength: 1 }), {
+    minItems: 1,
+    description: "Required when op is append",
+  })),
+  text: Type.Optional(Type.String({
+    minLength: 1,
+    description: "Required when op is note",
+  })),
+  markdown: Type.Optional(Type.String({ description: "Required when op is import" })),
 });
-
-const TodoDoneSchema = Type.Object({ op: Type.Literal("done"), task: Type.String({ minLength: 1 }) });
-const TodoDropSchema = Type.Object({ op: Type.Literal("drop"), task: Type.String({ minLength: 1 }) });
-const TodoAppendSchema = Type.Object({
-  op: Type.Literal("append"),
-  phase: Type.String({ minLength: 1 }),
-  items: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
-});
-const TodoNoteSchema = Type.Object({
-  op: Type.Literal("note"),
-  task: Type.String({ minLength: 1 }),
-  text: Type.String({ minLength: 1 }),
-});
-const TodoExportSchema = Type.Object({ op: Type.Literal("export") });
-const TodoImportSchema = Type.Object({ op: Type.Literal("import"), markdown: Type.String() });
-
-export const TodoParamsSchema = Type.Union([
-  TodoInitParamsSchema,
-  TodoDoneSchema,
-  TodoDropSchema,
-  TodoAppendSchema,
-  TodoNoteSchema,
-  TodoExportSchema,
-  TodoImportSchema,
-]);
 
 export type TodoOperation =
   | { op: "init"; list: Array<{ phase: string; items: string[] }> }

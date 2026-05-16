@@ -10,7 +10,7 @@
   "theme": "brogrammer",
   "defaultThinkingLevel": "high",
   "defaultProvider": "theclawbay",
-  "defaultModel": "gpt-5.4-mini",
+  "defaultModel": "gpt-5.5",
   "treeFilterMode": "default",
   "quietStartup": true
 }

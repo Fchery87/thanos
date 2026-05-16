@@ -1079,7 +1079,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
             return { content: [{ type: "text" as const, text: exportTodoMarkdown(todoState) }], details: undefined };
           }
           todoState = applyTodoOperation(todoState, params);
-          return { content: [{ type: "text" as const, text: JSON.stringify(todoState) }], details: undefined };
+          return { content: [{ type: "text" as const, text: exportTodoMarkdown(todoState) }], details: undefined };
         } catch (err) {
           return { content: [{ type: "text" as const, text: String(err) }], isError: true, details: undefined };
         }
