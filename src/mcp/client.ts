@@ -50,7 +50,7 @@ export class StdioMCPClient implements MCPClient {
 
     await new Promise<void>((resolve, reject) => {
       const proc = spawn(command, args, {
-        stdio: ["pipe", "pipe", "inherit"],
+        stdio: ["pipe", "pipe", "ignore"],
         env: { ...process.env, ...env },
       });
 

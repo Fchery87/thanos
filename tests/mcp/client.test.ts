@@ -106,7 +106,7 @@ describe("StdioMCPClient", () => {
     // Env should include MY_VAR merged with process.env
     expect(spawnOpts.env).toMatchObject({ MY_VAR: "hello" });
     // stdio should be configured for piping
-    expect(spawnOpts.stdio).toEqual(["pipe", "pipe", "inherit"]);
+    expect(spawnOpts.stdio).toEqual(["pipe", "pipe", "ignore"]);
 
     client.disconnect();
   });
