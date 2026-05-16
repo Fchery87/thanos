@@ -63,4 +63,27 @@ describe("verifyCriteria", () => {
     expect(results[1]?.passed).toBe(true);
     expect(results[1]?.evidence).toEqual(["manual ok"]);
   });
+
+  // Task 16: empty acceptanceCriteria → one failed synthetic result
+  it("returns a single failed result when acceptanceCriteria is empty", () => {
+    const emptySpec: FormalSpec = {
+      id: "spec-empty",
+      tier: "ambient",
+      status: "active",
+      approvalStatus: "not_required",
+      goal: "Some goal",
+      allowedCapabilities: ["read"],
+      constraints: [],
+      acceptanceCriteria: [],
+      targetFiles: [],
+      risks: [],
+      createdAt: 1,
+    };
+
+    const results = verifyCriteria(emptySpec, []);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.passed).toBe(false);
+    expect(results[0]?.criterion.statement).toContain("No verifiable criteria");
+  });
 });

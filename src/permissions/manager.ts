@@ -30,6 +30,7 @@ export class PermissionManager {
   }
 
   remember(capability: Capability | "*", pattern: string, decision: Decision): void {
+    if (!pattern || !pattern.trim()) throw new Error("pattern required — use \"**\" for wildcard intent");
     this.rules.push({ capability, pattern, decision, source: "session" });
   }
 

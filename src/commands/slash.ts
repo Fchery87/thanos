@@ -7,6 +7,7 @@ import { capabilityForTool } from "../governance/tool-call";
 import type { PolicyLoadState } from "../policy/state";
 import type { SpecEngine } from "../spec/engine";
 import type { TaskParams } from "../agents/task-tool";
+import { runWorktreeGc } from "../agents/task-tool";
 import { formatBadge, formatLabel, formatValue, formatPanel } from "../ui-utils";
 import { renderAuditPanel, renderPolicyPanel, renderSessionSnapshotPanel, renderSpecVerificationPanel } from "../commands/presenters";
 
@@ -252,6 +253,39 @@ export function registerSlashCommands(
         yolo: permissions.isYolo,
       });
       ctx.ui.notify(panel, "info");
+    },
+  });
+
+  // ── /worktree ─────────────────────────────────────────────────────────────
+  pi.registerCommand("worktree", {
+    description: "Manage subagent worktrees. Usage: /worktree gc",
+    handler: async (args, ctx) => {
+      const theme = ctx.ui.theme;
+      const sub = (args ?? "").trim().toLowerCase();
+
+      if (sub !== "gc") {
+        ctx.ui.notify(
+          formatPanel(theme, "Worktree", "Usage: /worktree gc — remove orphaned worktrees from crashed runs", "dim"),
+          "info",
+        );
+        return;
+      }
+
+      ctx.ui.notify(formatPanel(theme, "Worktree GC", "Scanning for orphaned worktrees…", "dim"), "info");
+      try {
+        const removed = await runWorktreeGc(process.cwd());
+        if (removed.length === 0) {
+          ctx.ui.notify(formatPanel(theme, "Worktree GC", theme.fg("success", "No orphaned worktrees found."), "dim"), "info");
+        } else {
+          const lines = removed.map((wt) => `  ${theme.fg("dim", "removed")} ${wt.branch}`);
+          ctx.ui.notify(
+            formatPanel(theme, `Worktree GC — ${removed.length} removed`, lines, "dim"),
+            "info",
+          );
+        }
+      } catch (err) {
+        ctx.ui.notify(formatPanel(theme, "Worktree GC Error", String(err), "error"), "warning");
+      }
     },
   });
 }

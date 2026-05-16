@@ -17,7 +17,7 @@ import { registerSlashCommands } from "./commands/slash";
 import { MCPManager } from "./mcp/manager";
 import { loadMcpConfigs, mcpConfigPaths } from "./mcp/config";
 import { writeServerSecrets, readServerSecrets } from "./mcp/state";
-import { runOAuthFlow, probeOAuth } from "./mcp/oauth";
+import { runOAuthFlow, probeOAuth, fetchOAuthMeta } from "./mcp/oauth";
 import {
   connectMcpServer,
   disableMcpServer,
@@ -70,6 +70,8 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   const subagentRole = process.env.HARNESS_SUBAGENT; // undefined | "1" | "reviewer"
   const isSubagent = !!subagentRole;
   const isReviewer = subagentRole === "reviewer";
+  const sessionId = crypto.randomUUID();
+  const agentType = isSubagent ? "subagent" : "parent" as const;
   let defaultTaskType: TaskParams["type"] | undefined;
   let todoState: TodoState = createTodoState([]);
   let reviewFindings: ReviewFinding[] = [];
@@ -92,6 +94,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   const mcpManager = isSubagent ? null : new MCPManager();
 
   pi.on("session_start", async (event, ctx) => {
+    reviewFindings = [];
     if (!mcpManager) return;
 
     const theme = ctx.ui.theme;
@@ -392,8 +395,16 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
               "info",
             );
             try {
-              const { accessToken } = await runOAuthFlow(config.url);
-              await writeServerSecrets(name, { headers: { Authorization: `Bearer ${accessToken}` } });
+              const { accessToken, refreshToken } = await runOAuthFlow(config.url);
+              const oauthMeta = await fetchOAuthMeta(config.url);
+              await writeServerSecrets(name, {
+                headers: { Authorization: `Bearer ${accessToken}` },
+                oauth: {
+                  refreshToken,
+                  tokenEndpoint: oauthMeta?.token_endpoint,
+                  clientId: "pi-harness",
+                },
+              });
             } catch (err) {
               ctx.ui.notify(
                 formatPanel(theme, "OAuth Failed", String(err), "error"),
@@ -574,8 +585,16 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
                 "info",
               );
               try {
-                const { accessToken } = await runOAuthFlow(config.url);
-                await writeServerSecrets(sName, { headers: { Authorization: `Bearer ${accessToken}` } });
+                const { accessToken, refreshToken } = await runOAuthFlow(config.url);
+                const oauthMeta = await fetchOAuthMeta(config.url);
+                await writeServerSecrets(sName, {
+                  headers: { Authorization: `Bearer ${accessToken}` },
+                  oauth: {
+                    refreshToken,
+                    tokenEndpoint: oauthMeta?.token_endpoint,
+                    clientId: "pi-harness",
+                  },
+                });
               } catch (err) {
                 ctx.ui.notify(
                   formatPanel(theme, "OAuth Failed", String(err), "error"),
@@ -994,6 +1013,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       approveSpec,
       policy,
       auditLogger,
+      { sessionId, agentType },
     );
     const result = await handler(event);
     if (result?.block) return { block: true, reason: result.reason };
@@ -1031,15 +1051,14 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
 
   // ── Spec output collection ─────────────────────────────────────────
   (pi as { on(event: "tool_result", handler: (event: Parameters<ReturnType<typeof makeAfterToolHandler>>[0]) => ReturnType<ReturnType<typeof makeAfterToolHandler>>): void }).on("tool_result", (event) => {
-    const policyState = policyStatePromise;
-    return policyState.then((state) => {
+    return policyStatePromise.then((state) => {
       const auditLogger = state.kind === "ok" && state.policy.audit.enabled
         ? new AuditLogger(state.policy.audit.path ?? join(process.cwd(), ".harness", "audit.jsonl"))
         : undefined;
-      return makeAfterToolHandler(spec, auditLogger, {
-        sessionId: "unknown",
-        agentType: isSubagent ? "subagent" : "parent",
-      })(event);
+      return makeAfterToolHandler(spec, auditLogger, { sessionId, agentType })(event);
+    }).catch((err) => {
+      console.error("[harness][tool_result]", err instanceof Error ? err.message : String(err));
+      return undefined;
     });
   });
 

@@ -69,7 +69,7 @@ describe("evaluateGovernedToolCall", () => {
 
     const result = evaluateGovernedToolCall("read", { file_path: ".env.local" }, policy);
 
-    expect(result.policyDecision).toEqual({ decision: "deny", ruleId: "deny-env", pattern: ".env*" });
+    expect(result.policyDecision).toEqual({ decision: "deny", ruleId: "builtin-deny-env-read", pattern: ".env*" });
     expect(result.auditTarget).toEqual({ kind: "pattern", value: ".env*" });
   });
 });

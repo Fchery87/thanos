@@ -7,7 +7,7 @@
 //
 // Neither file is ever written to the mcp.json config files, keeping secrets
 // and runtime state out of version-controlled config.
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rename, chmod, copyFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 
@@ -28,6 +28,12 @@ export interface ServerSecrets {
   env?: Record<string, string>;
   /** Extra headers to merge into an HTTP server's request headers. */
   headers?: Record<string, string>;
+  /** OAuth refresh credentials for automatic token renewal. */
+  oauth?: {
+    refreshToken?: string;
+    tokenEndpoint?: string;
+    clientId?: string;
+  };
 }
 
 export type McpSecrets = Record<string, ServerSecrets>;
@@ -67,13 +73,34 @@ export async function setServerDisabled(name: string, disabled: boolean): Promis
 // ─── Secrets helpers ──────────────────────────────────────────────────────────
 
 export async function readMcpSecrets(): Promise<McpSecrets> {
+  let raw: string;
   try {
-    const raw = await readFile(SECRETS_PATH, "utf-8");
+    raw = await readFile(SECRETS_PATH, "utf-8");
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === "ENOENT") {
+      // First run — file simply doesn't exist yet. Silently return empty.
+      return {};
+    }
+    console.error("[harness][mcp] Failed to read mcp-secrets.json:", err.message);
+    return {};
+  }
+
+  try {
     const parsed = JSON.parse(raw) as McpSecrets;
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
+    console.error(
+      "[harness][mcp] mcp-secrets.json is corrupted — resetting to empty. Backup at mcp-secrets.json.bak",
+    );
+    try { await copyFile(SECRETS_PATH, SECRETS_PATH + ".bak"); } catch { /* ignore */ }
     return {};
   }
+}
+
+/** Retro-fix file permissions for existing installs (called on activation). */
+export async function fixSecretsPermissions(): Promise<void> {
+  try { await chmod(SECRETS_PATH, 0o600); } catch { /* ignore if file doesn't exist */ }
 }
 
 export async function readServerSecrets(name: string): Promise<ServerSecrets> {
@@ -96,5 +123,7 @@ export async function writeServerSecrets(name: string, patch: ServerSecrets): Pr
   // Clean up empty sub-objects
   if (all[name].env     && Object.keys(all[name].env!).length     === 0) delete all[name].env;
   if (all[name].headers && Object.keys(all[name].headers!).length === 0) delete all[name].headers;
-  await writeFile(SECRETS_PATH, JSON.stringify(all, null, 2) + "\n", "utf-8");
+  const tmp = SECRETS_PATH + ".tmp";
+  await writeFile(tmp, JSON.stringify(all, null, 2) + "\n", { encoding: "utf-8", mode: 0o600 });
+  await rename(tmp, SECRETS_PATH);
 }

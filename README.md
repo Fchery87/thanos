@@ -108,6 +108,8 @@ The `task` tool lets Thanos hand off focused work to specialists:
 | `reviewer` | read + can spawn explore | Code review |
 | `designer` | read + write | UI/UX work |
 
+> **Spawn depth:** Reviewer subagents may spawn `explore` subagents (depth 1 only). All other specialist subagents (`explore`, `plan`, `build`, `designer`) are leaf nodes — they cannot spawn further subagents.
+
 ### Governed interaction primitives
 
 Thanos also ships governed interaction tools for structured human decisions and review flow:
@@ -149,6 +151,8 @@ Team and ci presets include built-in sensitive-read deny rules. If the policy fi
 
 Audit events are written to `.harness/audit.jsonl` (gitignored). View the last 10 entries with `Ctrl+Shift+A` inside Thanos.
 Set `HARNESS_POLICY_FILE=/path/to/harness.policy.json` to point Thanos at a different policy file.
+
+**Rule precedence:** Policy File rules use **first-match-wins** evaluation (the first matching rule wins — predictable for security). Session-remembered rules (`PermissionManager`) use **last-match-wins** (your most recent decision is the final word). The two layers are intentionally different: policy is deterministic by design; session overrides are recency-weighted by design.
 
 Add rules to restrict or allow specific capabilities, paths, or command families:
 

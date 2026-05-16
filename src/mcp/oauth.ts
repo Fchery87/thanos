@@ -163,7 +163,7 @@ async function exchangeCode(opts: {
   verifier: string;
   clientId: string;
   redirectUri: string;
-}): Promise<string> {
+}): Promise<{ accessToken: string; refreshToken?: string }> {
   const body = new URLSearchParams({
     grant_type:    "authorization_code",
     code:          opts.code,
@@ -184,11 +184,11 @@ async function exchangeCode(opts: {
     throw new Error(`Token exchange failed (${resp.status}): ${text || resp.statusText}`);
   }
 
-  const data = await resp.json() as { access_token?: string; error?: string; error_description?: string };
+  const data = await resp.json() as { access_token?: string; refresh_token?: string; error?: string; error_description?: string };
   if (!data.access_token) {
     throw new Error(`No access_token in response: ${data.error_description ?? data.error ?? "unknown"}`);
   }
-  return data.access_token;
+  return { accessToken: data.access_token, refreshToken: data.refresh_token };
 }
 
 // ─── Dynamic client registration (RFC 7591) ───────────────────────────────────
@@ -219,6 +219,41 @@ async function registerClient(registrationEndpoint: string, redirectUri: string)
 
 export interface OAuthFlowResult {
   accessToken: string;
+  refreshToken?: string;
+}
+
+/**
+ * Exchange a refresh token for a new access token.
+ * Call this when an HTTP MCP server returns 401 to get a new access token.
+ */
+export async function refreshAccessToken(opts: {
+  tokenEndpoint: string;
+  refreshToken: string;
+  clientId: string;
+}): Promise<string> {
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: opts.refreshToken,
+    client_id: opts.clientId,
+  });
+
+  const resp = await fetch(opts.tokenEndpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`Token refresh failed (${resp.status}): ${text || resp.statusText}`);
+  }
+
+  const data = await resp.json() as { access_token?: string; error?: string; error_description?: string };
+  if (!data.access_token) {
+    throw new Error(`No access_token in refresh response: ${data.error_description ?? data.error ?? "unknown"}`);
+  }
+  return data.access_token;
 }
 
 /**
@@ -286,7 +321,7 @@ export async function runOAuthFlow(
 
   const { code } = await Promise.race([cb.result, timeout]);
 
-  const accessToken = await exchangeCode({
+  const { accessToken, refreshToken } = await exchangeCode({
     tokenEndpoint: meta.token_endpoint,
     code,
     verifier,
@@ -294,5 +329,5 @@ export async function runOAuthFlow(
     redirectUri,
   });
 
-  return { accessToken };
+  return { accessToken, refreshToken };
 }

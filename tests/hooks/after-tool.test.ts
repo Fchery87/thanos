@@ -81,6 +81,89 @@ describe("makeAfterToolHandler", () => {
   });
 });
 
+describe("truncateContextOutput — error/warning anchor preservation", () => {
+  // Build a 12000-char string: 5000 head + 4000 middle (with error at position 6500) + 3000 tail
+  // With new config (head=5000, tail=3000): middle = 4000 chars, error at position 6500 would fall
+  // in the middle (positions 5000..8999) and be rescued by anchor scanning.
+  // With old config (head=6800, tail=1200): error at 6500 is in HEAD and tail is too small to include
+  // much — but this test cares about anchor scanning, so we verify the error line appears in output.
+
+  it("preserves Error: lines from the dropped middle section via anchor scanning", async () => {
+    const spec = new SpecEngine();
+    // 12000-char string: error at position 7000.
+    // With head=5000, tail=3000: middle is positions 5000..8999. Error at 7000 is in middle → rescued.
+    // (Old head=6800 included position 7000 in head? No — 7000 >= 6800, so it was ALSO in old middle.)
+    // Either way, we verify the error appears in the output after the fix.
+    const errorLine = "Error: connection refused to database";
+    // error must be on its own line so the ^ anchor in the regex can match it
+    const part1 = "a".repeat(6999) + "\n";   // positions 0-6999 (with newline before error)
+    const part3 = errorLine + "\n";          // position 7000
+    const totalLen = 12_000;
+    const part4 = "c".repeat(totalLen - 7000 - errorLine.length - 1 - 3000);  // filler
+    const part5 = "d".repeat(3000);          // tail
+    const oversized = part1 + part3 + part4 + part5;
+    expect(oversized.length).toBe(totalLen);
+
+    const result = await makeAfterToolHandler(spec)({
+      type: "tool_result",
+      toolCallId: "call-ctx",
+      toolName: "ctx_run",
+      input: {},
+      content: [{ type: "text", text: oversized }],
+      isError: false,
+      details: {},
+    });
+
+    const output = result?.content?.[0]?.text ?? "";
+    expect(output).toContain(errorLine);
+    expect(output).toContain("truncated");
+    expect(output.length).toBeLessThan(oversized.length);
+  });
+
+  it("uses a 3000-char tail so content 2500 chars from the end is preserved", async () => {
+    const spec = new SpecEngine();
+    // 12000-char string with a unique marker 2500 chars from the end.
+    // Old tail=1200 would NOT capture it. New tail=3000 MUST capture it.
+    const marker = "UNIQUE_TAIL_MARKER_2500_FROM_END";
+    const total = 12_000;
+    const markerPos = total - 2500;
+    const oversized =
+      "x".repeat(markerPos) + marker + "y".repeat(total - markerPos - marker.length);
+
+    const result = await makeAfterToolHandler(spec)({
+      type: "tool_result",
+      toolCallId: "call-ctx2",
+      toolName: "ctx_search",
+      input: {},
+      content: [{ type: "text", text: oversized }],
+      isError: false,
+      details: {},
+    });
+
+    const output = result?.content?.[0]?.text ?? "";
+    expect(output).toContain(marker);
+  });
+
+  it("does not add high-signal anchors section when middle has no matching lines", async () => {
+    const spec = new SpecEngine();
+    const oversized = "a".repeat(12_000);
+
+    const result = await makeAfterToolHandler(spec)({
+      type: "tool_result",
+      toolCallId: "call-ctx3",
+      toolName: "ctx_execute",
+      input: {},
+      content: [{ type: "text", text: oversized }],
+      isError: false,
+      details: {},
+    });
+
+    const output = result?.content?.[0]?.text ?? "";
+    expect(output).toContain("truncated");
+    expect(output).not.toContain("High-signal lines");
+  });
+});
+
 describe("after tool interaction audit", () => {
   it("records safe ask metadata after execution", async () => {
     const spec = { recordToolResult: vi.fn() };

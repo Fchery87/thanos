@@ -11,6 +11,11 @@ export interface BlockResult { block: true; reason: string; }
 type PromptUser = (message: string) => Promise<boolean>;
 type ApproveSpec = (spec: FormalSpec) => Promise<boolean>;
 
+export interface AuditContext {
+  sessionId: string;
+  agentType: "parent" | "subagent";
+}
+
 export function makeBeforeToolHandler(
   permissions: PermissionManager,
   spec: SpecEngine,
@@ -19,6 +24,7 @@ export function makeBeforeToolHandler(
   approveSpec?: ApproveSpec,
   policy?: HarnessPolicy,
   auditLogger?: AuditLogger,
+  auditContext?: AuditContext,
 ) {
   return async (event: { toolName: string; input: Record<string, unknown> }): Promise<BlockResult | undefined> => {
     const { toolName, input } = event;
@@ -32,8 +38,8 @@ export function makeBeforeToolHandler(
     ) => {
       await auditLogger?.record({
         timestamp: new Date().toISOString(),
-        sessionId: "unknown",
-        agentType: "parent",
+        sessionId: auditContext?.sessionId ?? "unknown",
+        agentType: auditContext?.agentType ?? "parent",
         toolName,
         capability,
         decision,
@@ -96,7 +102,7 @@ export function makeBeforeToolHandler(
 
     if (decision === "ask" || tier === "high" || tier === "critical") {
       if (!hasUI) {
-        await recordAudit(policy?.headless.defaultDecision ?? "deny");
+        await recordAudit("deny");
         return { block: true, reason: `${toolName} requires confirmation but no UI available` };
       }
       const label = tier === "critical" ? "⚠ CRITICAL" : "⚠ HIGH RISK";

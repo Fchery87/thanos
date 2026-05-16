@@ -121,6 +121,9 @@ export async function loadAgent(type: AgentType): Promise<AgentDefinition> {
     const raw = await readFile(join(agentDir(), `${type}.md`), "utf-8");
     return parseFrontmatter(raw);
   } catch {
+    process.stderr.write(
+      `[harness] No agent definition found for type "${type}" — falling back to generic prompt. Create agent/agents/${type}.md to define capability ceiling.\n`,
+    );
     return { body: `You are a ${type} specialist. Complete the task given to you.` };
   }
 }

@@ -2,7 +2,14 @@ import { Type } from "typebox";
 
 export type TodoStatus = "pending" | "in_progress" | "completed" | "abandoned";
 
+let _todoIdCounter = 0;
+function nextTodoId(): string {
+  _todoIdCounter += 1;
+  return String(_todoIdCounter);
+}
+
 export interface TodoItem {
+  id: string;
   content: string;
   status: TodoStatus;
   notes: string[];
@@ -65,7 +72,7 @@ export type TodoOperation =
   | { op: "import"; markdown: string };
 
 function makeItem(content: string, status: TodoStatus): TodoItem {
-  return { content, status, notes: [] };
+  return { id: nextTodoId(), content, status, notes: [] };
 }
 
 function normalizePhase(phase: TodoPhase): TodoPhase {
@@ -121,6 +128,12 @@ export function createTodoState(list: Array<{ phase: string; items: string[] }>)
 }
 
 function findTask(state: TodoState, task: string): { phase: TodoPhase; item: TodoItem } | undefined {
+  for (const phase of state.phases) {
+    for (const item of phase.items) {
+      if (item.id === task) return { phase, item };
+    }
+  }
+  // Fall back to content match for callers that pass the task text.
   for (const phase of state.phases) {
     for (const item of phase.items) {
       if (item.content === task) return { phase, item };
@@ -226,7 +239,7 @@ export function importTodoMarkdown(markdown: string): TodoState {
 
     const itemMatch = /^- \[(.| )\] (.+)$/.exec(line);
     if (itemMatch && current) {
-      currentItem = { content: itemMatch[2], status: markerToStatus(itemMatch[1] ?? " "), notes: [] };
+      currentItem = { id: nextTodoId(), content: itemMatch[2], status: markerToStatus(itemMatch[1] ?? " "), notes: [] };
       current.items.push(currentItem);
       continue;
     }

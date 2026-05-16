@@ -1,11 +1,11 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { createWorktree, removeWorktree, generateWorktreeId } from "../../src/agents/worktree";
+import { createWorktree, gcWorktrees, removeWorktree, generateWorktreeId } from "../../src/agents/worktree";
 
 const exec = promisify(execFile);
 const dirs: string[] = [];
@@ -85,5 +85,54 @@ describe("generateWorktreeId", () => {
   it("generates unique IDs across 20 calls", () => {
     const ids = new Set(Array.from({ length: 20 }, generateWorktreeId));
     expect(ids.size).toBe(20);
+  });
+});
+
+describe("createWorktree — pid marker file", () => {
+  it("writes .harness-pid containing process.pid to the worktree directory", async () => {
+    const repoDir = await initGitRepo();
+    const wt = await createWorktree(repoDir, "pid12345");
+    const pidFile = join(wt.path, ".harness-pid");
+    expect(existsSync(pidFile)).toBe(true);
+    const contents = await readFile(pidFile, "utf-8");
+    expect(contents.trim()).toBe(String(process.pid));
+  });
+});
+
+describe("gcWorktrees", () => {
+  it("removes worktrees whose pid file references a dead process", async () => {
+    const repoDir = await initGitRepo();
+    // Create a worktree and manually overwrite its pid file with a dead pid (1 is
+    // always alive on Linux, so use a large unrealistic pid for a "dead" process)
+    const wt = await createWorktree(repoDir, "gc000001");
+    // Write a pid that is certainly not alive
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(join(wt.path, ".harness-pid"), "999999999", "utf-8");
+
+    const removed = await gcWorktrees(repoDir);
+
+    expect(removed.length).toBe(1);
+    expect(removed[0]!.branch).toBe(wt.branch);
+    expect(existsSync(wt.path)).toBe(false);
+  });
+
+  it("keeps worktrees whose pid is still alive (current process)", async () => {
+    const repoDir = await initGitRepo();
+    // createWorktree writes process.pid — this process is clearly alive
+    const wt = await createWorktree(repoDir, "gc000002");
+
+    const removed = await gcWorktrees(repoDir);
+
+    expect(removed).toHaveLength(0);
+    expect(existsSync(wt.path)).toBe(true);
+
+    await removeWorktree(repoDir, wt); // cleanup
+  });
+
+  it("resolves to empty array when worktrees directory does not exist", async () => {
+    const repoDir = await initGitRepo();
+    // No .harness/worktrees dir — should not throw
+    const removed = await gcWorktrees(repoDir);
+    expect(removed).toEqual([]);
   });
 });

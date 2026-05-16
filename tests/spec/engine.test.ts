@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SpecEngine } from "../../src/spec/engine";
+import { generateSpec } from "../../src/spec/generator";
 
 describe("SpecEngine lifecycle", () => {
   it("does not create a spec for instant prompts", () => {
@@ -38,6 +39,15 @@ describe("SpecEngine lifecycle", () => {
 
     spec.startTurn("Complete the reporting task with clear updates", false);
     expect(spec.verify().every((result) => !result.evidence.includes("old evidence"))).toBe(true);
+  });
+
+  // Task 15: keywords field must not be populated on generated criteria
+  it("does not populate keywords on generated acceptance criteria", () => {
+    const spec = generateSpec("Add a new feature", "ambient");
+
+    for (const criterion of spec.acceptanceCriteria) {
+      expect(criterion).not.toHaveProperty("keywords");
+    }
   });
 
   it("records assistant text as manual evidence only when a spec exists", () => {

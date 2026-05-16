@@ -1,6 +1,6 @@
 import type { HarnessPolicy, PolicyPreset, PolicyRule } from "./types";
 
-const BUILTIN_SENSITIVE_READ_RULES: PolicyRule[] = [
+export const BUILTIN_SENSITIVE_READ_RULES: PolicyRule[] = [
   {
     id: "builtin-deny-env-read",
     capability: "read",

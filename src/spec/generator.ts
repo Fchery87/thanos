@@ -20,28 +20,24 @@ function buildCriteria(message: string): AcceptanceCriterion[] {
       id: newCriterionId(),
       statement: "Feature added as described",
       evidenceRequired: ["diff"],
-      keywords: ["added", "created", "implemented"],
     });
   if (/\btest/.test(lower))
     criteria.push({
       id: newCriterionId(),
       statement: "Tests written",
       evidenceRequired: ["test"],
-      keywords: ["test", "spec", "passing"],
     });
   if (/\brefactor/.test(lower))
     criteria.push({
       id: newCriterionId(),
       statement: "Code refactored",
       evidenceRequired: ["diff", "command"],
-      keywords: ["refactored", "updated", "simplified"],
     });
   if (criteria.length === 0)
     criteria.push({
       id: newCriterionId(),
       statement: "Task completed",
       evidenceRequired: ["manual"],
-      keywords: ["done", "complete", "created", "updated", "finished"],
     });
 
   return criteria;

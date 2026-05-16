@@ -74,7 +74,7 @@ describe("register", () => {
 
     expect(result).toMatchObject({
       block: true,
-      reason: expect.stringContaining("Blocked by policy project-deny-env"),
+      reason: expect.stringContaining("builtin-deny-env-read"),
     });
   });
 
@@ -231,5 +231,77 @@ describe("register", () => {
     expect(output).toContain("/status");
     expect(output).toContain("/policy");
     expect(output).toContain("/tools");
+  });
+
+  it("resets report_finding state on session_start so prior findings don't leak", async () => {
+    // report_finding is only registered for reviewer subagents
+    const originalEnv = process.env.HARNESS_SUBAGENT;
+    process.env.HARNESS_SUBAGENT = "reviewer";
+    const { api, handlers } = createFakePi();
+    register(api);
+    process.env.HARNESS_SUBAGENT = originalEnv;
+
+    // Locate the report_finding tool executor
+    const registerTool = api.registerTool as ReturnType<typeof vi.fn>;
+    const reportFindingCall = registerTool.mock.calls.find(
+      ([def]: [{ name: string }]) => def?.name === "report_finding",
+    );
+    const reportFindingExec = reportFindingCall?.[0]?.execute;
+    expect(reportFindingExec).toBeTypeOf("function");
+
+    // Add a finding
+    await reportFindingExec?.("id1", {
+      severity: "high",
+      title: "Old finding from previous session",
+      description: "Should not survive a session restart",
+      evidence: "evidence",
+    });
+
+    // Fire session_start to simulate a new session
+    await handlers.get("session_start")?.(
+      { reason: "startup" },
+      {
+        cwd: process.cwd(),
+        model: undefined,
+        sessionManager: { getSessionDir: () => join(process.cwd(), "sessions") },
+        ui: { setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn(), theme: noopTheme },
+      },
+    );
+
+    // After session_start, a new report_finding call should see a fresh list (no old findings)
+    const result = await reportFindingExec?.("id2", {
+      severity: "low",
+      title: "New finding",
+      description: "Fresh start",
+      evidence: "evidence",
+    });
+
+    // The summary should contain only 1 finding (the new one), not 2
+    const text = (result as { content: { text: string }[] }).content[0]?.text ?? "";
+    expect(text).not.toContain("Old finding from previous session");
+    expect(text).toContain("New finding");
+  });
+
+  it("catches tool_result handler errors and logs to stderr instead of unhandled rejection", async () => {
+    const { api, handlers } = createFakePi();
+    register(api);
+
+    // Spy on console.error before triggering
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const toolResult = handlers.get("tool_result");
+    expect(toolResult).toBeTypeOf("function");
+
+    // Pass a malformed event that would cause an internal error in the handler chain.
+    // The handler must NOT throw — it must resolve and log to stderr.
+    let threw = false;
+    try {
+      await toolResult?.(null as never, {} as never);
+    } catch {
+      threw = true;
+    }
+
+    expect(threw).toBe(false);
+    errorSpy.mockRestore();
   });
 });

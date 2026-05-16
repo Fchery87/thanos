@@ -9,7 +9,35 @@ import { loadAgent } from "./loader";
 import { narrowPolicyForAgent } from "./policy";
 import { parseSubagentResult } from "./result";
 import { writeTranscriptMetadata } from "./transcripts";
-import { createWorktree, removeWorktree, generateWorktreeId, type Worktree } from "./worktree";
+import { createWorktree, removeWorktree, generateWorktreeId, gcWorktrees, type Worktree } from "./worktree";
+
+// ── Process-exit worktree cleanup ─────────────────────────────────────────────
+// On SIGINT/SIGTERM, remove any worktrees this process owns before exiting.
+
+let exitHandlersRegistered = false;
+const activeWorktrees = new Map<string, { repoDir: string; worktree: Worktree }>();
+
+function registerExitHandlers(): void {
+  if (exitHandlersRegistered) return;
+  exitHandlersRegistered = true;
+
+  const cleanup = async (signal: NodeJS.Signals) => {
+    for (const [, { repoDir, worktree }] of activeWorktrees) {
+      removeWorktree(repoDir, worktree).catch((err) => {
+        console.error(`[harness][worktree cleanup] Failed to remove ${worktree.path}:`, err instanceof Error ? err.message : String(err));
+      });
+    }
+    activeWorktrees.clear();
+    process.kill(process.pid, signal);
+  };
+
+  process.once("SIGINT",  () => { cleanup("SIGINT").catch(() => {}); });
+  process.once("SIGTERM", () => { cleanup("SIGTERM").catch(() => {}); });
+}
+
+export async function runWorktreeGc(repoDir: string): Promise<Worktree[]> {
+  return gcWorktrees(repoDir);
+}
 import {
   buildSubagentEnv,
   extractLatestAssistantText,
@@ -100,6 +128,8 @@ export async function executeTask(
   if (params.type === "build") {
     try {
       worktree = await createWorktree(repoDir, generateWorktreeId());
+      registerExitHandlers();
+      activeWorktrees.set(worktree.path, { repoDir, worktree });
     } catch {
       /* fall back: run in process.cwd() */
     }
@@ -151,7 +181,10 @@ export async function executeTask(
       signal?.removeEventListener("abort", abortHandler);
       fsp.rm(tmp, { recursive: true, force: true }).catch(() => {});
       if (worktree) {
-        removeWorktree(repoDir, worktree).catch(() => {});
+        activeWorktrees.delete(worktree.path);
+        removeWorktree(repoDir, worktree).catch((err) => {
+          console.error(`[harness][worktree cleanup] Failed to remove ${worktree!.path}:`, err instanceof Error ? err.message : String(err));
+        });
       }
     };
 

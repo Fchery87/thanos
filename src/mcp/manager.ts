@@ -9,8 +9,10 @@ import {
   readMcpState,
   setServerDisabled,
   readServerSecrets,
+  writeServerSecrets,
   type ServerSecrets,
 } from "./state";
+import { refreshAccessToken } from "./oauth";
 
 export interface ServerStatus {
   name: string;
@@ -50,11 +52,28 @@ export class MCPManager {
   constructor(deps: MCPManagerDeps = {}) {
     this.deps = {
       loadConfigs: deps.loadConfigs ?? loadMcpConfigs,
-      createClient: deps.createClient ?? ((_name, config) =>
-        config.type === "stdio"
-          ? new StdioMCPClient(config, { timeoutMs: 30_000 })
-          : new HttpMCPClient(config, { timeoutMs: 30_000 })
-      ),
+      createClient: deps.createClient ?? ((name, config) => {
+        if (config.type === "stdio") {
+          return new StdioMCPClient(config, { timeoutMs: 30_000 });
+        }
+        const refreshAuth = async (): Promise<string | null> => {
+          const secrets = await readServerSecrets(name);
+          const { refreshToken, tokenEndpoint, clientId } = secrets.oauth ?? {};
+          if (!refreshToken || !tokenEndpoint) return null;
+          try {
+            const newToken = await refreshAccessToken({
+              tokenEndpoint,
+              refreshToken,
+              clientId: clientId ?? "pi-harness",
+            });
+            await writeServerSecrets(name, { headers: { Authorization: `Bearer ${newToken}` } });
+            return newToken;
+          } catch {
+            return null;
+          }
+        };
+        return new HttpMCPClient(config, { timeoutMs: 30_000 }, refreshAuth);
+      }),
     };
   }
 

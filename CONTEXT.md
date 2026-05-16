@@ -126,6 +126,8 @@ Pi lifecycle event fired after each tool execution. Used to collect tool output 
 - A **Policy Denial** reports the matched rule, rule source, and remediation path while withholding protected content.
 - An **Audit Log** records policy decisions from parent agents, subagents, interactive sessions, and headless runs.
 - A **Rule ID** is the join key between **Policy File** rules, **Policy Denial** messages, and **Audit Log** entries.
+- **Policy File** rules use first-match-wins evaluation (deterministic, suitable for security invariants). **PermissionManager** session rules use last-match-wins (recency-weighted, so the latest decision overrides earlier ones). The split is intentional: policy is authoritative and predictable; session overrides reflect the most recent user intent.
+- **Reviewer** subagents may spawn `explore` subagents at depth 1. All other specialist subagent types (`explore`, `plan`, `build`, `designer`) are leaves and cannot spawn further subagents.
 
 **Extension-first Hybrid Strategy**
 Thanos should remain Pi-based and prefer extension, slash-command, MCP, policy, installer, and configuration surfaces for new capabilities. Vendoring or forking runtime pieces is allowed only when a target capability is impossible, unsafe, or ergonomically broken through Pi's extension API, and should copy the smallest subsystem needed.

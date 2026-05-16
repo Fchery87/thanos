@@ -9,7 +9,6 @@ export interface AcceptanceCriterion {
   id: string;
   statement: string;
   evidenceRequired: EvidenceRequirement[];
-  keywords?: string[];
 }
 
 export interface FormalSpec {
