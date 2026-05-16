@@ -24,6 +24,42 @@ describe("makeAfterToolHandler", () => {
     expect(testResult?.evidence).toContain("bun test tests/index.test.ts passed");
   });
 
+  it("truncates oversized ctx tool results before they enter the transcript", async () => {
+    const spec = new SpecEngine();
+    const oversized = `${"a".repeat(9_000)}TAIL`;
+
+    const result = await makeAfterToolHandler(spec)({
+      type: "tool_result",
+      toolCallId: "call-ctx",
+      toolName: "ctx_batch_execute",
+      input: {},
+      content: [{ type: "text", text: oversized }],
+      isError: false,
+      details: { serverName: "context-mode" },
+    });
+
+    expect(result?.content?.[0]?.text?.length).toBeLessThan(oversized.length);
+    expect(result?.content?.[0]?.text).toContain("truncated");
+    expect(result?.content?.[0]?.text).toContain("TAIL");
+    expect(result?.details).toMatchObject({ truncated: true, originalTextChars: oversized.length });
+  });
+
+  it("leaves non-ctx tool results unchanged", async () => {
+    const spec = new SpecEngine();
+
+    const result = await makeAfterToolHandler(spec)({
+      type: "tool_result",
+      toolCallId: "call-bash",
+      toolName: "bash",
+      input: {},
+      content: [{ type: "text", text: "a".repeat(9_000) }],
+      isError: false,
+      details: undefined,
+    });
+
+    expect(result).toBeUndefined();
+  });
+
   it("records edit diffs as diff evidence", async () => {
     const spec = new SpecEngine();
     spec.generate("Add pagination", "ambient");
