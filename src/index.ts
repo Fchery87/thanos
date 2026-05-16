@@ -26,8 +26,9 @@ import {
   initializeMcpSession,
   reloadMcpSession,
 } from "./mcp/lifecycle";
-import { formatLabel, formatValue, formatSpecForApproval, formatPanel, noopTheme, stripAnsi } from "./ui-utils";
+import { formatLabel, formatValue, formatSpecForApproval, formatPanel, noopTheme } from "./ui-utils";
 import { renderAuditPanel, renderPolicyPanel, renderSessionSnapshotPanel, renderSpecVerificationPanel } from "./commands/presenters";
+import { renderWelcomeHeader, formatTimeAgo, type WelcomeMcpSummary, type WelcomePolicySummary } from "./welcome/header";
 import { MemoryStore } from "./memory/store";
 import { shouldSaveMemory, extractCorrection, formatMemoriesForInjection } from "./memory/injector";
 import { routeModel, formatRouteStatus, formatRouteNotice } from "./models/router";
@@ -39,16 +40,6 @@ import { AskParamsSchema, buildAskDecision, resolveHeadlessAsk, type AskQuestion
 import { createTodoState, applyTodoOperation, exportTodoMarkdown, TodoParamsSchema, type TodoOperation, type TodoState } from "./interaction/todo";
 import { FindingParamsSchema, addFinding, formatReviewSummary, type ReviewFinding } from "./review/findings";
 
-function formatTimeAgo(date: Date): string {
-  const diff = Date.now() - date.getTime();
-  const m = Math.floor(diff / 60000);
-  const h = Math.floor(m / 60);
-  const d = Math.floor(h / 24);
-  if (d > 0) return `${d}d ago`;
-  if (h > 0) return `${h}h ago`;
-  if (m > 0) return `${m}m ago`;
-  return "just now";
-}
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
@@ -104,16 +95,27 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     if (!mcpManager) return;
 
     const theme = ctx.ui.theme;
-    let mcpCount = 0;
 
+    let mcpSummary: WelcomeMcpSummary = { configured: 0, connected: 0, failed: 0, initFailed: false };
     const init = await initializeMcpSession({ manager: mcpManager, pi, cwd: ctx.cwd });
+    mcpSummary = {
+      configured: init.statuses.length,
+      connected: init.connectedCount,
+      failed: init.statuses.filter((s) => s.error).length,
+      initFailed: init.kind === "failed",
+    };
     if (init.kind === "failed") {
       ctx.ui.notify(`MCP init failed: ${init.error}`, "warning");
     } else {
       const statuses = init.statuses;
       const connected = statuses.filter((s) => !s.error);
       const failed = statuses.filter((s) => s.error);
-      mcpCount = init.connectedCount;
+      mcpSummary = {
+        configured: statuses.length,
+        connected: init.connectedCount,
+        failed: failed.length,
+        initFailed: false,
+      };
       if (connected.length > 0) {
         ctx.ui.setStatus("harness-mcp", theme.fg("accent", `mcp:${connected.length}`));
       }
@@ -129,9 +131,16 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       const model = ctx.model;
       const modelStr = model ? (model.name || model.id) : "—";
       const thinkingStr = (pi.getThinkingLevel() as string) || "off";
-      const mcpRaw = mcpCount > 0 ? `${mcpCount} connected` : "none";
+      const policyState = await policyStatePromise;
+      const policy: WelcomePolicySummary = policyState.kind === "ok"
+        ? {
+            kind: "loaded",
+            preset: policyState.policy.preset,
+            rules: policyState.policy.rules.length,
+            auditEnabled: policyState.policy.audit.enabled,
+          }
+        : { kind: "error" };
 
-      // Load recent sessions (raw data — colors applied inside factory)
       type SessionRow = { label: string; age: string };
       let recentRows: SessionRow[] = [];
       try {
@@ -140,72 +149,19 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
           .sort((a, b) => b.modified.getTime() - a.modified.getTime())
           .slice(0, 5)
           .map((s) => ({
-            label: (s.name || s.firstMessage || "Untitled").slice(0, 38),
+            label: (s.name || s.firstMessage || "Untitled").slice(0, 72),
             age: formatTimeAgo(s.modified),
           }));
       } catch { /* session dir may not exist yet */ }
 
-      ctx.ui.setHeader((_tui, t) => {
-        const ac = (s: string) => t.fg("accent", s);
-        const dm = (s: string) => t.fg("dim", s);
-        const bd = (s: string) => t.bold(s);
-        const sc = (s: string) => t.fg("success", s);
-
-        const PADDING = 5;
-        const LEFT_W = 62;
-        const GAP = 4;
-
-        // Left column: padding + logo + model/shortcut rows
-        const left: string[] = [
-          ...Array(PADDING).fill(""),
-          ac(" ████████╗██╗  ██╗  █████╗ ███╗   ██╗  ██████╗ ███████╗"),
-          ac("    ██╔══╝██║  ██║ ██╔══██╗████╗  ██║ ██╔═══██╗██╔════╝"),
-          ac("    ██║   ███████║ ███████║██╔██╗ ██║ ██║   ██║ ███████╗"),
-          ac("    ██║   ██╔══██║ ██╔══██║██║╚██╗██║ ██║   ██║ ╚════██║"),
-          ac("    ██║   ██║  ██║ ██║  ██║██║ ╚████║ ╚██████╔╝ ███████║"),
-          ac("    ╚═╝   ╚═╝  ╚═╝ ╚═╝  ╚═╝╚═╝  ╚═══╝  ╚═════╝ ╚══════╝"),
-          "",
-          `  ${bd("model")} ${ac(modelStr)}   ${bd("thinking")} ${ac(thinkingStr)}   ${bd("mcp")} ${mcpCount > 0 ? sc(mcpRaw) : dm(mcpRaw)}`,
-          "",
-          `  ${dm("^T")} thinking  ${dm("^S")} snapshot  ${dm("^R")} review`,
-          `  ${dm("^E")} spec  ${dm("^P")} policy  ${dm("^Y")} yolo`,
-          "",
-        ];
-
-        // Right column: Tips + LSP Servers + Recent sessions
-        const right: string[] = [
-          ...Array(PADDING).fill(""),
-          bd("  Tips"),
-          `  ${dm("/")}        slash commands`,
-          `  ${dm("!")}        run bash inline`,
-          `  ${dm("!!")}       bash (excluded from context)`,
-          `  ${dm("/hotkeys")} all keyboard shortcuts`,
-          `  ${dm("ctrl+o")}   help & loaded resources`,
-          "",
-          bd("  LSP Servers"),
-          dm("  No LSP servers"),
-          "",
-          bd("  Recent sessions"),
-          ...(recentRows.length > 0
-            ? recentRows.map(({ label, age }) => `  ${ac("•")} ${label} ${dm(`(${age})`)}`)
-            : [dm("  No recent sessions")]),
-        ];
-
-        return {
-          invalidate: () => {},
-          render: (_width: number) => {
-            const rows = Math.max(left.length, right.length);
-            const result: string[] = [];
-            for (let i = 0; i < rows; i++) {
-              const l = left[i] ?? "";
-              const r = right[i] ?? "";
-              const pad = " ".repeat(Math.max(0, LEFT_W - stripAnsi(l).length + GAP));
-              result.push(l + pad + r);
-            }
-            return result;
-          },
-        };
-      });
+      ctx.ui.setHeader((_tui, theme) => renderWelcomeHeader(theme, {
+        modelStr,
+        thinkingStr,
+        modeStr: String(defaultTaskType ?? "explore (default)"),
+        mcp: mcpSummary,
+        policy,
+        recentRows,
+      }));
     }
   });
 

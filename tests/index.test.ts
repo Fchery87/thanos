@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import register from "../src/index";
+import { noopTheme } from "../src/ui-utils";
 
 const originalCwd = process.cwd();
 
@@ -24,6 +25,7 @@ function createFakePi(overrides?: Partial<RegisterApi>) {
     registerTool: vi.fn(),
     registerCommand: vi.fn(),
     registerShortcut: vi.fn(),
+    getThinkingLevel: vi.fn(() => "off"),
     ...overrides,
   };
   return { api: api as unknown as RegisterApi, handlers };
@@ -193,5 +195,41 @@ describe("register", () => {
       expect.stringContaining("Spec: 1/1 passed"),
       "info",
     );
+  });
+
+  it("installs the structured startup welcome header", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "harness-welcome-"));
+    process.chdir(cwd);
+    const setHeader = vi.fn();
+    const { api, handlers } = createFakePi({
+      getThinkingLevel: vi.fn(() => "medium"),
+    } as Partial<RegisterApi>);
+
+    register(api);
+
+    await handlers.get("session_start")?.(
+      { reason: "startup" },
+      {
+        cwd,
+        model: { id: "model-id", name: "Model Name" },
+        sessionManager: { getSessionDir: () => join(cwd, "sessions") },
+        ui: {
+          setHeader,
+          setStatus: vi.fn(),
+          notify: vi.fn(),
+          theme: noopTheme,
+        },
+      },
+    );
+
+    expect(setHeader).toHaveBeenCalledOnce();
+    const factory = setHeader.mock.calls[0]?.[0] as ((_tui: unknown, theme: typeof noopTheme) => { render: (width: number) => string[] }) | undefined;
+    const output = factory?.({}, noopTheme).render(120).join("\n") ?? "";
+
+    expect(output).toContain("Agent Distribution");
+    expect(output).toContain("Model Name");
+    expect(output).toContain("/status");
+    expect(output).toContain("/policy");
+    expect(output).toContain("/tools");
   });
 });

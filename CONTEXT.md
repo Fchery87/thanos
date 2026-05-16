@@ -16,6 +16,10 @@ _Avoid_: Multi-tenant runtime
 **Pi**
 The installed coding agent CLI — package `@earendil-works/pi-coding-agent` v0.74.0. Loaded via nvm node v24.15.0. Binary at `~/.nvm/versions/node/v24.15.0/bin/pi`.
 
+**Welcome Header**
+The startup TUI surface for Thanos. It should orient the user to the current **Agent Distribution** session by showing the active model, thinking level, specialist mode, MCP connectivity, policy/audit posture, recent work, and the commands that answer "what can I do next?".
+_Avoid_: Decorative splash screen, stale command cheat sheet, unrelated runtime inventory
+
 **Extension**
 A TypeScript module auto-discovered by Pi from `~/.pi/agent/extensions/*/index.ts` or via the `"pi": { "extensions": [...] }` field in a `package.json` adjacent to the source files.
 
