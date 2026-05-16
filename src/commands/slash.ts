@@ -4,7 +4,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AuditEvent } from "../audit/types";
 import type { PermissionManager } from "../permissions/manager";
 import { capabilityForTool } from "../governance/tool-call";
-import type { HarnessPolicy } from "../policy/types";
+import type { PolicyLoadState } from "../policy/state";
 import type { SpecEngine } from "../spec/engine";
 import type { TaskParams } from "../agents/task-tool";
 import { formatBadge, formatLabel, formatValue, formatPanel } from "../ui-utils";
@@ -23,7 +23,7 @@ export function registerSlashCommands(
   opts: {
     permissions: PermissionManager;
     spec: SpecEngine;
-    policyPromise: Promise<HarnessPolicy>;
+    policyPromise: Promise<PolicyLoadState>;
     getDefaultTaskType: () => TaskParams["type"] | undefined;
   },
 ): void {
@@ -80,9 +80,13 @@ export function registerSlashCommands(
   pi.registerCommand("policy", {
     description: "Show active policy: preset, rule counts, audit status, and headless default.",
     handler: async (_args, ctx) => {
-      const policy = await policyPromise;
+      const policyState = await policyPromise;
       const theme = ctx.ui.theme;
-      ctx.ui.notify(renderPolicyPanel(theme, policy), "info");
+      if (policyState.kind === "error") {
+        ctx.ui.notify(formatPanel(theme, "Policy Error", policyState.error, "error"), "warning");
+        return;
+      }
+      ctx.ui.notify(renderPolicyPanel(theme, policyState.policy), "info");
     },
   });
 
@@ -144,8 +148,13 @@ export function registerSlashCommands(
       return filtered.length > 0 ? filtered.map(value => ({ value, label: `last ${value}` })) : null;
     },
     handler: async (args, ctx) => {
-      const policy = await policyPromise;
+      const policyState = await policyPromise;
       const theme = ctx.ui.theme;
+      if (policyState.kind === "error") {
+        ctx.ui.notify(formatPanel(theme, "Policy Error", policyState.error, "error"), "warning");
+        return;
+      }
+      const { policy } = policyState;
 
       if (!policy.audit.enabled) {
         ctx.ui.notify(
@@ -209,8 +218,13 @@ export function registerSlashCommands(
   pi.registerCommand("status", {
     description: "Show a full session snapshot: model, thinking, mode, spec, context, and policy.",
     handler: async (_args, ctx) => {
-      const policy = await policyPromise;
+      const policyState = await policyPromise;
       const theme = ctx.ui.theme;
+      if (policyState.kind === "error") {
+        ctx.ui.notify(formatPanel(theme, "Policy Error", policyState.error, "error"), "warning");
+        return;
+      }
+      const { policy } = policyState;
       const model = ctx.model;
       const thinking = pi.getThinkingLevel() as ThinkingLevel | undefined;
       const usage = ctx.getContextUsage();

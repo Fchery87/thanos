@@ -76,6 +76,34 @@ describe("register", () => {
     });
   });
 
+  it("blocks governed tool calls when the policy file is invalid", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "harness-index-invalid-policy-"));
+    await writeFile(join(cwd, "harness.policy.json"), "{ not json", "utf-8");
+    process.chdir(cwd);
+
+    const { api, handlers } = createFakePi();
+    register(api);
+
+    const toolCall = handlers.get("tool_call");
+    expect(toolCall).toBeTypeOf("function");
+
+    const result = await toolCall?.(
+      { toolName: "read", input: { file_path: "README.md" } },
+      {
+        hasUI: true,
+        ui: {
+          confirm: vi.fn(async () => true),
+          notify: vi.fn(),
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      block: true,
+      reason: expect.stringContaining("Policy configuration error"),
+    });
+  });
+
   it("formats explicit spec approval with scope and evidence", async () => {
     const confirm = vi.fn(async () => true);
     const { api, handlers } = createFakePi({

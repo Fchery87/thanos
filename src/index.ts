@@ -10,7 +10,7 @@ import { SpecEngine } from "./spec/engine";
 import { makeBeforeToolHandler } from "./hooks/before-tool";
 import { makeAfterToolHandler } from "./hooks/after-tool";
 import { TaskParamsSchema, executeTask, type TaskParams } from "./agents/task-tool";
-import { loadPolicy } from "./policy/loader";
+import { loadPolicyState } from "./policy/state";
 import type { FormalSpec } from "./spec/types";
 import { chooseTaskType } from "./agents/selector";
 import { registerSlashCommands } from "./commands/slash";
@@ -85,7 +85,17 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
 
   const permissions = new PermissionManager();
   const spec = new SpecEngine();
-  const policyPromise = loadPolicy(process.cwd());
+  const policyStatePromise = loadPolicyState(process.cwd(), process.env.HARNESS_POLICY_FILE);
+
+  async function requirePolicy(ctx: ExtensionContext) {
+    const policyState = await policyStatePromise;
+    if (policyState.kind === "error") {
+      const theme = ctx.ui.theme ?? noopTheme;
+      ctx.ui.notify(formatPanel(theme, "Policy Error", policyState.error, "error"), "warning");
+      return undefined;
+    }
+    return policyState.policy;
+  }
 
   // ── MCP server management (main session only) ───────────────────────
   const mcpManager = isSubagent ? null : new MCPManager();
@@ -719,7 +729,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   registerSlashCommands(pi, {
     permissions,
     spec,
-    policyPromise,
+    policyPromise: policyStatePromise,
     getDefaultTaskType: () => defaultTaskType,
   });
 
@@ -744,7 +754,8 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   pi.registerShortcut("ctrl+shift+s", {
     description: "Show session snapshot: model, thinking, mode, spec, context, policy",
     handler: async (ctx) => {
-      const policy = await policyPromise;
+      const policy = await requirePolicy(ctx);
+      if (!policy) return;
       const theme = ctx.ui.theme;
       const model = ctx.model;
       const thinking = pi.getThinkingLevel() as ThinkingLevel | undefined;
@@ -796,7 +807,8 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   pi.registerShortcut("ctrl+shift+p", {
     description: "Show active policy: preset, rules, audit status",
     handler: async (ctx) => {
-      const policy = await policyPromise;
+      const policy = await requirePolicy(ctx);
+      if (!policy) return;
       const theme = ctx.ui.theme;
       ctx.ui.notify(renderPolicyPanel(theme, policy), "info");
     },
@@ -807,7 +819,8 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     handler: async (ctx) => {
       const { readFile } = await import("node:fs/promises");
       const { join } = await import("node:path");
-      const policy = await policyPromise;
+      const policy = await requirePolicy(ctx);
+      if (!policy) return;
       const theme = ctx.ui.theme;
       if (!policy.audit.enabled) {
         ctx.ui.notify(
@@ -846,7 +859,8 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       const goal = "Review the code changes in this session. Investigate any questions about the wider codebase by spawning explore agents. Report findings by severity and give an overall decision.";
       ctx.ui.notify("Starting code review…", "info");
       // Delegate to the reviewer agent via the task tool
-      const policy = await policyPromise;
+      const policy = await requirePolicy(ctx);
+      if (!policy) return;
       const { executeTask } = await import("./agents/task-tool");
       try {
         const result = await executeTask(
@@ -893,7 +907,8 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       );
       if (!goal) return;
       ctx.ui.notify("Starting designer agent…", "info");
-      const policy = await policyPromise;
+      const policy = await requirePolicy(ctx);
+      if (!policy) return;
       const { executeTask } = await import("./agents/task-tool");
       try {
         const result = await executeTask(
@@ -1003,7 +1018,11 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
 
   // ── Permission + explicit-spec approval gate ───────────────────────
   pi.on("tool_call", async (event, ctx: ExtensionContext) => {
-    const policy = await policyPromise;
+    const policyState = await policyStatePromise;
+    if (policyState.kind === "error") {
+      return { block: true, reason: `Policy configuration error: ${policyState.error}` };
+    }
+    const policy = policyState.policy;
     const promptUser = (msg: string) => ctx.ui.confirm("Permission Required", msg);
     const approveSpec = (s: FormalSpec) =>
       ctx.ui.confirm("Spec Approval Required", formatSpecForApproval(s, ctx.ui.theme ?? noopTheme));
@@ -1056,9 +1075,9 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
 
   // ── Spec output collection ─────────────────────────────────────────
   pi.on("tool_result", async (event) => {
-    const policy = await policyPromise;
-    const auditLogger = policy.audit.enabled
-      ? new AuditLogger(policy.audit.path ?? join(process.cwd(), ".harness", "audit.jsonl"))
+    const policyState = await policyStatePromise;
+    const auditLogger = policyState.kind === "ok" && policyState.policy.audit.enabled
+      ? new AuditLogger(policyState.policy.audit.path ?? join(process.cwd(), ".harness", "audit.jsonl"))
       : undefined;
     await makeAfterToolHandler(spec, auditLogger, {
       sessionId: "unknown",
@@ -1118,7 +1137,11 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       parameters: AskParamsSchema,
       async execute(_toolCallId, params: AskQuestion, _signal, _onUpdate, toolCtx) {
         try {
-          const policy = await policyPromise;
+          const policyState = await policyStatePromise;
+          if (policyState.kind === "error") {
+            return { content: [{ type: "text" as const, text: `Policy configuration error: ${policyState.error}` }], isError: true, details: undefined };
+          }
+          const policy = policyState.policy;
           if (!toolCtx.hasUI) {
             const resolved = resolveHeadlessAsk(params, policy.preset);
             if (resolved.kind === "blocked") {
@@ -1177,7 +1200,11 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       parameters: TaskParamsSchema,
       async execute(_toolCallId, params: TaskParams, signal, onUpdate, _ctx) {
         try {
-          const policy = await policyPromise;
+          const policyState = await policyStatePromise;
+          if (policyState.kind === "error") {
+            return { content: [{ type: "text" as const, text: `Policy configuration error: ${policyState.error}` }], isError: true, details: undefined };
+          }
+          const policy = policyState.policy;
           const type = isReviewer
             ? "explore"
             : (params.type ?? defaultTaskType ?? await chooseTaskType(_ctx.hasUI, _ctx.ui));

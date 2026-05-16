@@ -133,7 +133,9 @@ Use `/mcp` within Thanos to manage server connections:
 
 ## Policy
 
-Governance rules live in `harness.policy.json`. The current configuration uses the `team` preset with audit logging enabled and headless mode set to `deny`.
+Governance rules live in `harness.policy.json`, or in the file pointed to by `HARNESS_POLICY_FILE`.
+The current configuration uses the `team` preset with audit logging enabled and headless mode set to `deny`.
+Team and ci presets include built-in sensitive-read deny rules. If the policy file is malformed, Thanos fails closed instead of silently reverting to personal defaults.
 
 ```json
 {
@@ -144,6 +146,9 @@ Governance rules live in `harness.policy.json`. The current configuration uses t
   "headless": { "defaultDecision": "deny" }
 }
 ```
+
+Audit events are written to `.harness/audit.jsonl` (gitignored). View the last 10 entries with `Ctrl+Shift+A` inside Thanos.
+Set `HARNESS_POLICY_FILE=/path/to/harness.policy.json` to point Thanos at a different policy file.
 
 Add rules to restrict or allow specific capabilities, paths, or command families:
 
@@ -156,8 +161,6 @@ Add rules to restrict or allow specific capabilities, paths, or command families
   "reason": "Environment files may contain secrets"
 }
 ```
-
-Audit events are written to `.harness/audit.jsonl` (gitignored). View the last 10 entries with `Ctrl+Shift+A` inside Thanos.
 
 ---
 
