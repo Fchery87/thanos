@@ -80,10 +80,26 @@ function renderWelcomeLines(theme: TUITheme, args: WelcomeHeaderArgs, width: num
   return lines;
 }
 
+const THANOS_LOGO = [
+  "████████╗██╗  ██╗ █████╗ ███╗   ██╗ ██████╗ ███████╗",
+  "╚══██╔══╝██║  ██║██╔══██╗████╗  ██║██╔═══██╗██╔════╝",
+  "   ██║   ███████║███████║██╔██╗ ██║██║   ██║███████╗",
+  "   ██║   ██╔══██║██╔══██║██║╚██╗██║██║   ██║╚════██║",
+  "   ██║   ██║  ██║██║  ██║██║ ╚████║╚██████╔╝███████║",
+  "   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚══════╝",
+] as const;
+
 function renderBrand(theme: TUITheme, width: number): string[] {
-  const title = `${theme.bold(theme.fg("accent", "THANOS"))} ${theme.fg("dim", "Agent Distribution for Pi")}`;
   const subtitle = theme.fg("dim", truncate("team-grade governance · policy-aware tools · evidence-first work", width));
-  return [fitAnsi(title, width), subtitle];
+  if (width < 56) {
+    const title = `${theme.bold(theme.fg("accent", "THANOS"))} ${theme.fg("dim", "Agent Distribution for Pi")}`;
+    return [fitAnsi(title, width), subtitle];
+  }
+  return [
+    ...THANOS_LOGO.map((line) => theme.fg("accent", truncate(line, width))),
+    theme.fg("dim", truncate("Agent Distribution for Pi", width)),
+    subtitle,
+  ];
 }
 
 function renderSessionRows(theme: TUITheme, args: WelcomeHeaderArgs, width: number): string[] {
