@@ -8,7 +8,7 @@
     ".."
   ],
   "theme": "brogrammer",
-  "defaultThinkingLevel": "low",
+  "defaultThinkingLevel": "high",
   "defaultProvider": "theclawbay",
   "defaultModel": "gpt-5.5",
   "treeFilterMode": "default",
