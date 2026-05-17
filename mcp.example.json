@@ -30,6 +30,15 @@
       "args": ["mcp"],
       "env": []
     },
+    "exa": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "exa-mcp-server"],
+      "env": {
+        "EXA_API_KEY": "<YOUR_EXA_API_KEY>",
+        "ENABLED_TOOLS": "web_search_exa,web_search_advanced_exa,crawling_exa,get_code_context_exa"
+      }
+    },
     "neon": {
       "type": "sse",
       "url": "https://mcp.neon.tech/mcp"

@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.74.0",
+  "lastChangelogVersion": "0.74.1",
   "packages": [
     "extensions/harness",
     "npm:@victor-software-house/pi-curated-themes",
