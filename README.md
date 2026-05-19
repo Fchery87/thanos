@@ -1,170 +1,149 @@
 # Thanos
 
-Personal [Pi coding agent](https://earendil.works) configuration — includes the **Thanos Harness** governance extension that adds capability-based permissions, spec lifecycle management, and specialist subagent delegation to every Pi session.
+Personal [Pi coding agent](https://earendil.works) configuration — includes the **Thanos Harness** governance extension plus a curated set of npm packages, MCP servers, and skills.
+
+> **Pi version:** 0.75.3 · **Theme:** Brogrammer · **Default model:** `zai/glm-5.1`
 
 ---
 
 ## Install
 
-### One-liner (recommended)
+```bash
+git clone https://github.com/fchery87/thanos.git ~/.pi
+cd ~/.pi && npm install
+thanos
+```
+
+Or use the one-liner:
 
 ```bash
 npx thanos-install
 ```
 
-Installs Pi (if missing), downloads the latest stable Thanos release, verifies the release tarball against published SHA256 checksums, installs the harness extension into `~/.pi`, and adds the `thanos` command to your PATH.
-
-### Pinned install
-
-```bash
-THANOS_VERSION=v0.1.0 npx thanos-install
-```
-
-Use this form when you want a reproducible install from a specific release.
-
-### Manual clone
-
-```bash
-git clone https://github.com/fchery87/thanos.git ~/.pi
-~/.pi/scripts/install.sh --skip-clone
-```
-
-After any install method, open a new terminal and run:
-
-```bash
-thanos
-```
-
-Run `thanos update` anytime to pull the latest stable config, or set `THANOS_VERSION=vX.Y.Z` to pin the update.
+Run `thanos update` anytime to pull the latest stable config.
 
 ---
 
 ## What's in here
 
 ```
-.pi/
+~/.pi/
 ├── agent/
-│   ├── skills/                 # Installed Pi skills
-│   ├── models.json             # Provider and model configuration
-│   └── settings.json           # Pi agent settings
+│   ├── agents/                 # Custom agent definitions (designer.md)
+│   ├── skills/                 # Installed Pi skills (86+)
+│   ├── models.json             # Custom provider/model catalogs (CrofAI, theclawbay)
+│   ├── auth.json               # Provider API keys (env-var references for 26 providers)
+│   └── settings.json           # Pi agent settings and package list
 ├── src/                        # Thanos Harness extension source
-├── tests/                      # Harness test suite
+├── scripts/
+│   └── sync-models-dev.mjs     # Sync model metadata from models.dev
 ├── docs/
 │   ├── adr/                    # Architecture Decision Records
 │   └── plans/                  # Implementation planning documents
-├── scripts/
-│   ├── install.sh              # POSIX installer
-│   ├── install.ps1             # Windows installer
-│   └── npm-install.mjs         # npx entry point
-├── CONTEXT.md                  # Thanos design glossary and approved direction
-├── mcp.example.json            # MCP server config template — copy to mcp.json and add your keys
+├── CONTEXT.md                  # Design glossary and approved direction
+├── mcp.json                    # MCP server config (gitignored)
+├── mcp.example.json            # MCP server config template
+├── web-search.json             # pi-web-access config (gitignored)
 └── .gitignore
 ```
 
 ---
 
-## Prerequisites
+## Installed packages
 
-- [Pi coding agent](https://earendil.works) v0.74.0+ (installed automatically by `install.sh`)
-- Node.js v24+ or [Bun](https://bun.sh) v1.3+
+### Extensions
+
+| Package | Purpose |
+|---------|---------|
+| **Thanos Harness** (`src/`) | Governance: permissions, spec lifecycle, audit logging, policy |
+| `rytswd/pi-agent-extensions` | Statusline, fetch, notify, permission-gate, questionnaire, slow-mode |
+| `npm:pi-subagents` | 8 built-in agents, `/run`, `/chain`, `/parallel` commands |
+| `npm:pi-web-access` | Web search (Exa), URL fetch, YouTube transcripts, GitHub cloning |
+| `npm:pi-lens` | Auto-format, lint, secrets scan, cascade diagnostics, LSP integration |
+| `npm:context-mode` | Context window management and search |
+| `npm:@victor-software-house/pi-curated-themes` | Brogrammer and other themes |
+
+### Rytswd extensions (active)
+
+| Extension | Status |
+|-----------|--------|
+| `fetch/*` | ✅ Active |
+| `notify/*` | ✅ Active |
+| `permission-gate/*` | ✅ Active |
+| `questionnaire/*` | ✅ Active |
+| `slow-mode/*` | ✅ Active |
+| `statusline/*` | ✅ Active (with custom token count segment) |
+| `direnv/*` | ❌ Excluded (binary not installed) |
+| `stash/*` | ❌ Excluded (redundant with pi-web-access) |
 
 ---
 
-## Thanos Harness
-
-The Harness extension (`src/`) adds three layers to every Pi session:
-
-### Permission gate
-
-Every tool call is classified by risk tier before it runs:
-
-| Tool | Risk | Capability |
-|------|------|-----------|
-| `read`, `ls`, `find`, `grep` | low | `read` |
-| `write`, `edit` | high | `edit` |
-| `bash` | critical | `exec` |
-| `task` | medium | `task` |
-| `ask`, `todo`, `report_finding` | medium | `interaction` |
-
-Edit and exec tools require confirmation by default. Sensitive file paths (credentials, secrets) are denied before any generic read allowance kicks in.
-
-### Spec lifecycle
-
-Thanos automatically derives acceptance criteria from your prompt and verifies them after each run. Use `--spec` to require explicit approval before the first write:
-
-```bash
-thanos --spec
-```
-
-### Subagent delegation
-
-The `task` tool lets Thanos hand off focused work to specialists:
-
-| Type | Tools available | Use for |
-|------|----------------|---------|
-| `explore` | read, ls, find, grep | Investigating the codebase |
-| `plan` | read, ls, find, grep | Producing implementation plans |
-| `build` | read, write, edit, bash | Implementing changes |
-| `reviewer` | read + can spawn explore | Code review |
-| `designer` | read + write | UI/UX work |
-
-> **Spawn depth:** Reviewer subagents may spawn `explore` subagents (depth 1 only). All other specialist subagents (`explore`, `plan`, `build`, `designer`) are leaf nodes — they cannot spawn further subagents.
-
-### Governed interaction primitives
-
-Thanos also ships governed interaction tools for structured human decisions and review flow:
+## Thanos tools
 
 | Tool | Purpose |
 |------|---------|
-| `ask` | Ask one typed, option-based question and return a governed decision record |
-| `todo` | Track phased task state with explicit export/import |
-| `report_finding` | Record reviewer findings as structured P0-P3 evidence |
-### MCP management
-
-Use `/mcp` within Thanos to manage server connections:
-
-```
-/mcp list                   # show all servers and status
-/mcp enable <name>          # connect a disabled server
-/mcp disable <name>         # disconnect and mark disabled
-/mcp auth <name>            # set or update credentials
-/mcp reload                 # reload all servers from config
-```
+| `todo` | Track phased tasks with in-progress state and export/import |
+| `ask` | Governed option-based question → decision record |
+| `report_finding` | Record structured P0–P3 review findings |
 
 ---
 
-## Policy
+## Thanos slash commands
 
-Governance rules live in `harness.policy.json`, or in the file pointed to by `HARNESS_POLICY_FILE`.
-The current configuration uses the `team` preset with audit logging enabled and headless mode set to `deny`.
-Team and ci presets include built-in sensitive-read deny rules. If the policy file is malformed, Thanos fails closed instead of silently reverting to personal defaults.
+| Command | Description |
+|---------|-------------|
+| `/models` | Two-step provider → model selector with reasoning/image badges |
+| `/modes` | Select interaction mode (code, chat, plan, review) |
+| `/yolo` | Toggle yolo mode (bypasses all permission checks) |
+| `/mcp` | Manage MCP server connections |
+| `/thinking` | Select thinking level |
+| `/skills` | List available skills |
+| `/context` | Show context window usage |
+| `/policy` | Show active governance policy |
+| `/tools` | List registered tools |
+| `/spec` | Manage spec lifecycle |
+| `/audit` | Show audit log |
+| `/rename` | Rename the current session |
+| `/status` | Show session status |
+| `/worktree` | Manage git worktrees |
 
-```json
-{
-  "version": 1,
-  "preset": "team",
-  "rules": [],
-  "audit": { "enabled": true },
-  "headless": { "defaultDecision": "deny" }
-}
+---
+
+## Keyboard shortcuts
+
+All shortcuts use `Ctrl+Shift+<key>` for cross-platform consistency. On macOS, press Control (not ⌘ Command) + Shift + key.
+
+| Shortcut | Action | Mnemonic |
+|----------|--------|----------|
+| `Ctrl+Shift+K` | Select thinking level | **K** = thin**k**ing |
+| `Ctrl+Shift+F` | Show session snapshot (model, spec, policy, context) | **F** = full status |
+| `Ctrl+Shift+E` | Show active spec and verification state | **E** = **e**xpand spec |
+| `Ctrl+Shift+G` | Show active policy rules | **G** = **g**overnance |
+| `Ctrl+Shift+A` | Show last 10 audit log entries | **A** = **a**udit |
+| `Ctrl+Shift+R` | Run code review (spawns reviewer subagent) | **R** = **r**eview |
+| `Ctrl+Shift+D` | Spawn designer agent | **D** = **d**esigner |
+| `Ctrl+Shift+Y` | Toggle yolo mode | **Y** = **y**olo |
+
+### pi-web-access shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+Shift+S` | Review search results (curator) |
+| `Ctrl+Shift+N` | Toggle web search activity widget |
+
+---
+
+## Status bar
+
+The rytswd statusline shows a single condensed line below the editor:
+
+```
+glm-5.1 ❯ D:45% ❯ 42%/200k ❯ think:med ❯ ↑15.2k ↓3.1k ❯ Alora ❯ main +2 ~1 ❯ $0.12
 ```
 
-Audit events are written to `.harness/audit.jsonl` (gitignored). View the last 10 entries with `Ctrl+Shift+A` inside Thanos.
-Set `HARNESS_POLICY_FILE=/path/to/harness.policy.json` to point Thanos at a different policy file.
+Segments: model · subscription usage · context · thinking · tokens · path · vcs · cost · extension statuses
 
-**Rule precedence:** Policy File rules use **first-match-wins** evaluation (the first matching rule wins — predictable for security). Session-remembered rules (`PermissionManager`) use **last-match-wins** (your most recent decision is the final word). The two layers are intentionally different: policy is deterministic by design; session overrides are recency-weighted by design.
-
-Add rules to restrict or allow specific capabilities, paths, or command families:
-
-```json
-{
-  "id": "team-deny-env-read",
-  "capability": "read",
-  "pattern": ".env*",
-  "decision": "deny",
-  "reason": "Environment files may contain secrets"
-}
-```
+A custom `segTokens` segment shows per-turn input (↑) and output (↓) token counts.
 
 ---
 
@@ -177,28 +156,82 @@ Add rules to restrict or allow specific capabilities, paths, or command families
 | sequential-thinking | stdio | Step-by-step reasoning |
 | convex-mcp | stdio | Convex database integration |
 | mgrep | stdio | Fast ripgrep-based code search |
-| neon | SSE | Neon Postgres database |
-| stitch | SSE | Google Stitch design tools |
+| neon | SSE | Neon Postgres (disabled) |
+| stitch | SSE | Google Stitch design tools (disabled) |
+| exa | stdio | Web search (disabled — replaced by pi-web-access) |
 
-Copy `mcp.example.json` to `mcp.json` and fill in your API keys. Use `/mcp auth <server>` within Thanos to store bearer tokens securely in `mcp-secrets.json`.
+Copy `mcp.example.json` to `mcp.json` and fill in your API keys.
 
 ---
 
-## Keyboard shortcuts
+## Governance
 
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+Shift+T` | Select thinking level |
-| `Ctrl+Shift+S` | Show session snapshot (model, spec, policy, context usage) |
-| `Ctrl+Shift+E` | Show active spec and verification state |
-| `Ctrl+Shift+P` | Show active policy rules |
-| `Ctrl+Shift+A` | Show last 10 audit log entries |
-| `Ctrl+Shift+R` | Run code review (spawns reviewer subagent) |
-| `Ctrl+Shift+D` | Spawn designer agent |
-| `Ctrl+Shift+Y` | Toggle yolo mode (bypasses all permission checks) |
+### Permission gate
+
+Every tool call is classified by risk tier:
+
+| Tool | Risk | Capability |
+|------|------|-----------|
+| `read`, `ls`, `find`, `grep` | low | `read` |
+| `write`, `edit` | high | `edit` |
+| `bash` | critical | `exec` |
+| `ask`, `todo`, `report_finding` | medium | `interaction` |
+
+Yolo mode is **default on** — the thanos governance layer returns "allow" immediately, letting rytswd `permission-gate` and `slow-mode` run independently.
+
+### Spec lifecycle
+
+Thanos derives acceptance criteria from your prompt and verifies them after each run. Use `--spec` to require explicit approval before the first write.
+
+### Policy
+
+Governance rules live in `harness.policy.json`, or in the file pointed to by `HARNESS_POLICY_FILE`.
+
+```json
+{
+  "version": 1,
+  "preset": "team",
+  "rules": [],
+  "audit": { "enabled": true },
+  "headless": { "defaultDecision": "deny" }
+}
+```
+
+Audit events are written to `.harness/audit.jsonl` (gitignored). View entries with `Ctrl+Shift+A`.
+
+**Rule precedence:** Policy File rules use **first-match-wins**. Session-remembered rules use **last-match-wins**. The two layers are intentionally different: policy is deterministic; session overrides are recency-weighted.
+
+---
+
+## Custom providers
+
+Two custom providers in `agent/models.json`:
+
+| Provider | API type | Models |
+|----------|----------|--------|
+| CrofAI | openai-completions | 17 models |
+| theclawbay | openai-responses | 17 models |
+
+26 additional pi-supported providers configured in `agent/auth.json` via environment-variable references.
+
+Model metadata synced from `models.dev` via `scripts/sync-models-dev.mjs`:
+
+```bash
+node scripts/sync-models-dev.mjs           # dry-run
+node scripts/sync-models-dev.mjs --write   # apply changes
+```
+
+---
+
+## Prerequisites
+
+- [Pi coding agent](https://earendil.works) v0.75.3+
+- Node.js v24+ or [Bun](https://bun.sh) v1.3+
+- `xclip` (for clipboard support with pi-web-access)
+- `ffmpeg` + `yt-dlp` (optional, for video frame extraction)
 
 ---
 
 ## Design notes
 
-Architecture decisions are documented in [docs/adr/](docs/adr/). Implementation plans are in [docs/plans/](docs/plans/). The project context and approved design direction are in [CONTEXT.md](CONTEXT.md).
+Architecture decisions are in [docs/adr/](docs/adr/). Implementation plans are in [docs/plans/](docs/plans/). The project context and approved design direction are in [CONTEXT.md](CONTEXT.md).

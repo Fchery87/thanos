@@ -3,28 +3,40 @@
 mcp-secrets.json
 mcp.json
 agent/auth.json
+web-search.json
 
-# ── Dependencies ──────────────────────────────────────────────────────
+# ── Dependencies ─────────────────────────────────────────────────────
 node_modules/
+agent/npm/
+agent/git/
+bun.lock
+package-lock.json
 
-# ── Runtime and state files ───────────────────────────────────────────
+# ── Runtime and state files ──────────────────────────────────────────
 mcp-state.json
 agent/sessions/
-context-mode/sessions/
+context-mode/
 
-# ── Binaries ──────────────────────────────────────────────────────────
+# ── pi-lens runtime data ─────────────────────────────────────────────
+.pi-lens/
+
+# ── Binaries ─────────────────────────────────────────────────────────
 agent/bin/
 
-# ── Conversation artifacts ────────────────────────────────────────────
-agent/can-you-give-me-virtual-pixel.md
+# ── Backup files ─────────────────────────────────────────────────────
+*.bak
+*.bak-*
+*.backup
+*.orig
+agent/agents.bak/
 
-# ── Harness audit and runtime data (root-level, if ever run here) ─────
+# ── Harness audit and runtime data ───────────────────────────────────
 .harness/
 
-# ── Worktrees ─────────────────────────────────────────────────────────
+# ── Worktrees ────────────────────────────────────────────────────────
 .worktrees/
 
-# ── OS and editor ─────────────────────────────────────────────────────
+# ── OS and editor ────────────────────────────────────────────────────
 .DS_Store
 .DS_Store?
 Thumbs.db

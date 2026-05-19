@@ -402,7 +402,18 @@
           "id": "qwen3.6-27b",
           "name": "CrofAI: qwen3.6-27b",
           "contextWindow": 262144,
-          "maxTokens": 81920
+          "maxTokens": 81920,
+          "input": [
+            "text",
+            "image"
+          ],
+          "reasoning": true,
+          "cost": {
+            "input": 0.6,
+            "output": 3.6,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          }
         }
       ]
     }

@@ -14,7 +14,7 @@ const DEFAULT_RULES: PermissionRule[] = [
 
 export class PermissionManager {
   private rules: PermissionRule[];
-  private _yolo = false;
+  private _yolo = true;
 
   constructor(rules: PermissionRule[] = [...DEFAULT_RULES]) {
     this.rules = rules;

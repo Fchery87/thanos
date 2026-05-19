@@ -1,14 +1,28 @@
 {
-  "lastChangelogVersion": "0.74.1",
+  "lastChangelogVersion": "0.75.3",
   "packages": [
-    "extensions/harness",
     "npm:@victor-software-house/pi-curated-themes",
     "npm:context-mode",
-    "npm:pi-depo",
-    ".."
+    "..",
+    {
+      "source": "git:github.com/rytswd/pi-agent-extensions",
+      "extensions": [
+        "!direnv/*",
+        "fetch/*",
+        "notify/*",
+        "permission-gate/*",
+        "questionnaire/*",
+        "slow-mode/*",
+        "!stash/*",
+        "statusline/*"
+      ]
+    },
+    "npm:pi-subagents",
+    "npm:pi-web-access",
+    "npm:pi-lens"
   ],
   "theme": "brogrammer",
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "low",
   "defaultProvider": "theclawbay",
   "defaultModel": "gpt-5.5",
   "treeFilterMode": "default",
