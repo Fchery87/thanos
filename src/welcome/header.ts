@@ -47,8 +47,8 @@ function renderWelcomeLines(theme: TUITheme, args: WelcomeHeaderArgs, width: num
 
   const brand = renderBrand(theme, w);
   const status = renderBox(theme, "Session", renderSessionRows(theme, args, Math.min(w, 64) - 2), Math.min(w, 64));
-  const commands = renderBox(theme, "Start here", renderCommandRows(theme, Math.min(w, 54) - 2), Math.min(w, 54), "accent");
-  const hotkeys = renderBox(theme, "Hotkeys", renderHotkeyRows(theme, Math.min(w, 54) - 2), Math.min(w, 54));
+  const commands = renderBox(theme, "Commands", renderCommandRows(theme, Math.min(w, 54) - 2), Math.min(w, 54), "accent");
+  const hotkeys = renderBox(theme, "Shortcuts", renderHotkeyRows(theme, Math.min(w, 54) - 2), Math.min(w, 54));
   const recent = renderBox(theme, "Recent work", renderRecentRows(theme, args.recentRows, Math.min(w, 64) - 2), Math.min(w, 64));
   if (w < 108) {
     return [...brand, "", ...status, "", ...commands, "", ...hotkeys, "", ...recent];
@@ -65,9 +65,9 @@ function renderWelcomeLines(theme: TUITheme, args: WelcomeHeaderArgs, width: num
     ...renderBox(theme, "Recent work", renderRecentRows(theme, args.recentRows, leftWidth - 2), leftWidth),
   ];
   const right = [
-    ...renderBox(theme, "Start here", renderCommandRows(theme, rightWidth - 2), rightWidth, "accent"),
+    ...renderBox(theme, "Commands", renderCommandRows(theme, rightWidth - 2), rightWidth, "accent"),
     "",
-    ...renderBox(theme, "Hotkeys", renderHotkeyRows(theme, rightWidth - 2), rightWidth),
+    ...renderBox(theme, "Shortcuts", renderHotkeyRows(theme, rightWidth - 2), rightWidth),
   ];
 
   const rows = Math.max(left.length, right.length);
@@ -90,14 +90,14 @@ const THANOS_LOGO = [
 ] as const;
 
 function renderBrand(theme: TUITheme, width: number): string[] {
-  const subtitle = theme.fg("dim", truncate("team-grade governance · policy-aware tools · evidence-first work", width));
+  const subtitle = theme.fg("dim", truncate("governance · subagents · web access · code quality · 86+ skills", width));
   if (width < 56) {
-    const title = `${theme.bold(theme.fg("accent", "THANOS"))} ${theme.fg("dim", "Agent Distribution for Pi")}`;
+    const title = `${theme.bold(theme.fg("accent", "THANOS"))} ${theme.fg("dim", "Agent Harness for Pi")}`;
     return [fitAnsi(title, width), subtitle];
   }
   return [
     ...THANOS_LOGO.map((line) => theme.fg("accent", truncate(line, width))),
-    theme.fg("dim", truncate("Agent Distribution for Pi", width)),
+    theme.fg("dim", truncate("Agent Harness for Pi", width)),
     subtitle,
   ];
 }
@@ -118,21 +118,21 @@ function renderSessionRows(theme: TUITheme, args: WelcomeHeaderArgs, width: numb
 
 function renderCommandRows(theme: TUITheme, width: number): string[] {
   return [
+    command(theme, "/models", "provider → model selector", width),
+    command(theme, "/thinking", "select thinking level", width),
+    command(theme, "/yolo", "toggle permission bypass", width),
     command(theme, "/status", "full session snapshot", width),
-    command(theme, "/policy", "preset, rules, audit", width),
-    command(theme, "/tools", "tool policy disposition", width),
     command(theme, "/mcp", "servers, auth, lifecycle", width),
     command(theme, "/skills", "loaded capabilities", width),
-    command(theme, "/modes", "default specialist", width),
   ];
 }
 
 function renderHotkeyRows(theme: TUITheme, width: number): string[] {
   return [
-    truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+T")} thinking`, width),
-    truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+S")} snapshot  ${theme.fg("dim", "Ctrl+Shift+E")} spec`, width),
-    truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+P")} policy    ${theme.fg("dim", "Ctrl+Shift+R")} review`, width),
-    truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+D")} designer  ${theme.fg("dim", "Ctrl+Shift+Y")} yolo`, width),
+    truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+K")} thinking  ${theme.fg("dim", "Ctrl+Shift+Y")} yolo`, width),
+    truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+F")} snapshot   ${theme.fg("dim", "Ctrl+Shift+G")} policy`, width),
+    truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+R")} review     ${theme.fg("dim", "Ctrl+Shift+D")} designer`, width),
+    truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+E")} spec       ${theme.fg("dim", "Ctrl+Shift+A")} audit`, width),
   ];
 }
 

@@ -31,11 +31,11 @@ import { renderAuditPanel, renderPolicyPanel, renderSessionSnapshotPanel, render
 import { renderWelcomeHeader, formatTimeAgo, type WelcomeMcpSummary, type WelcomePolicySummary } from "./welcome/header";
 import { MemoryStore } from "./memory/store";
 import { shouldSaveMemory, extractCorrection, formatMemoriesForInjection } from "./memory/injector";
-import { routeModel, formatRouteStatus, formatRouteNotice } from "./models/router";
+// Model router removed — use /models command or pi-subagents for model selection
 import { scanContent, formatScanResult } from "./security/scanner";
 import { createSnapshot } from "./security/snapshot";
 import { classifyRisk } from "./permissions/risk";
-import { registerSearchTool } from "./web/search/index";
+// registerSearchTool removed — superseded by npm:pi-web-access
 import { AskParamsSchema, buildAskDecision, resolveHeadlessAsk, type AskQuestion } from "./interaction/ask";
 import { createTodoState, applyTodoOperation, exportTodoMarkdown, TodoParamsSchema, type TodoOperation, type TodoState } from "./interaction/todo";
 import { FindingParamsSchema, addFinding, formatReviewSummary, type ReviewFinding } from "./review/findings";
@@ -98,6 +98,11 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     if (!mcpManager) return;
 
     const theme = ctx.ui.theme;
+
+    // Show yolo status if default-on
+    if (permissions.isYolo) {
+      ctx.ui.setStatus("harness-yolo", theme.fg("error", "⚡ yolo"));
+    }
 
     let mcpSummary: WelcomeMcpSummary = { configured: 0, connected: 0, failed: 0, initFailed: false };
     const init = await initializeMcpSession({ manager: mcpManager, pi, cwd: ctx.cwd });
@@ -700,6 +705,99 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     setThinkingStatus(pi, ctx);
   });
 
+  // ── /models — two-step provider→model selector ───────────────────
+  pi.registerCommand("models", {
+    description: "Select model by provider (two-step picker)",
+    handler: async (_args, ctx) => {
+      if (!ctx.hasUI) {
+        ctx.ui.notify("Model selector requires an interactive UI", "warning");
+        return;
+      }
+
+      const theme = ctx.ui.theme;
+      const available = ctx.modelRegistry.getAvailable();
+
+      if (available.length === 0) {
+        ctx.ui.notify("No models available. Run /login to configure a provider.", "warning");
+        return;
+      }
+
+      // Step 1: Group models by provider
+      const providerMap = new Map<string, typeof available>();
+      for (const m of available) {
+        const list = providerMap.get(m.provider) ?? [];
+        list.push(m);
+        providerMap.set(m.provider, list);
+      }
+
+      // Sort providers alphabetically, with current provider first
+      const currentProvider = ctx.model?.provider;
+      const providers = [...providerMap.entries()].sort(([a], [b]) => {
+        if (a === currentProvider) return -1;
+        if (b === currentProvider) return 1;
+        return a.localeCompare(b);
+      });
+
+      // Format provider labels with model count
+      const providerLabels = providers.map(([name, models]) => {
+        const tag = name === currentProvider ? theme.fg("accent", "●") : theme.fg("dim", "○");
+        return `${tag} ${theme.bold(name.padEnd(24, " "))} ${theme.fg("dim", `${models.length} model${models.length !== 1 ? "s" : ""}`)}`;
+      });
+
+      const selectedProvider = await ctx.ui.select("Select provider", providerLabels);
+      if (!selectedProvider) return; // cancelled
+
+      const providerIndex = providerLabels.indexOf(selectedProvider);
+      if (providerIndex < 0) return;
+      const [providerName, providerModels] = providers[providerIndex]!;
+
+      // Sort models: current model first, then by name/id
+      const currentModelId = ctx.model?.id;
+      const sortedModels = [...providerModels].sort((a, b) => {
+        const aCurrent = a.provider === ctx.model?.provider && a.id === currentModelId;
+        const bCurrent = b.provider === ctx.model?.provider && b.id === currentModelId;
+        if (aCurrent && !bCurrent) return -1;
+        if (!aCurrent && bCurrent) return 1;
+        return (a.name || a.id).localeCompare(b.name || b.id);
+      });
+
+      // Step 2: Pick model within provider
+      const modelLabels = sortedModels.map((m) => {
+        const isCurrent = m.provider === ctx.model?.provider && m.id === currentModelId;
+        const brain = m.reasoning ? "\u{1F9E0}" : "";
+        const img = m.input?.includes("image") ? " \u{1F4F7}" : "";
+        const tag = isCurrent ? theme.fg("success", " ✓") : "";
+        const id = theme.fg("accent", (m.name || m.id).padEnd(32, " "));
+        const ctxK = m.contextWindow ? `${Math.round(m.contextWindow / 1000)}k` : "?";
+        const outK = m.maxTokens ? `${Math.round(m.maxTokens / 1000)}k` : "?";
+        const dims = theme.fg("dim", `${ctxK} ctx · ${outK} out`);
+        return `${id} ${dims}${brain}${img}${tag}`;
+      });
+
+      const selectedModel = await ctx.ui.select(
+        `Models for ${providerName}`,
+        modelLabels,
+      );
+      if (!selectedModel) return; // cancelled
+
+      const modelIndex = modelLabels.indexOf(selectedModel);
+      if (modelIndex < 0) return;
+      const model = sortedModels[modelIndex]!;
+
+      // Step 3: Switch model (triggers model_select → thinking level prompt)
+      try {
+        const switched = await pi.setModel(model);
+        if (switched) {
+          ctx.ui.notify(`Switched to ${model.provider}/${model.id}`, "info");
+        } else {
+          ctx.ui.notify(`No API key for ${model.provider}/${model.id}`, "warning");
+        }
+      } catch (err) {
+        ctx.ui.notify(`Failed to switch: ${err instanceof Error ? err.message : String(err)}`, "warning");
+      }
+    },
+  });
+
   // ── Slash commands ─────────────────────────────────────────────────
   registerSlashCommands(pi, {
     permissions,
@@ -709,7 +807,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   });
 
   // ── Keyboard shortcuts (appear in /hotkeys → Extensions) ───────────
-  pi.registerShortcut("ctrl+shift+t", {
+  pi.registerShortcut("ctrl+shift+k", {
     description: "Select thinking level",
     handler: async (ctx) => {
       const model = ctx.model;
@@ -726,7 +824,8 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     },
   });
 
-  pi.registerShortcut("ctrl+shift+s", {
+  // Moved from ctrl+shift+s to avoid conflict with pi-web-access curator
+  pi.registerShortcut("ctrl+shift+f", {
     description: "Show session snapshot: model, thinking, mode, spec, context, policy",
     handler: async (ctx) => {
       const policy = await requirePolicy(ctx);
@@ -779,7 +878,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     },
   });
 
-  pi.registerShortcut("ctrl+shift+p", {
+  pi.registerShortcut("ctrl+shift+g", {
     description: "Show active policy: preset, rules, audit status",
     handler: async (ctx) => {
       const policy = await requirePolicy(ctx);
@@ -957,36 +1056,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     const memories = store.query({ project, limit: 10 });
     const injected = formatMemoriesForInjection(memories);
 
-    // ── Model routing: switch for explicit specs, recommend for others ─
-    const routingTier = spec.activeSpec?.tier ?? "ambient";
-    const route = routeModel(routingTier);
-    const currentModel = ctx.model;
-    let modelSwitched = false;
-
-    if (currentModel && routingTier === "explicit" && currentModel.id !== route.modelId) {
-      const switched = await pi.setModel({
-        ...currentModel,
-        id: route.modelId,
-        name: route.modelName,
-        reasoning: route.reasoning,
-        input: currentModel.input,
-        cost: {
-          input: route.inputCostPer1M,
-          output: route.outputCostPer1M,
-          cacheRead: route.cacheReadCostPer1M,
-          cacheWrite: route.cacheWriteCostPer1M,
-        },
-        contextWindow: route.contextWindow,
-        maxTokens: route.maxTokens,
-      });
-      modelSwitched = switched;
-    }
-
-    const theme = ctx.ui.theme ?? noopTheme;
-    ctx.ui.setStatus("harness-route", theme.fg("dim", formatRouteStatus(route)));
-    if (currentModel && currentModel.id !== route.modelId) {
-      ctx.ui.notify(formatRouteNotice(routingTier, route, modelSwitched), "info");
-    }
+    // Model router removed — /models command handles model selection
 
     return injected ? { systemPrompt: injected } : undefined;
   });
@@ -1082,11 +1152,10 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       `${summaryHeader}\n${panel}`,
       hasFailures ? "warning" : "info",
     );
-    ctx.ui.setStatus("harness-route", undefined);
   });
 
   // ── Web search tool ────────────────────────────────────────────────
-  registerSearchTool(pi);
+  // registerSearchTool removed — superseded by npm:pi-web-access
 
   if (!isSubagent) {
     pi.registerTool({
@@ -1163,39 +1232,9 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     });
   }
 
-  // ── Task tool (main sessions + reviewer subagents) ────────────────
-  // Reviewers get the task tool so they can spawn explore agents.
-  // All other subagents are leaves and cannot spawn further.
-  if (!isSubagent || isReviewer) {
-    pi.registerTool({
-      name: "task",
-      label: isReviewer ? "Spawn explore agent" : "Delegate to specialist subagent",
-      description: isReviewer
-        ? "Spawn an explore agent to investigate a specific question about the codebase."
-        : "Delegate a focused task to a specialist subagent. " +
-          "Use explore to investigate, plan to design a solution, build to implement changes, reviewer to review code.",
-      parameters: TaskParamsSchema,
-      async execute(_toolCallId, params: TaskParams, signal, onUpdate, _ctx) {
-        try {
-          const policyState = await policyStatePromise;
-          if (policyState.kind === "error") {
-            return { content: [{ type: "text" as const, text: `Policy configuration error: ${policyState.error}` }], isError: true, details: undefined };
-          }
-          const policy = policyState.policy;
-          const type = isReviewer
-            ? "explore"
-            : (params.type ?? defaultTaskType ?? await chooseTaskType(_ctx.hasUI, _ctx.ui));
-          const resolvedParams = { ...params, type } as { type: NonNullable<TaskParams["type"]>; goal: string; context?: string };
-          const result = await _executeTask(resolvedParams, signal, onUpdate as Parameters<typeof _executeTask>[2], policy);
-          return { content: [{ type: "text" as const, text: result }], details: undefined };
-        } catch (err) {
-          return {
-            content: [{ type: "text" as const, text: String(err) }],
-            isError: true,
-            details: undefined,
-          };
-        }
-      },
-    });
-  }
+  // ── Task tool removed — superseded by pi-subagents' built-in subagent tool ──
+  // thanos task tool registration removed in favor of npm:pi-subagents
+  // which provides /run, /chain, /parallel, background runs, and 8 built-in agents.
+  // The thanos agents/ module is kept for potential future use but no longer
+  // registers a task tool. pi-subagents handles all subagent delegation.
 }
