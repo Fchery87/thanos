@@ -55,13 +55,18 @@ Run `thanos update` anytime to pull the latest stable config.
 
 | Package | Purpose |
 |---------|---------|
-| **Thanos Harness** (`src/`) | Governance: permissions, spec lifecycle, audit logging, policy |
+| **Thanos Harness** (`src/`) | Governance, permissions, spec lifecycle, audit logging, policy, and Lens Lite |
 | `rytswd/pi-agent-extensions` | Statusline, fetch, notify, permission-gate, questionnaire, slow-mode |
 | `npm:pi-subagents` | 8 built-in agents, `/run`, `/chain`, `/parallel` commands |
 | `npm:pi-web-access` | Web search (Exa), URL fetch, YouTube transcripts, GitHub cloning |
-| `npm:pi-lens` | Auto-format, lint, secrets scan, cascade diagnostics, LSP integration |
 | `npm:context-mode` | Context window management and search |
 | `npm:@victor-software-house/pi-curated-themes` | Brogrammer and other themes |
+
+### Disabled packages
+
+| Package | Status |
+|---------|--------|
+| `npm:pi-lens` | ❌ Disabled from always-on runtime. It caused 11–52s startup/edit latency from LSP, lint, `knip`, `jscpd`, and cascade-diagnostic hooks. Replaced by Thanos Lens Lite for low-cost safety and manual diagnostics. |
 
 ### Rytswd extensions (active)
 
@@ -88,13 +93,40 @@ Run `thanos update` anytime to pull the latest stable config.
 
 ---
 
+## Thanos Lens Lite
+
+Lens Lite is the lightweight replacement for always-on `pi-lens`. It is intentionally bounded and does **not** run project-wide scans in the background.
+
+Always-on behavior:
+
+- Tracks files read and changed during the session.
+- Scans `write`/`edit` content for likely secrets, even when yolo is enabled.
+- Blocks risky modifications of existing files that were not read first, forcing the model to read the file before retrying.
+- Suppresses read-before-modify friction for normal exact `oldText` edits, files already changed this session, and new files.
+- Updates a compact `lens:<changed>` status indicator.
+
+Manual commands:
+
+| Command | Description |
+|---------|-------------|
+| `/lens` | Show Lens Lite status and help |
+| `/lens changed` | Show files edited this session |
+| `/lens diagnose [file]` | Run bounded checks on changed files only (`git diff --check`, and configured Biome/ESLint/Ruff when available) |
+| `/lens strict on` | Block all existing-file edits/writes without a prior read, including exact `oldText` edits |
+| `/lens strict off` | Default low-noise mode: block only risky blind modifications |
+| `/lens clear` | Clear Lens Lite session state |
+| `/lens on` / `/lens off` | Toggle Lens Lite for the current session |
+
+---
+
 ## Thanos slash commands
 
 | Command | Description |
 |---------|-------------|
 | `/models` | Two-step provider → model selector with reasoning/image badges |
+| `/lens` | Thanos Lens Lite: changed files, read-before-modify guard, secret scan, manual diagnostics |
 | `/modes` | Select interaction mode (code, chat, plan, review) |
-| `/yolo` | Toggle yolo mode (bypasses all permission checks) |
+| `/yolo` | Toggle yolo mode (bypasses thanos permission checks; Lens Lite secret scan still runs) |
 | `/mcp` | Manage MCP server connections |
 | `/thinking` | Select thinking level |
 | `/skills` | List available skills |
@@ -143,7 +175,7 @@ glm-5.1 ❯ D:45% ❯ 42%/200k ❯ think:med ❯ ↑15.2k ↓3.1k ❯ Alora ❯ 
 
 Segments: model · subscription usage · context · thinking · tokens · path · vcs · cost · extension statuses
 
-A custom `segTokens` segment shows per-turn input (↑) and output (↓) token counts.
+A custom `segTokens` segment shows per-turn input (↑) and output (↓) token counts. Thanos Lens Lite also exposes a compact `lens:<changed>` status indicator.
 
 ---
 
