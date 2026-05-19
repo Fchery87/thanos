@@ -18,8 +18,7 @@
       ]
     },
     "npm:pi-subagents",
-    "npm:pi-web-access",
-    "npm:pi-lens"
+    "npm:pi-web-access"
   ],
   "theme": "brogrammer",
   "defaultThinkingLevel": "low",

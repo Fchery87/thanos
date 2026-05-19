@@ -32,13 +32,13 @@ import { renderWelcomeHeader, formatTimeAgo, type WelcomeMcpSummary, type Welcom
 import { MemoryStore } from "./memory/store";
 import { shouldSaveMemory, extractCorrection, formatMemoriesForInjection } from "./memory/injector";
 // Model router removed — use /models command or pi-subagents for model selection
-import { scanContent, formatScanResult } from "./security/scanner";
 import { createSnapshot } from "./security/snapshot";
 import { classifyRisk } from "./permissions/risk";
 // registerSearchTool removed — superseded by npm:pi-web-access
 import { AskParamsSchema, buildAskDecision, resolveHeadlessAsk, type AskQuestion } from "./interaction/ask";
 import { createTodoState, applyTodoOperation, exportTodoMarkdown, TodoParamsSchema, type TodoOperation, type TodoState } from "./interaction/todo";
 import { FindingParamsSchema, addFinding, formatReviewSummary, type ReviewFinding } from "./review/findings";
+import { LensLite, registerLensLiteCommand } from "./lens/lite";
 
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -75,6 +75,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   let defaultTaskType: TaskParams["type"] | undefined;
   let todoState: TodoState = createTodoState([]);
   let reviewFindings: ReviewFinding[] = [];
+  const lens = new LensLite(sessionId);
 
   const permissions = new PermissionManager();
   const spec = new SpecEngine();
@@ -99,10 +100,11 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
 
     const theme = ctx.ui.theme;
 
-    // Show yolo status if default-on
+    // Show yolo/lens status if default-on
     if (permissions.isYolo) {
       ctx.ui.setStatus("harness-yolo", theme.fg("error", "⚡ yolo"));
     }
+    lens.setStatus(ctx);
 
     let mcpSummary: WelcomeMcpSummary = { configured: 0, connected: 0, failed: 0, initFailed: false };
     const init = await initializeMcpSession({ manager: mcpManager, pi, cwd: ctx.cwd });
@@ -805,6 +807,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     policyPromise: policyStatePromise,
     getDefaultTaskType: () => defaultTaskType,
   });
+  registerLensLiteCommand(pi, lens);
 
   // ── Keyboard shortcuts (appear in /hotkeys → Extensions) ───────────
   pi.registerShortcut("ctrl+shift+k", {
@@ -1036,6 +1039,8 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     ctx.ui.setHeader(undefined);
     permissions.clearSessionRules();  // clear deny rules from any prior rejection
     spec.startTurn(event.prompt, pi.getFlag("spec") === true);
+    lens.beginTurn();
+    lens.setStatus(ctx);
 
 
     // ── Memory: save corrections, inject preferences ───────────────
@@ -1088,31 +1093,13 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     const result = await handler(event);
     if (result?.block) return { block: true, reason: result.reason };
 
-    if (!permissions.isYolo) {
-      // Secret scanning: intercept writes/edits that contain credential patterns
-      const { toolName, input } = event;
-      if (toolName === "write" || toolName === "edit") {
-        const raw = input as Record<string, unknown>;
-        const content = String(raw["content"] ?? raw["new_string"] ?? "");
-        if (content) {
-          const scan = scanContent(content);
-          if (scan.found) {
-            const detail = formatScanResult(scan.matches);
-            if (!ctx.hasUI) {
-              return { block: true, reason: `Secret detected in ${toolName} — blocked in headless mode: ${scan.matches[0]?.type}` };
-            }
-            const proceed = await ctx.ui.confirm(
-              "Secret Detected",
-              `Potential credentials found:\n${detail}\n\nProceed anyway?`,
-            );
-            if (!proceed) {
-              return { block: true, reason: `Secret detected — write blocked: ${scan.matches[0]?.type}` };
-            }
-          }
-        }
-      }
+    const lensResult = await lens.beforeTool(event, ctx);
+    if (lensResult?.block) return lensResult;
 
-      // Git snapshot: stash working tree before critical (bash) tool calls
+    if (!permissions.isYolo) {
+      const { toolName, input } = event;
+      // Git snapshot: stash working tree before critical (bash) tool calls.
+      // Secret scanning is handled by Lens Lite, even when yolo is enabled.
       if (classifyRisk(toolName, input) === "critical") {
         createSnapshot(process.cwd()).catch(() => {});
       }
@@ -1120,7 +1107,8 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   });
 
   // ── Spec output collection ─────────────────────────────────────────
-  (pi as { on(event: "tool_result", handler: (event: Parameters<ReturnType<typeof makeAfterToolHandler>>[0]) => ReturnType<ReturnType<typeof makeAfterToolHandler>>): void }).on("tool_result", (event) => {
+  (pi as any).on("tool_result", (event: Parameters<ReturnType<typeof makeAfterToolHandler>>[0], ctx: ExtensionContext) => {
+    lens.afterTool(event, ctx);
     return policyStatePromise.then((state) => {
       const auditLogger = state.kind === "ok" && state.policy.audit.enabled
         ? new AuditLogger(state.policy.audit.path ?? join(process.cwd(), ".harness", "audit.jsonl"))
