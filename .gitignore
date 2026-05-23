@@ -4,6 +4,11 @@ mcp-secrets.json
 mcp.json
 agent/auth.json
 web-search.json
+.env
+.env.*
+!.env.example
+*.local.secret.json
+agent/*.local.secret.json
 
 # ── Dependencies ─────────────────────────────────────────────────────
 node_modules/
