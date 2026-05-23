@@ -2,25 +2,81 @@
 
 Personal [Pi coding agent](https://earendil.works) configuration — includes the **Thanos Harness** governance extension plus a curated set of npm packages, MCP servers, and skills.
 
-> **Pi version:** 0.75.3 · **Theme:** Brogrammer · **Default model:** `zai/glm-5.1`
+> **Pi version:** 0.75.3+ · **Theme:** Brogrammer · **Default provider/model:** `theclawbay/gpt-5.5`
 
 ---
 
 ## Install
 
+Thanos is distributed directly from GitHub. No npm package setup is required.
+
+### Linux / macOS
+
 ```bash
-git clone https://github.com/fchery87/thanos.git ~/.pi
-cd ~/.pi && npm install
+curl -fsSL https://raw.githubusercontent.com/Fchery87/thanos/master/scripts/install.sh | sh
+```
+
+### Windows PowerShell
+
+```powershell
+irm https://raw.githubusercontent.com/Fchery87/thanos/master/scripts/install.ps1 | iex
+```
+
+Then open a new terminal and run:
+
+```bash
 thanos
 ```
 
-Or use the one-liner:
+Update anytime with:
 
 ```bash
-npx thanos-install
+thanos update
 ```
 
-Run `thanos update` anytime to pull the latest stable config.
+### Install a pinned tag or branch
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Fchery87/thanos/master/scripts/install.sh | sh -s -- --ref v0.1.0
+```
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Fchery87/thanos/master/scripts/install.ps1))) -Ref v0.1.0
+```
+
+### Existing Pi users
+
+The default install location is `~/.pi` because Pi reads user packages and settings from there. If `~/.pi` already exists and is not the Thanos repo, the installer stops instead of overwriting it. To intentionally back it up and install Thanos, pass `--force` on Linux/macOS or `-Force` on Windows.
+
+### Requirements
+
+- Git
+- Node.js 24+ with npm, or Bun 1.3+
+- curl/wget on Linux/macOS, or PowerShell on Windows
+- Optional: `xclip` for Linux clipboard support
+- Optional: `ffmpeg` + `yt-dlp` for video frame extraction
+
+---
+
+## User API keys
+
+Thanos does **not** ship maintainer API keys. Each user must provide their own provider and MCP keys.
+
+The bundled default provider uses these environment variables:
+
+```bash
+export THECLAWBAY_API_KEY="your-key"
+export CROFAI_API_KEY="your-key"
+```
+
+Windows PowerShell:
+
+```powershell
+setx THECLAWBAY_API_KEY "your-key"
+setx CROFAI_API_KEY "your-key"
+```
+
+Users can also switch to another Pi provider/model with `/settings`, `/models`, or by editing `~/.pi/agent/settings.json`. MCP server keys go in `~/.pi/mcp.json`, which is created from `mcp.example.json` during install.
 
 ---
 
@@ -31,8 +87,7 @@ Run `thanos update` anytime to pull the latest stable config.
 ├── agent/
 │   ├── agents/                 # Custom agent definitions (designer.md)
 │   ├── skills/                 # Installed Pi skills (86+)
-│   ├── models.json             # Custom provider/model catalogs (CrofAI, theclawbay)
-│   ├── auth.json               # Provider API keys (env-var references for 26 providers)
+│   ├── models.json             # Custom providers that reference user-owned env vars
 │   └── settings.json           # Pi agent settings and package list
 ├── src/                        # Thanos Harness extension source
 ├── scripts/
@@ -41,9 +96,9 @@ Run `thanos update` anytime to pull the latest stable config.
 │   ├── adr/                    # Architecture Decision Records
 │   └── plans/                  # Implementation planning documents
 ├── CONTEXT.md                  # Design glossary and approved direction
-├── mcp.json                    # MCP server config (gitignored)
+├── mcp.json                    # User-owned MCP server config (gitignored)
 ├── mcp.example.json            # MCP server config template
-├── web-search.json             # pi-web-access config (gitignored)
+├── web-search.json             # Optional user-owned pi-web-access config (gitignored)
 └── .gitignore
 ```
 
