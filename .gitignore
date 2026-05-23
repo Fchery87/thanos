@@ -4,6 +4,7 @@ mcp-secrets.json
 mcp.json
 agent/auth.json
 agent/models.json
+agent/settings.json
 web-search.json
 .env
 .env.*

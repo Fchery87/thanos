@@ -181,6 +181,14 @@ install_harness() {
   cd "$old_cwd"
 }
 
+setup_user_settings() {
+  if [ ! -f "$THANOS_DIR/agent/settings.json" ] && [ -f "$THANOS_DIR/agent/settings.example.json" ]; then
+    mkdir -p "$THANOS_DIR/agent"
+    cp "$THANOS_DIR/agent/settings.example.json" "$THANOS_DIR/agent/settings.json"
+    info "Created agent/settings.json from template — users can customize provider/model settings locally"
+  fi
+}
+
 setup_mcp() {
   if [ ! -f "$THANOS_DIR/mcp.json" ] && [ -f "$THANOS_DIR/mcp.example.json" ]; then
     cp "$THANOS_DIR/mcp.example.json" "$THANOS_DIR/mcp.json"
@@ -227,8 +235,9 @@ main() {
   prepare_install_source
   ensure_pi
   report_pi_version
-  install_harness
+  setup_user_settings
   setup_mcp
+  install_harness
   install_wrapper
   ensure_path
   success "Thanos installed! Run 'thanos' to start a session."

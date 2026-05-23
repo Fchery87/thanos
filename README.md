@@ -92,7 +92,8 @@ The installer creates `mcp.json` from `mcp.example.json` when it does not exist.
 ├── agent/
 │   ├── agents/                 # Custom agent definitions (designer.md)
 │   ├── skills/                 # Installed Pi skills (86+)
-│   └── settings.json           # Pi agent settings and package list
+│   ├── settings.example.json   # Thanos default Pi package/settings template
+│   └── settings.json           # User-owned local copy created by installer (gitignored)
 ├── src/                        # Thanos Harness extension source
 ├── scripts/
 │   └── sync-models-dev.mjs     # Sync model metadata from models.dev
@@ -329,7 +330,12 @@ Users can configure providers through Pi's built-in settings/login flow or by ad
 ~/.pi/agent/models.json
 ```
 
-That file is gitignored by Thanos so local provider catalogs and credentials are never published by this repo.
+Local user configuration files are gitignored by Thanos so provider catalogs, credentials, and model defaults are never published by this repo:
+
+```text
+~/.pi/agent/models.json
+~/.pi/agent/settings.json
+```
 
 ---
 

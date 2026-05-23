@@ -131,6 +131,16 @@ function Install-Harness {
   Pop-Location
 }
 
+function Setup-UserSettings {
+  $settings = Join-Path $ThanosDir "agent\settings.json"
+  $example = Join-Path $ThanosDir "agent\settings.example.json"
+  if ((-not (Test-Path $settings)) -and (Test-Path $example)) {
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $settings) | Out-Null
+    Copy-Item $example $settings
+    Info "Created agent/settings.json from template — users can customize provider/model settings locally"
+  }
+}
+
 function Setup-Mcp {
   $mcp = Join-Path $ThanosDir "mcp.json"
   $example = Join-Path $ThanosDir "mcp.example.json"
@@ -179,8 +189,9 @@ Prepare-InstallSource
 Ensure-Pi
 $piVersion = try { pi --version } catch { "unknown version" }
 Info "Pi version: $piVersion"
-Install-Harness
+Setup-UserSettings
 Setup-Mcp
+Install-Harness
 Install-Wrapper
 Ensure-Path
 Success "Thanos installed! Run 'thanos' to start a session."
