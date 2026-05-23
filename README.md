@@ -124,8 +124,10 @@ Manual commands:
 | Command | Description |
 |---------|-------------|
 | `/models` | Two-step provider → model selector with reasoning/image badges |
+| `/designer [goal]` | Spawn the Designer subagent for UI/UX implementation, review, or design-system audit |
+| `/run designer <task>` | Run Designer through `pi-subagents` directly; also appears in `/run` completions after reload |
 | `/lens` | Thanos Lens Lite: changed files, read-before-modify guard, secret scan, manual diagnostics |
-| `/modes` | Select interaction mode (code, chat, plan, review) |
+| `/modes` | Select default legacy specialist mode (`explore`, `plan`, `build`, `reviewer`, `designer`) |
 | `/yolo` | Toggle yolo mode (bypasses thanos permission checks; Lens Lite secret scan still runs) |
 | `/mcp` | Manage MCP server connections |
 | `/thinking` | Select thinking level |
@@ -210,6 +212,29 @@ Every tool call is classified by risk tier:
 | `ask`, `todo`, `report_finding` | medium | `interaction` |
 
 Yolo mode is **default on** — the thanos governance layer returns "allow" immediately, letting rytswd `permission-gate` and `slow-mode` run independently.
+
+### Context-mode execution guard
+
+Thanos blocks unbounded context-mode execution calls:
+
+- `ctx_execute`
+- `ctx_execute_file`
+- `ctx_batch_execute`
+
+Those tools must include an explicit `timeout` and the timeout must be `<= 110000` ms. This prevents context-mode's Pi MCP bridge from hanging until its hard `120000` ms `tools/call` ceiling and surfacing:
+
+```text
+MCP request timeout after 120000ms: tools/call
+```
+
+Recommended timeouts:
+
+| Use case | Timeout |
+|----------|---------|
+| quick inspection | `10000` ms |
+| repository search / metadata scan | `30000` ms |
+| tests / builds | `60000`–`90000` ms |
+| server/daemon | `background: true` with a short timeout |
 
 ### Spec lifecycle
 

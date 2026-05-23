@@ -119,10 +119,10 @@ function renderSessionRows(theme: TUITheme, args: WelcomeHeaderArgs, width: numb
 function renderCommandRows(theme: TUITheme, width: number): string[] {
   return [
     command(theme, "/models", "provider → model selector", width),
+    command(theme, "/designer", "spawn Designer subagent", width),
+    command(theme, "/run", "pi-subagents runner", width),
     command(theme, "/lens", "lite code safety + diagnostics", width),
     command(theme, "/thinking", "select thinking level", width),
-    command(theme, "/yolo", "toggle permission bypass", width),
-    command(theme, "/status", "full session snapshot", width),
     command(theme, "/mcp", "servers, auth, lifecycle", width),
   ];
 }

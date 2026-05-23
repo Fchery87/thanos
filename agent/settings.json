@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.75.3",
+  "lastChangelogVersion": "0.75.5",
   "packages": [
     "npm:@victor-software-house/pi-curated-themes",
     "npm:context-mode",
@@ -21,7 +21,7 @@
     "npm:pi-web-access"
   ],
   "theme": "brogrammer",
-  "defaultThinkingLevel": "low",
+  "defaultThinkingLevel": "high",
   "defaultProvider": "theclawbay",
   "defaultModel": "gpt-5.5",
   "treeFilterMode": "default",

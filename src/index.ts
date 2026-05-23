@@ -64,6 +64,37 @@ function setThinkingStatus(pi: ExtensionAPI, ctx: ExtensionContext): void {
   ctx.ui.setStatus("harness-thinking", level && level !== "off" ? ctx.ui.theme.fg("accent", `thinking:${level}`) : undefined);
 }
 
+const CTX_EXEC_TOOLS = new Set(["ctx_execute", "ctx_execute_file", "ctx_batch_execute"]);
+const CTX_EXEC_MAX_TIMEOUT_MS = 110_000;
+
+function contextModeExecutionGuard(event: { toolName?: string; input?: unknown }): { block: true; reason: string } | undefined {
+  const toolName = event.toolName ?? "";
+  if (!CTX_EXEC_TOOLS.has(toolName)) return undefined;
+
+  const input = event.input && typeof event.input === "object" ? event.input as Record<string, unknown> : {};
+  const timeout = Number(input.timeout);
+  const hasTimeout = input.timeout !== undefined && Number.isFinite(timeout) && timeout > 0;
+
+  if (!hasTimeout) {
+    return {
+      block: true,
+      reason:
+        `${toolName} was called without an explicit timeout. Context-mode's Pi bridge has a hard 120s tools/call ceiling; unbounded calls can freeze and fail with ` +
+        `"MCP request timeout after 120000ms". Retry with a timeout <= ${CTX_EXEC_MAX_TIMEOUT_MS}ms. Suggested defaults: 10000ms for quick inspection, 30000ms for searches, 60000-90000ms for tests/builds. For servers/daemons, use background:true with a short timeout.`,
+    };
+  }
+
+  if (timeout > CTX_EXEC_MAX_TIMEOUT_MS) {
+    return {
+      block: true,
+      reason:
+        `${toolName} timeout ${timeout}ms exceeds the safe Pi bridge budget. Retry with timeout <= ${CTX_EXEC_MAX_TIMEOUT_MS}ms, or use background:true with a short timeout for long-running processes.`,
+    };
+  }
+
+  return undefined;
+}
+
 
 export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof executeTask }) {
   const _executeTask = deps?.executeTask ?? executeTask;
@@ -963,41 +994,65 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     },
   });
 
-  pi.registerShortcut("ctrl+shift+d", {
-    description: "Spawn designer — UI/UX implementation and review",
-    handler: async (ctx) => {
-      if (isSubagent) {
-        ctx.ui.notify("Designer is only available in the main session.", "warning");
+  const designerGoalOptions = [
+    "Implement UI changes — read the codebase, build components, cover all states",
+    "Review UI code — check for accessibility gaps, missing states, AI slop patterns",
+    "Audit design system — extract tokens, document inconsistencies, suggest consolidation",
+  ];
+
+  const runDesignerAgent = async (goal: string, ctx: ExtensionContext) => {
+    if (isSubagent) {
+      ctx.ui.notify("Designer is only available in the main session.", "warning");
+      return;
+    }
+    ctx.ui.notify("Starting designer agent…", "info");
+    const policy = await requirePolicy(ctx);
+    if (!policy) return;
+    try {
+      const result = await _executeTask(
+        { type: "designer", goal },
+        undefined,
+        undefined,
+        policy,
+      );
+      ctx.ui.notify(result, "info");
+    } catch (err) {
+      ctx.ui.notify(`Designer failed: ${String(err)}`, "warning");
+    }
+  };
+
+  pi.registerCommand("designer", {
+    description: "Spawn the Designer subagent for UI/UX implementation, review, or design-system audit",
+    getArgumentCompletions: (prefix) => {
+      if (prefix.trim().length > 0) return null;
+      return designerGoalOptions.map((value) => ({ value, label: value }));
+    },
+    handler: async (args, ctx) => {
+      const explicitGoal = args.trim();
+      if (explicitGoal) {
+        await runDesignerAgent(explicitGoal, ctx);
         return;
       }
       if (!ctx.hasUI) {
-        ctx.ui.notify("Pass a goal: use /task with type designer instead.", "warning");
+        ctx.ui.notify("Pass a goal: /designer <goal>", "warning");
         return;
       }
-      const goal = await ctx.ui.select(
-        "What should the designer do?",
-        [
-          "Implement UI changes — read the codebase, build components, cover all states",
-          "Review UI code — check for accessibility gaps, missing states, AI slop patterns",
-          "Audit design system — extract tokens, document inconsistencies, suggest consolidation",
-        ],
-      );
+      const goal = await ctx.ui.select("What should the designer do?", designerGoalOptions);
       if (!goal) return;
-      ctx.ui.notify("Starting designer agent…", "info");
-      const policy = await requirePolicy(ctx);
-      if (!policy) return;
-      const { executeTask } = await import("./agents/task-tool");
-      try {
-        const result = await executeTask(
-          { type: "designer", goal },
-          undefined,
-          undefined,
-          policy,
-        );
-        ctx.ui.notify(result, "info");
-      } catch (err) {
-        ctx.ui.notify(`Designer failed: ${String(err)}`, "warning");
+      await runDesignerAgent(goal, ctx);
+    },
+  });
+
+  pi.registerShortcut("ctrl+shift+d", {
+    description: "Spawn designer — UI/UX implementation and review",
+    handler: async (ctx) => {
+      if (!ctx.hasUI) {
+        ctx.ui.notify("Pass a goal: /designer <goal>", "warning");
+        return;
       }
+      const goal = await ctx.ui.select("What should the designer do?", designerGoalOptions);
+      if (!goal) return;
+      await runDesignerAgent(goal, ctx);
     },
   });
 
@@ -1092,6 +1147,9 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     );
     const result = await handler(event);
     if (result?.block) return { block: true, reason: result.reason };
+
+    const ctxGuardResult = contextModeExecutionGuard(event);
+    if (ctxGuardResult?.block) return ctxGuardResult;
 
     const lensResult = await lens.beforeTool(event, ctx);
     if (lensResult?.block) return lensResult;
