@@ -2,7 +2,7 @@
 
 Personal [Pi coding agent](https://earendil.works) configuration — includes the **Thanos Harness** governance extension plus a curated set of npm packages, MCP servers, and skills.
 
-> **Pi version:** 0.75.3+ · **Theme:** Brogrammer · **Default provider/model:** `theclawbay/gpt-5.5`
+> **Pi version:** 0.75.3+ · **Theme:** Brogrammer · **Provider/model:** user-configured
 
 ---
 
@@ -58,25 +58,30 @@ The default install location is `~/.pi` because Pi reads user packages and setti
 
 ---
 
-## User API keys
+## User API keys and provider setup
 
-Thanos does **not** ship maintainer API keys. Each user must provide their own provider and MCP keys.
+Thanos does **not** ship maintainer API keys or force a specific model provider. Each user chooses their own Pi provider/model and supplies their own keys.
 
-The bundled default provider uses these environment variables:
+After install, users can browse registered providers and models with `/models`. The picker shows unauthenticated providers too, marked as needing a key, so users can choose what they want before adding credentials.
 
 ```bash
-export THECLAWBAY_API_KEY="your-key"
-export CROFAI_API_KEY="your-key"
+thanos
+# then use /models to browse/select, or /settings and /login to configure credentials
 ```
 
-Windows PowerShell:
+Users who want custom providers can create or edit:
 
-```powershell
-setx THECLAWBAY_API_KEY "your-key"
-setx CROFAI_API_KEY "your-key"
+```text
+~/.pi/agent/models.json
 ```
 
-Users can also switch to another Pi provider/model with `/settings`, `/models`, or by editing `~/.pi/agent/settings.json`. MCP server keys go in `~/.pi/mcp.json`, which is created from `mcp.example.json` during install.
+and reference their own environment variables or credential commands there. MCP server keys go in:
+
+```text
+~/.pi/mcp.json
+```
+
+The installer creates `mcp.json` from `mcp.example.json` when it does not exist.
 
 ---
 
@@ -87,7 +92,6 @@ Users can also switch to another Pi provider/model with `/settings`, `/models`, 
 ├── agent/
 │   ├── agents/                 # Custom agent definitions (designer.md)
 │   ├── skills/                 # Installed Pi skills (86+)
-│   ├── models.json             # Custom providers that reference user-owned env vars
 │   └── settings.json           # Pi agent settings and package list
 ├── src/                        # Thanos Harness extension source
 ├── scripts/
@@ -315,23 +319,17 @@ Audit events are written to `.harness/audit.jsonl` (gitignored). View entries wi
 
 ---
 
-## Custom providers
+## Provider and model configuration
 
-Two custom providers in `agent/models.json`:
+Thanos leaves provider credentials to each user. The `/models` command lists registered models from the user's Pi installation and any provider catalogs they add locally, even before credentials are configured.
 
-| Provider | API type | Models |
-|----------|----------|--------|
-| CrofAI | openai-completions | 17 models |
-| theclawbay | openai-responses | 17 models |
+Users can configure providers through Pi's built-in settings/login flow or by adding their own local provider catalog at:
 
-26 additional pi-supported providers configured in `agent/auth.json` via environment-variable references.
-
-Model metadata synced from `models.dev` via `scripts/sync-models-dev.mjs`:
-
-```bash
-node scripts/sync-models-dev.mjs           # dry-run
-node scripts/sync-models-dev.mjs --write   # apply changes
+```text
+~/.pi/agent/models.json
 ```
+
+That file is gitignored by Thanos so local provider catalogs and credentials are never published by this repo.
 
 ---
 

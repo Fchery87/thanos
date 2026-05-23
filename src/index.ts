@@ -748,16 +748,18 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       }
 
       const theme = ctx.ui.theme;
-      const available = ctx.modelRegistry.getAvailable();
+      const models = ctx.modelRegistry.getAll();
 
-      if (available.length === 0) {
-        ctx.ui.notify("No models available. Run /login to configure a provider.", "warning");
+      if (models.length === 0) {
+        ctx.ui.notify("No models are registered. Add a provider catalog or update Pi.", "warning");
         return;
       }
 
-      // Step 1: Group models by provider
-      const providerMap = new Map<string, typeof available>();
-      for (const m of available) {
+      // Step 1: Group models by provider. Show all registered models, even when
+      // the provider is not authenticated yet, so new users can browse choices
+      // before adding their own API keys or OAuth credentials.
+      const providerMap = new Map<string, typeof models>();
+      for (const m of models) {
         const list = providerMap.get(m.provider) ?? [];
         list.push(m);
         providerMap.set(m.provider, list);
@@ -774,7 +776,9 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       // Format provider labels with model count
       const providerLabels = providers.map(([name, models]) => {
         const tag = name === currentProvider ? theme.fg("accent", "●") : theme.fg("dim", "○");
-        return `${tag} ${theme.bold(name.padEnd(24, " "))} ${theme.fg("dim", `${models.length} model${models.length !== 1 ? "s" : ""}`)}`;
+        const authed = models.some((m) => ctx.modelRegistry.hasConfiguredAuth(m));
+        const authLabel = authed ? "configured" : "needs key";
+        return `${tag} ${theme.bold(name.padEnd(24, " "))} ${theme.fg("dim", `${models.length} model${models.length !== 1 ? "s" : ""} · ${authLabel}`)}`;
       });
 
       const selectedProvider = await ctx.ui.select("Select provider", providerLabels);
@@ -803,8 +807,9 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         const id = theme.fg("accent", (m.name || m.id).padEnd(32, " "));
         const ctxK = m.contextWindow ? `${Math.round(m.contextWindow / 1000)}k` : "?";
         const outK = m.maxTokens ? `${Math.round(m.maxTokens / 1000)}k` : "?";
+        const auth = ctx.modelRegistry.hasConfiguredAuth(m) ? "" : theme.fg("warning", " · needs key");
         const dims = theme.fg("dim", `${ctxK} ctx · ${outK} out`);
-        return `${id} ${dims}${brain}${img}${tag}`;
+        return `${id} ${dims}${brain}${img}${auth}${tag}`;
       });
 
       const selectedModel = await ctx.ui.select(
