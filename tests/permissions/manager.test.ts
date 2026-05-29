@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { PermissionManager } from "../../src/permissions/manager";
 
 describe("PermissionManager.remember() pattern validation", () => {
+  it("defaults to yolo mode for low-friction local operation", () => {
+    const pm = new PermissionManager();
+    expect(pm.isYolo).toBe(true);
+  });
+
   it("throws when pattern is an empty string", () => {
     const pm = new PermissionManager();
     expect(() => pm.remember("exec", "", "allow")).toThrowError(/pattern/);

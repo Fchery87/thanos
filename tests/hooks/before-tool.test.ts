@@ -12,7 +12,11 @@ const basePolicy: HarnessPolicy = {
   headless: { defaultDecision: "allow" },
 };
 
-function makePermissions() { return new PermissionManager(); }
+function makePermissions(initialYolo = true) {
+  const permissions = new PermissionManager();
+  permissions.setYolo(initialYolo);
+  return permissions;
+}
 function makeSpec() { return new SpecEngine(); }
 
 describe("makeBeforeToolHandler audit context", () => {
@@ -65,7 +69,7 @@ describe("headless audit record correctness", () => {
       headless: { defaultDecision: "allow" },
     };
     const handler = makeBeforeToolHandler(
-      makePermissions(),
+      makePermissions(false),
       makeSpec(),
       async () => true,
       false, // no UI — headless

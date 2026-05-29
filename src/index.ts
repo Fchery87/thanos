@@ -96,7 +96,7 @@ function contextModeExecutionGuard(event: { toolName?: string; input?: unknown }
 }
 
 
-export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof executeTask }) {
+export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof executeTask; initialYolo?: boolean }) {
   const _executeTask = deps?.executeTask ?? executeTask;
   const subagentRole = process.env.HARNESS_SUBAGENT; // undefined | "1" | "reviewer"
   const isSubagent = !!subagentRole;
@@ -109,6 +109,9 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   const lens = new LensLite(sessionId);
 
   const permissions = new PermissionManager();
+  if (deps?.initialYolo !== undefined) {
+    permissions.setYolo(deps.initialYolo);
+  }
   const spec = new SpecEngine();
   const policyStatePromise = loadPolicyState(process.cwd(), process.env.HARNESS_POLICY_FILE);
 

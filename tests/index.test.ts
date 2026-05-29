@@ -56,7 +56,7 @@ describe("register", () => {
     process.chdir(cwd);
 
     const { api, handlers } = createFakePi();
-    register(api);
+    register(api, { initialYolo: false });
 
     const toolCall = handlers.get("tool_call");
     expect(toolCall).toBeTypeOf("function");
@@ -111,7 +111,7 @@ describe("register", () => {
     const { api, handlers } = createFakePi({
       getFlag: vi.fn(() => true),
     });
-    register(api);
+    register(api, { initialYolo: false });
 
     const beforeAgentStart = handlers.get("before_agent_start");
     const toolCall = handlers.get("tool_call");
