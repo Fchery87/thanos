@@ -8,12 +8,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Build explicit mock functions for the fs/promises functions we care about.
-const mockReadFile  = vi.fn();
-const mockWriteFile = vi.fn();
-const mockRename    = vi.fn();
-const mockChmod     = vi.fn();
-const mockCopyFile  = vi.fn();
-const mockMkdir     = vi.fn();
+const {
+  mockReadFile,
+  mockWriteFile,
+  mockRename,
+  mockChmod,
+  mockCopyFile,
+  mockMkdir,
+} = vi.hoisted(() => ({
+  mockReadFile: vi.fn(),
+  mockWriteFile: vi.fn(),
+  mockRename: vi.fn(),
+  mockChmod: vi.fn(),
+  mockCopyFile: vi.fn(),
+  mockMkdir: vi.fn(),
+}));
 
 vi.mock("node:fs/promises", () => ({
   readFile:  mockReadFile,

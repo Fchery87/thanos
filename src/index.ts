@@ -138,34 +138,6 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     lens.setStatus(ctx);
 
     let mcpSummary: WelcomeMcpSummary = { configured: 0, connected: 0, failed: 0, initFailed: false };
-    const init = await initializeMcpSession({ manager: mcpManager, pi, cwd: ctx.cwd });
-    mcpSummary = {
-      configured: init.statuses.length,
-      connected: init.connectedCount,
-      failed: init.statuses.filter((s) => s.error).length,
-      initFailed: init.kind === "failed",
-    };
-    if (init.kind === "failed") {
-      ctx.ui.notify(`MCP init failed: ${init.error}`, "warning");
-    } else {
-      const statuses = init.statuses;
-      const connected = statuses.filter((s) => !s.error);
-      const failed = statuses.filter((s) => s.error);
-      mcpSummary = {
-        configured: statuses.length,
-        connected: init.connectedCount,
-        failed: failed.length,
-        initFailed: false,
-      };
-      if (connected.length > 0) {
-        ctx.ui.setStatus("harness-mcp", theme.fg("accent", `mcp:${connected.length}`));
-      }
-      if (failed.length > 0) {
-        const summary = failed.map((s) => `${theme.fg("error", s.name)}: ${s.error}`).join("\n  ");
-        const panel = formatPanel(theme, "MCP Failed", summary, "error");
-        ctx.ui.notify(panel, "warning");
-      }
-    }
 
     // ── Thanos welcome header — two-column layout, clears on first prompt ─
     if (event.reason === "startup" || event.reason === "new") {
@@ -204,6 +176,30 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         recentRows,
       }));
     }
+
+    initializeMcpSession({ manager: mcpManager, pi, cwd: ctx.cwd }).then((init) => {
+      mcpSummary = {
+        configured: init.statuses.length,
+        connected: init.connectedCount,
+        failed: init.statuses.filter((s) => s.error).length,
+        initFailed: init.kind === "failed",
+      };
+      if (init.kind === "failed") {
+        ctx.ui.notify(`MCP init failed: ${init.error}`, "warning");
+        return;
+      }
+      const connected = init.statuses.filter((s) => !s.error);
+      const failed = init.statuses.filter((s) => s.error);
+      if (connected.length > 0) {
+        ctx.ui.setStatus("harness-mcp", theme.fg("accent", `mcp:${connected.length}`));
+      }
+      if (failed.length > 0) {
+        const summary = failed.map((s) => `${theme.fg("error", s.name)}: ${s.error}`).join("\n  ");
+        ctx.ui.notify(formatPanel(theme, "MCP Failed", summary, "error"), "warning");
+      }
+    }).catch((err) => {
+      ctx.ui.notify(`MCP init failed: ${err instanceof Error ? err.message : String(err)}`, "warning");
+    });
   });
 
   // ── --spec flag ────────────────────────────────────────────────────
@@ -1171,8 +1167,8 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
 
   // ── Spec output collection ─────────────────────────────────────────
   (pi as any).on("tool_result", (event: Parameters<ReturnType<typeof makeAfterToolHandler>>[0], ctx: ExtensionContext) => {
-    lens.afterTool(event, ctx);
     return policyStatePromise.then((state) => {
+      lens.afterTool(event, ctx);
       const auditLogger = state.kind === "ok" && state.policy.audit.enabled
         ? new AuditLogger(state.policy.audit.path ?? join(process.cwd(), ".harness", "audit.jsonl"))
         : undefined;
@@ -1209,6 +1205,29 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   // registerSearchTool removed — superseded by npm:pi-web-access
 
   if (!isSubagent) {
+    pi.registerTool({
+      name: "task",
+      label: "Delegate to subagent",
+      description: "Run a bounded specialist subagent task under the current policy ceiling.",
+      parameters: TaskParamsSchema,
+      async execute(_toolCallId, params: TaskParams, signal, onUpdate, toolCtx) {
+        try {
+          const policy = await requirePolicy(toolCtx);
+          if (!policy) {
+            return { content: [{ type: "text" as const, text: "Policy configuration error" }], isError: true, details: undefined };
+          }
+          const resolved = { ...params, type: params.type ?? defaultTaskType ?? await chooseTaskType(toolCtx.hasUI, toolCtx.ui) };
+          const update = onUpdate
+            ? (partial: { content: { type: "text"; text: string }[] }) => onUpdate({ ...partial, details: undefined })
+            : undefined;
+          const text = await _executeTask(resolved as TaskParams & { type: NonNullable<TaskParams["type"]> }, signal, update, policy);
+          return { content: [{ type: "text" as const, text }], details: undefined };
+        } catch (err) {
+          return { content: [{ type: "text" as const, text: String(err) }], isError: true, details: undefined };
+        }
+      },
+    });
+
     pi.registerTool({
       name: "todo",
       label: "Manage todo state",
@@ -1283,9 +1302,4 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     });
   }
 
-  // ── Task tool removed — superseded by pi-subagents' built-in subagent tool ──
-  // thanos task tool registration removed in favor of npm:pi-subagents
-  // which provides /run, /chain, /parallel, background runs, and 8 built-in agents.
-  // The thanos agents/ module is kept for potential future use but no longer
-  // registers a task tool. pi-subagents handles all subagent delegation.
 }

@@ -44,7 +44,7 @@ const INIT_RESPONSE = {
 
 // We mock child_process.spawn using vi.mock so the module is replaced before
 // any import of the client module runs.
-const mockSpawn = vi.fn();
+const mockSpawn = vi.hoisted(() => vi.fn());
 vi.mock("node:child_process", () => ({ spawn: mockSpawn }));
 
 /**

@@ -97,7 +97,7 @@ function renderBrand(theme: TUITheme, width: number): string[] {
   }
   return [
     ...THANOS_LOGO.map((line) => theme.fg("accent", truncate(line, width))),
-    theme.fg("dim", truncate("Agent Harness for Pi", width)),
+    theme.fg("dim", truncate("Agent Distribution for Pi", width)),
     subtitle,
   ];
 }
@@ -119,6 +119,10 @@ function renderSessionRows(theme: TUITheme, args: WelcomeHeaderArgs, width: numb
 function renderCommandRows(theme: TUITheme, width: number): string[] {
   return [
     command(theme, "/models", "provider → model selector", width),
+    command(theme, "/status", "session snapshot", width),
+    command(theme, "/policy", "policy and audit posture", width),
+    command(theme, "/tools", "available tool surface", width),
+    command(theme, "/skills", "installed agent skills", width),
     command(theme, "/designer", "spawn Designer subagent", width),
     command(theme, "/run", "pi-subagents runner", width),
     command(theme, "/lens", "lite code safety + diagnostics", width),
@@ -129,7 +133,7 @@ function renderCommandRows(theme: TUITheme, width: number): string[] {
 
 function renderHotkeyRows(theme: TUITheme, width: number): string[] {
   return [
-    truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+K")} thinking  ${theme.fg("dim", "Ctrl+Shift+Y")} yolo`, width),
+    truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+T")} thinking  ${theme.fg("dim", "Ctrl+Shift+Y")} yolo`, width),
     truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+F")} snapshot   ${theme.fg("dim", "Ctrl+Shift+G")} policy`, width),
     truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+R")} review     ${theme.fg("dim", "Ctrl+Shift+D")} designer`, width),
     truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+E")} spec       ${theme.fg("dim", "Ctrl+Shift+A")} audit`, width),
