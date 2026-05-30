@@ -36,6 +36,38 @@ export interface TodoState {
   phases: TodoPhase[];
 }
 
+export interface TodoDetails {
+  kind: "thanos-todo";
+  state: TodoState;
+}
+
+export const EMPTY_TODO_STATE: TodoState = { phases: [] };
+
+export function makeTodoDetails(state: TodoState): TodoDetails {
+  return { kind: "thanos-todo", state };
+}
+
+interface BranchEntryLike {
+  type?: string;
+  message?: { role?: string; toolName?: string; details?: unknown };
+}
+
+/** Rebuild todo state by scanning the session branch for the latest todo toolResult details. */
+export function reconstructTodoState(branch: readonly BranchEntryLike[]): TodoState {
+  let state: TodoState = EMPTY_TODO_STATE;
+  for (const entry of branch) {
+    if (entry.type !== "message") continue;
+    const msg = entry.message;
+    if (!msg || msg.role !== "toolResult" || msg.toolName !== "todo") continue;
+    const details = msg.details as TodoDetails | undefined;
+    if (details && details.kind === "thanos-todo" && details.state) {
+      state = details.state;
+    }
+  }
+  seedTodoIds(state);
+  return state;
+}
+
 export const TodoInitPhaseSchema = Type.Object({
   phase: Type.String({ minLength: 1 }),
   items: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),

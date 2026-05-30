@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import register from "../../src/index";
+import { createTodoState, makeTodoDetails, reconstructTodoState } from "../../src/interaction/todo";
 
 function fakePi(tools: Map<string, any>) {
   return {
@@ -53,5 +54,23 @@ describe("todo tool", () => {
 
     const result = await tools.get("todo").execute("todo-2", { op: "export" }, undefined, undefined, { hasUI: true, ui: {} });
     expect(result.content[0].text).toContain("# TODO");
+  });
+});
+
+describe("reconstructTodoState", () => {
+  it("rebuilds the latest todo state from the most recent todo toolResult on the branch", () => {
+    const earlier = createTodoState([{ phase: "P1", items: ["a", "b"] }]);
+    const later = createTodoState([{ phase: "P1", items: ["a", "b", "c"] }]);
+    const branch = [
+      { type: "message", message: { role: "toolResult", toolName: "todo", details: makeTodoDetails(earlier) } },
+      { type: "message", message: { role: "toolResult", toolName: "todo", details: makeTodoDetails(later) } },
+      { type: "message", message: { role: "toolResult", toolName: "other", details: { kind: "x" } } },
+    ];
+    const result = reconstructTodoState(branch as never);
+    expect(result.phases[0].items).toHaveLength(3);
+  });
+
+  it("returns empty state when no todo results are present", () => {
+    expect(reconstructTodoState([] as never).phases).toHaveLength(0);
   });
 });

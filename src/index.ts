@@ -37,7 +37,11 @@ import { createSnapshot } from "./security/snapshot";
 import { classifyRisk } from "./permissions/risk";
 // registerSearchTool removed — superseded by npm:pi-web-access
 import { AskParamsSchema, buildAskDecision, resolveHeadlessAsk, type AskQuestion } from "./interaction/ask";
-import { createTodoState, applyTodoOperation, exportTodoMarkdown, TodoParamsSchema, type TodoOperation, type TodoState } from "./interaction/todo";
+import {
+  createTodoState, applyTodoOperation, exportTodoMarkdown, reconstructTodoState,
+  makeTodoDetails, TodoParamsSchema,
+  type TodoOperation, type TodoState,
+} from "./interaction/todo";
 import { FindingParamsSchema, addFinding, formatReviewSummary, type ReviewFinding } from "./review/findings";
 import { LensLite, registerLensLiteCommand } from "./lens/lite";
 
@@ -106,6 +110,8 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   const agentType = isSubagent ? "subagent" : "parent" as const;
   let defaultTaskType: TaskParams["type"] | undefined;
   let todoState: TodoState = createTodoState([]);
+  // Temporary stub — replaced by the real implementation in Task 1.4.
+  const todoStatusSegment = (_ctx: ExtensionContext, _state: TodoState): string | undefined => undefined;
   let reviewFindings: ReviewFinding[] = [];
   const lens = new LensLite(sessionId);
 
@@ -131,6 +137,8 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
 
   pi.on("session_start", async (event, ctx) => {
     reviewFindings = [];
+    todoState = reconstructTodoState(ctx.sessionManager.getBranch());
+    ctx.ui.setStatus("harness-todo", todoStatusSegment(ctx, todoState));
     if (!mcpManager) return;
 
     const theme = ctx.ui.theme;
@@ -204,6 +212,11 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     }).catch((err) => {
       ctx.ui.notify(`MCP init failed: ${err instanceof Error ? err.message : String(err)}`, "warning");
     });
+  });
+
+  pi.on("session_tree", async (_event, ctx) => {
+    todoState = reconstructTodoState(ctx.sessionManager.getBranch());
+    ctx.ui.setStatus("harness-todo", todoStatusSegment(ctx, todoState));
   });
 
   // ── --spec flag ────────────────────────────────────────────────────
@@ -1237,10 +1250,16 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       async execute(_toolCallId, params: TodoOperation) {
         try {
           if (params.op === "export") {
-            return { content: [{ type: "text" as const, text: exportTodoMarkdown(todoState) }], details: undefined };
+            return {
+              content: [{ type: "text" as const, text: exportTodoMarkdown(todoState) }],
+              details: makeTodoDetails(todoState),
+            };
           }
           todoState = applyTodoOperation(todoState, params);
-          return { content: [{ type: "text" as const, text: exportTodoMarkdown(todoState) }], details: undefined };
+          return {
+            content: [{ type: "text" as const, text: exportTodoMarkdown(todoState) }],
+            details: makeTodoDetails(todoState),
+          };
         } catch (err) {
           return { content: [{ type: "text" as const, text: String(err) }], isError: true, details: undefined };
         }
