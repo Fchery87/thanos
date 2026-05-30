@@ -7,7 +7,7 @@ import type { HarnessPolicy } from "../policy/types";
 import { AGENT_TYPES, type AgentType } from "./registry";
 import { loadAgent } from "./loader";
 import { resolveContextMode, buildContextArgs } from "./context-mode";
-import { narrowPolicyForAgent } from "./policy";
+import { agentWrites, narrowPolicyForAgent } from "./policy";
 import { parseSubagentResult } from "./result";
 import type { SubagentResultContract } from "./result";
 export { needsClarification, parseSubagentResult } from "./result";
@@ -95,6 +95,12 @@ export const TaskParamsSchema = Type.Object({
   context: Type.Optional(
     Type.String({ description: "Optional file contents or snippets to pass down" }),
   ),
+  background: Type.Optional(
+    Type.Boolean({
+      description:
+        "Run detached; result is written to .harness/subagents/<id>.result.json for the parent to poll.",
+    }),
+  ),
 });
 
 export const TaskBatchItemSchema = Type.Object({
@@ -112,6 +118,7 @@ export interface TaskParams {
   type?: AgentType;
   goal: string;
   context?: string;
+  background?: boolean;
 }
 
 export interface TaskRunResult {
@@ -156,9 +163,11 @@ export async function executeTask(
   const contextMode = resolveContextMode(params.type, agent.context);
   const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), "harness-subagent-"));
 
+  const backgroundId = params.background ? generateWorktreeId() : undefined;
+
   const repoDir = process.cwd();
   let worktree: Worktree | undefined;
-  if (params.type === "build") {
+  if (agentWrites(params.type)) {
     try {
       worktree = await createWorktree(repoDir, generateWorktreeId());
       registerExitHandlers();
@@ -262,11 +271,28 @@ export async function executeTask(
         endedAt,
         metadata: { ...(contract.metadata ?? {}), contextMode },
       }).catch(() => {});
-      resolve(contractReturnPayload(contract));
+      if (backgroundId) {
+        fsp.writeFile(
+          path.join(process.cwd(), ".harness", "subagents", `${backgroundId}.result.json`),
+          contractReturnPayload(contract),
+          "utf-8",
+        ).catch(() => {});
+      } else {
+        resolve(contractReturnPayload(contract));
+      }
     });
     child.on("error", (err) => {
       cleanup();
       reject(err);
     });
+
+    if (backgroundId) {
+      resolve(JSON.stringify({
+        backgrounded: true,
+        id: backgroundId,
+        resultPath: `.harness/subagents/${backgroundId}.result.json`,
+        summary: "subagent running in background",
+      }));
+    }
   });
 }

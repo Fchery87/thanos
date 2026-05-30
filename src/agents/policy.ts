@@ -3,6 +3,10 @@ import type { HarnessPolicy } from "../policy/types";
 
 const READ_ONLY_AGENTS: AgentType[] = ["explore", "plan", "reviewer", "oracle", "researcher"];
 
+export function agentWrites(type: AgentType): boolean {
+  return !READ_ONLY_AGENTS.includes(type);
+}
+
 export function narrowPolicyForAgent(type: AgentType, policy: HarnessPolicy): HarnessPolicy {
   if (READ_ONLY_AGENTS.includes(type)) {
     return { ...policy, rules: [
