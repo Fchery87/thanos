@@ -41,6 +41,8 @@ export interface TodoDetails {
   state: TodoState;
 }
 
+// Shared immutable empty state. Callers must never mutate it in place;
+// applyTodoOperation always clones phases before mutating, so aliasing it is safe.
 export const EMPTY_TODO_STATE: TodoState = { phases: [] };
 
 export function makeTodoDetails(state: TodoState): TodoDetails {

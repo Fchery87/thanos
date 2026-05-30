@@ -1,7 +1,7 @@
 // src/index.ts
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { matchesKey, Text } from "@earendil-works/pi-tui";
+import { matchesKey, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { join } from "node:path";
 
 import { AuditLogger } from "./audit/logger";
@@ -268,7 +268,9 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         },
         render(width: number) {
           const lines = ["", ...renderTodoLines(todoState, theme), "", theme.fg("dim", "  Press Escape to close")];
-          return lines.map((l) => l.slice(0, width));
+          // truncateToWidth is ANSI-aware; a plain slice would count escape codes
+          // against the width and could cut a sequence mid-byte, leaking color.
+          return lines.map((l) => truncateToWidth(l, width));
         },
         invalidate() {},
       }));
