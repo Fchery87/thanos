@@ -90,13 +90,31 @@ Singleton per session. Runs classify → generate → verify lifecycle. `reset()
 Session-level Pi CLI flag. When set, upgrades `ambient` tier to `explicit`. Never affects `instant` tier — read-only questions always run immediately.
 
 **Specialist**
-One of `ask | plan | build | generic`. Each maps to a markdown agent file in `~/.pi/agent/agents/`. The markdown file specifies the system prompt, optional `tools` allowlist, and optional `model`.
+One of `explore | plan | build | reviewer | designer | oracle`. Each maps to a markdown agent file in `~/.pi/agent/agents/`. The markdown file specifies the system prompt, optional `tools` allowlist, optional `model`, and optional **Context Mode**. Specialists split into **adversarial/read-only roles** (`explore`, `plan`, `reviewer`, `oracle`) which must run fresh and unbiased, and **continuity roles** (`build`, `designer`) which may opt into forked context.
+_Avoid_: Adding redundant roles (`delegate`, `context-builder`) that duplicate existing specialists
+
+**Oracle**
+A read-only, fresh-context specialist that challenges assumptions, audits plans/diffs, and provides an unbiased second opinion without editing or executing. Deny `edit` and `exec` like `explore`/`plan`/`reviewer`. Must never run forked: bias toward prior decisions would defeat its purpose.
+_Avoid_: Giving the oracle edit/exec, or running it in forked context
 
 **Subagent**
-A separate `pi` subprocess spawned by the `task` tool. Runs in JSON mode (`--mode json`). Receives `HARNESS_SUBAGENT=1` env var so the harness extension does not register the `task` tool inside it (enforces depth limit of 1). Capability ceiling enforced via the `tools` frontmatter field in the agent markdown file.
+A separate `pi` subprocess spawned by the `task` tool. Runs in JSON mode (`--mode json`). Receives `HARNESS_SUBAGENT=1` env var so the harness extension does not register the `task` tool inside it (enforces depth limit of 1). Capability ceiling enforced via the `tools` frontmatter field in the agent markdown file. Returns a **Subagent Result Contract**, not free prose. Subagents are researchers, not responders: only the parent agent communicates with the user.
+_Avoid_: Child agents talking to the user directly, deep nesting beyond depth 1
+
+**Subagent Result Contract**
+The typed structured output every subagent returns to its parent: `{ status, summary, findings[], artifacts[], escalations[], metadata }`. Replaces lossy natural-language summaries with a diffable, auditable handoff schema. Large outputs are written to disk and returned as **Artifact References** rather than inlined, to keep the orchestrator's context lean.
+_Avoid_: Free-prose returns, inlining large outputs into the parent context
+
+**Context Mode**
+Per-agent context inheritance: `fresh` (isolated `--no-session` context, the default and the only allowed mode for adversarial/read-only roles) or `forked` (inherits the parent session's history via Pi's forked-session feature, sharing its prompt cache). Forked is opt-in and limited to continuity roles. See ADR 0004.
+_Avoid_: Forked context for `oracle`/`reviewer`/`explore`; forked as the default
+
+**Governed Clarification**
+The governed child→parent escalation channel: when a subagent genuinely needs user input, it raises a typed request through the **Ask Tool** that surfaces to the parent (which owns all user communication), rather than opening a side-channel to the user. Carried in the `escalations[]` field of the **Subagent Result Contract**.
+_Avoid_: Raw child-to-user side-channels, ungoverned intercom
 
 **HARNESS_SUBAGENT**
-Environment variable set to `"1"` when spawning a subagent subprocess. Causes the harness extension to skip registering the `task` tool, preventing recursive delegation.
+Environment variable set to `"1"` when spawning a subagent subprocess. Causes the harness extension to skip registering the `task` tool, preventing recursive delegation. The depth-1 guard is a deliberate strength, not a limitation: deep nesting is a recognized anti-pattern.
 
 **JSON mode output**
 Pi's `--mode json` outputs JSONL — one JSON event object per line. The `agent_end` line contains `messages: AgentMessage[]`. `extractFinalText()` scans lines in reverse for `agent_end` and returns the last assistant text part.
@@ -127,7 +145,8 @@ Pi lifecycle event fired after each tool execution. Used to collect tool output 
 - An **Audit Log** records policy decisions from parent agents, subagents, interactive sessions, and headless runs.
 - A **Rule ID** is the join key between **Policy File** rules, **Policy Denial** messages, and **Audit Log** entries.
 - **Policy File** rules use first-match-wins evaluation (deterministic, suitable for security invariants). **PermissionManager** session rules use last-match-wins (recency-weighted, so the latest decision overrides earlier ones). The split is intentional: policy is authoritative and predictable; session overrides reflect the most recent user intent.
-- **Reviewer** subagents may spawn `explore` subagents at depth 1. All other specialist subagent types (`explore`, `plan`, `build`, `designer`) are leaves and cannot spawn further subagents.
+- **Reviewer** subagents may spawn `explore` subagents at depth 1. All other specialist subagent types (`explore`, `plan`, `build`, `designer`, `oracle`) are leaves and cannot spawn further subagents.
+- **Oracle** and **Reviewer** are adversarial roles and run fresh-context only; their value depends on being unbiased by the parent's prior decisions.
 
 **Extension-first Hybrid Strategy**
 Thanos should remain Pi-based and prefer extension, slash-command, MCP, policy, installer, and configuration surfaces for new capabilities. Vendoring or forking runtime pieces is allowed only when a target capability is impossible, unsafe, or ergonomically broken through Pi's extension API, and should copy the smallest subsystem needed.
@@ -170,6 +189,9 @@ _Avoid_: Unstructured review prose that cannot be aggregated or audited
 - **Todo persistence**: Keep todos session-local by default; only write project files through explicit export/import.
 - **Review findings**: Add a reviewer-only **Report Finding Tool**; final review verdict aggregates structured P0-P3 findings.
 - **Task tool evolution**: Evolve `task` toward typed parallel batches, structured outputs, policy ceilings, artifact references, and reviewer-to-explore delegation; do not permit recursive arbitrary subagents.
+- **pi-subagents posture**: Treat the `pi-subagents` npm package as a capability reference to borrow from, not a base to adopt. Keep Thanos's own governed `task` tool and harness as the base, and port specific missing capabilities into it as extensions under the **Extension-first Hybrid Strategy**. Do not replace the governed subagent layer with an enforcement-light framework.
+- **Strong subagent system priorities**: The governance spine (fresh-context isolation default, depth-1 guard, scoped tool ceilings) is the best-practice spine, not a tax — keep it. The real upgrades, in priority order: (1) a typed **Subagent Result Contract** for every agent; (2) add the **Oracle** specialist (fresh, read-only); (3) **Governed Clarification** via the Ask Tool (parent owns user comms); (4) **Artifact References** to keep the orchestrator lean at scale; (5) background execution plus worktree isolation for *any* writing agent, not just `build`; (6) a `researcher` specialist, read-only and network-policy-gated, sequenced after the governed interaction primitives.
+- **Subagent context mode**: Fresh/isolated context is the default and the only allowed mode for adversarial/read-only roles (`explore`, `plan`, `reviewer`, `oracle`). A `forked` **Context Mode** is opt-in and limited to continuity roles (`build`, `designer`). This partially supersedes ADR 0001 and is recorded in ADR 0004.
 - **Governed interaction build order**: Build **Ask Tool**, then **Todo Tool**, then **Report Finding Tool** review flow, then task batching and structured outputs.
 - **Distribution**: Keep the bootstrap install UX. By default, the bootstrap resolves and prints the latest stable release version, downloads a versioned release source tarball (`thanos-vX.Y.Z.tar.gz`), and verifies it against a `SHA256SUMS` file published as a GitHub Release asset by release automation after typecheck, lint, and tests pass. Teams can pin with `THANOS_VERSION=vX.Y.Z`. The installer fails closed when neither `sha256sum` nor `shasum -a 256` is available, prints release version, artifact URL, checksum URL, computed checksum, install directory, and Pi version, and may auto-install Pi through the available `bun` or `npm` package manager. Mutable `master`/branch-tip shell installs are too weak for a **Team-grade Governance Layer** trust boundary; signatures can be added later when release key management is mature.
 - **Installer verification**: Treat `scripts/install.sh` as a security boundary. Add static validation when available and fixture-driven tests for version resolution, checksum verification, and checksum failure behavior.
@@ -191,6 +213,10 @@ _Avoid_: Unstructured review prose that cannot be aggregated or audited
 - "Todo persistence" has been resolved as session-local by default, with explicit project-file export/import only.
 - "Review findings" has been resolved as reviewer-only structured P0-P3 findings with evidence and aggregate verdict.
 - "Task tool evolution" has been resolved as typed batches, structured outputs, policy ceilings, artifacts, and bounded reviewer-to-explore delegation without arbitrary recursion.
+- "pi-subagents migration" has been resolved as borrow-and-extend into Thanos's own governed `task` tool, not adopt/replace; pi-subagents is a capability reference only.
+- "Strong subagent system" has been resolved as: keep the governance spine, and add typed result contracts, an **Oracle** specialist, governed clarification via Ask, artifact references, background+worktree isolation for writers, and a gated `researcher` — not as a feature-maximalist framework swap.
+- "Subagent context isolation" has been resolved as fresh-by-default with an opt-in `forked` mode for continuity roles only (`build`, `designer`); adversarial roles (`explore`, `plan`, `reviewer`, `oracle`) are fresh-only. Recorded in ADR 0004 superseding part of ADR 0001.
+- "researcher specialist" has been resolved as in-scope but read-only and network-policy-gated, sequenced after the governed interaction primitives — not rejected, and not ahead of the interaction tranche.
 - "Governed interaction build order" has been resolved as Ask → Todo → Report Finding/review → Task batching/structured outputs.
 - "Permission rules" now means durable **Policy File** rules by default; session rules are temporary prompt-cycle decisions.
 - "Policy config" has been resolved as declarative JSON validated by **Policy Schema**, not executable TypeScript.

@@ -1,6 +1,6 @@
 # ADR 0001 — Subagents via subprocess spawn, not in-process `runAgentLoop`
 
-**Status:** Accepted
+**Status:** Accepted (context-isolation default partially superseded by ADR 0004, which adds an opt-in `forked` context mode for continuity roles)
 
 ## Context
 
