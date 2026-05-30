@@ -84,6 +84,7 @@ describe("register /modes command", () => {
       undefined,
       undefined,
       expect.anything(),
+      undefined,
     );
   });
 });
