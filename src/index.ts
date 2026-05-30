@@ -10,6 +10,7 @@ import { SpecEngine } from "./spec/engine";
 import { makeBeforeToolHandler } from "./hooks/before-tool";
 import { makeAfterToolHandler } from "./hooks/after-tool";
 import { TaskParamsSchema, executeTask, renderContractForDisplay, type TaskParams } from "./agents/task-tool";
+import { AGENT_TYPES } from "./agents/registry";
 import { loadPolicyState } from "./policy/state";
 import type { FormalSpec } from "./spec/types";
 import { chooseTaskType } from "./agents/selector";
@@ -215,19 +216,18 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   pi.registerCommand("modes", {
     description: "Choose the default specialist subagent for this session",
     getArgumentCompletions: (prefix) => {
-      const modes = ["explore", "plan", "build", "reviewer", "designer"];
-      const filtered = modes.filter((mode) => mode.startsWith(prefix));
+      const filtered = (AGENT_TYPES as readonly string[]).filter((mode) => mode.startsWith(prefix));
       return filtered.length > 0 ? filtered.map((value) => ({ value, label: value })) : null;
     },
     handler: async (args, ctx) => {
       const trimmed = args.trim();
-      const explicit = ["explore", "plan", "build", "reviewer", "designer"].includes(trimmed) ? (trimmed as NonNullable<TaskParams["type"]>) : undefined;
+      const explicit = (AGENT_TYPES as readonly string[]).includes(trimmed) ? (trimmed as NonNullable<TaskParams["type"]>) : undefined;
       if (!ctx.hasUI && !explicit) {
         ctx.ui.notify("Modes selector requires an interactive UI", "warning");
         return;
       }
 
-      const selected = explicit ?? (await ctx.ui.select("Choose a default subagent mode", ["explore", "plan", "build", "reviewer", "designer"]));
+      const selected = explicit ?? (await ctx.ui.select("Choose a default subagent mode", [...AGENT_TYPES]));
       if (!selected) return;
       defaultTaskType = selected as NonNullable<TaskParams["type"]>;
       ctx.ui.setStatus("harness-mode", ctx.ui.theme.fg("accent", `modes:${selected}`));

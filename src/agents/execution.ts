@@ -57,9 +57,10 @@ export function buildSubagentEnv(
   _policy: HarnessPolicy | undefined,
   policyFile: string | undefined,
 ): NodeJS.ProcessEnv {
-  // reviewer gets its own role value so its process can register the task tool
-  // (restricted to spawning explore agents only). All other agent types get "1"
-  // which marks them as leaf agents that cannot spawn further.
+  // reviewer gets its own role value so its process can register the
+  // report_finding tool. All other agent types get "1". Either value marks the
+  // process as a subagent: the task tool is gated behind !isSubagent, so every
+  // subagent (reviewer included) is a leaf and cannot spawn further subagents.
   const role = type === "reviewer" ? "reviewer" : "1";
   return {
     ...process.env,
