@@ -90,7 +90,7 @@ The installer creates `mcp.json` from `mcp.example.json` when it does not exist.
 ```
 ~/.pi/
 ├── agent/
-│   ├── agents/                 # Custom agent definitions (designer.md)
+│   ├── agents/                 # Specialist subagent definitions (explore, plan, build, reviewer, designer, oracle, researcher)
 │   ├── skills/                 # Installed Pi skills (86+)
 │   ├── settings.example.json   # Thanos default Pi package/settings template
 │   └── settings.json           # User-owned local copy created by installer (gitignored)
@@ -147,9 +147,60 @@ The installer creates `mcp.json` from `mcp.example.json` when it does not exist.
 
 | Tool | Purpose |
 |------|---------|
+| `task` | Delegate to a bounded specialist subagent under the current policy ceiling (see [Governed subagents](#governed-subagents)) |
 | `todo` | Track phased tasks with in-progress state and export/import |
 | `ask` | Governed option-based question → decision record |
 | `report_finding` | Record structured P0–P3 review findings |
+
+---
+
+## Governed subagents
+
+The `task` tool delegates work to a bounded **specialist subagent** — a separate `pi` subprocess spawned in JSON mode under the parent's policy as a ceiling. Subagents are a deliberate governance surface, not just parallelism:
+
+- **Depth-1 only.** A subagent runs with `HARNESS_SUBAGENT` set, which suppresses the `task` (and `ask`) tools inside it. Children are leaves and cannot spawn further subagents or talk to the user directly — deep nesting is a recognized anti-pattern.
+- **Policy ceiling inheritance.** Each subagent's capabilities are narrowed from the parent policy; read-only roles get hard `edit`/`exec` denies regardless of what the parent allows.
+
+### Specialists
+
+| Role | Writes? | Context | Purpose |
+|------|---------|---------|---------|
+| `explore` | read-only | fresh | Search and map the codebase; report findings |
+| `plan` | read-only | fresh | Design an approach without touching files |
+| `build` | **writer** | fresh (may fork) | Implement changes in an isolated worktree |
+| `reviewer` | read-only | fresh | Structured P0–P3 review; may spawn `explore` at depth 1 |
+| `designer` | **writer** | fresh (may fork) | UI/UX implementation, review, design-system audit |
+| `oracle` | read-only | fresh-only | Unbiased second opinion; challenges plans and diffs |
+| `researcher` | read-only | fresh | Network-gated external research |
+
+Each role maps to a markdown file in `agent/agents/` defining its system prompt, optional `tools` allowlist, `model`, and `context` mode.
+
+### Subagent Result Contract
+
+Subagents return typed structured output, not free prose:
+
+```jsonc
+{ "status": "success | error | timeout | escalated",
+  "summary": "...",
+  "findings": [ { "priority": "P1", "summary": "...", "file": "...", "line": 42 } ],
+  "artifacts": [ { "name": "...", "path": ".harness/...", "bytes": 1234 } ],
+  "escalations": [ { "question": "...", "options": ["a","b"], "recommended": "a" } ] }
+```
+
+Large outputs are written to disk and returned as **artifact references** instead of being inlined, keeping the orchestrator's context lean.
+
+### Context mode (fresh vs forked)
+
+Fresh, isolated context (`--no-session`) is the default and the **only** mode for adversarial/read-only roles (`explore`, `plan`, `reviewer`, `oracle`, `researcher`) — their value depends on being unbiased by the parent's prior reasoning. Continuity roles (`build`, `designer`) may opt into `forked` context, inheriting the parent session's history and prompt cache. See [ADR 0004](docs/adr/0004-opt-in-forked-context-for-continuity-roles.md).
+
+### Governed clarification
+
+When a subagent genuinely needs input, it raises a typed question in its contract's `escalations[]` rather than opening a side-channel to the user. The parent (which owns all user communication) surfaces it via its own `ask` tool. This is structurally enforced: a child has neither the `task` nor `ask` tool.
+
+### Writer worktrees and background execution
+
+- **Worktree isolation** is granted to *any* writing agent (`build`, `designer`), not just `build` — their edits land in a throwaway git worktree under `.harness/worktrees/` and never touch the parent's working tree. Read-only roles get no worktree.
+- **Background execution** (`background: true`) runs a subagent detached past the parent's turn. The `task` tool returns an immediate handle and the child writes its finished contract to `.harness/subagents/<id>.result.json` for the parent to poll. Foreground (blocking) execution remains the default. See [ADR 0005](docs/adr/0005-background-subagent-result-via-file-polling.md).
 
 ---
 
@@ -187,7 +238,7 @@ Manual commands:
 | `/designer [goal]` | Spawn the Designer subagent for UI/UX implementation, review, or design-system audit |
 | `/run designer <task>` | Run Designer through `pi-subagents` directly; also appears in `/run` completions after reload |
 | `/lens` | Thanos Lens Lite: changed files, read-before-modify guard, secret scan, manual diagnostics |
-| `/modes` | Select default legacy specialist mode (`explore`, `plan`, `build`, `reviewer`, `designer`) |
+| `/modes` | Select the default specialist mode used by `task` when `type` is omitted (`explore`, `plan`, `build`, `reviewer`, `designer`, `oracle`, `researcher`) |
 | `/yolo` | Toggle yolo mode (bypasses thanos permission checks; Lens Lite secret scan still runs) |
 | `/mcp` | Manage MCP server connections |
 | `/thinking` | Select thinking level |
