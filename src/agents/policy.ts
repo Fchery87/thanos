@@ -1,7 +1,7 @@
 import type { AgentType } from "./registry";
 import type { HarnessPolicy } from "../policy/types";
 
-const READ_ONLY_AGENTS: AgentType[] = ["explore", "plan", "reviewer"];
+const READ_ONLY_AGENTS: AgentType[] = ["explore", "plan", "reviewer", "oracle"];
 
 export function narrowPolicyForAgent(type: AgentType, policy: HarnessPolicy): HarnessPolicy {
   if (READ_ONLY_AGENTS.includes(type)) {

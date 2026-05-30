@@ -44,6 +44,20 @@ describe("narrowPolicyForAgent", () => {
     });
   });
 
+  describe("oracle (adversarial, read-only)", () => {
+    it("cannot exec", () => {
+      const narrowed = narrowPolicyForAgent("oracle", basePolicy);
+      const result = evaluatePolicy(narrowed, "exec", "somecommand");
+      expect(result?.decision).toBe("deny");
+    });
+
+    it("cannot edit", () => {
+      const narrowed = narrowPolicyForAgent("oracle", basePolicy);
+      const result = evaluatePolicy(narrowed, "edit", "somefile.ts");
+      expect(result?.decision).toBe("deny");
+    });
+  });
+
   describe("build", () => {
     it("gets full parent policy with no narrowing", () => {
       const narrowed = narrowPolicyForAgent("build", basePolicy);
