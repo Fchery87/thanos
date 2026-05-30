@@ -1,6 +1,7 @@
 // src/index.ts
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { join } from "node:path";
 
 import { AuditLogger } from "./audit/logger";
@@ -39,9 +40,10 @@ import { classifyRisk } from "./permissions/risk";
 import { AskParamsSchema, buildAskDecision, resolveHeadlessAsk, type AskQuestion } from "./interaction/ask";
 import {
   createTodoState, applyTodoOperation, exportTodoMarkdown, reconstructTodoState,
-  makeTodoDetails, TodoParamsSchema,
-  type TodoOperation, type TodoState,
+  makeTodoDetails, EMPTY_TODO_STATE, TodoParamsSchema,
+  type TodoOperation, type TodoState, type TodoDetails,
 } from "./interaction/todo";
+import { renderTodoLines } from "./interaction/todo-render";
 import { FindingParamsSchema, addFinding, formatReviewSummary, type ReviewFinding } from "./review/findings";
 import { LensLite, registerLensLiteCommand } from "./lens/lite";
 
@@ -1263,6 +1265,14 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         } catch (err) {
           return { content: [{ type: "text" as const, text: String(err) }], isError: true, details: undefined };
         }
+      },
+      renderCall(args, theme) {
+        return new Text(theme.fg("toolTitle", theme.bold("todo ")) + theme.fg("muted", String(args.op)), 0, 0);
+      },
+      renderResult(result, _opts, theme) {
+        const details = result.details as TodoDetails | undefined;
+        const state = details?.kind === "thanos-todo" ? details.state : EMPTY_TODO_STATE;
+        return new Text(renderTodoLines(state, theme).join("\n"), 0, 0);
       },
     });
 
