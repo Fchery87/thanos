@@ -54,6 +54,34 @@ describe("loadAgent", () => {
     expect(def.tools).not.toContain("bash");
   });
 
+  it("parses an explicit context mode from frontmatter", async () => {
+    const home = await mkdtemp(join(tmpdir(), "thanos-agent-"));
+    process.env.HOME = home;
+    const agentDir = join(home, ".pi", "agent", "agents");
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(
+      join(agentDir, "designer.md"),
+      ["---", "tools: read, edit", "context: forked", "---", "You are Designer."].join("\n"),
+      "utf-8",
+    );
+    const agent = await loadAgent("designer");
+    expect(agent.context).toBe("forked");
+  });
+
+  it("leaves context undefined when not specified", async () => {
+    const home = await mkdtemp(join(tmpdir(), "thanos-agent-"));
+    process.env.HOME = home;
+    const agentDir = join(home, ".pi", "agent", "agents");
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(
+      join(agentDir, "explore.md"),
+      ["---", "tools: read", "---", "You are Explore."].join("\n"),
+      "utf-8",
+    );
+    const agent = await loadAgent("explore");
+    expect(agent.context).toBeUndefined();
+  });
+
   it("every agent type has a definition file with a tools allowlist", async () => {
     const types = ["explore", "plan", "build", "reviewer", "designer", "oracle"] as const;
     for (const type of types) {

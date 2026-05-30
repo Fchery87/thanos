@@ -8,6 +8,7 @@ export interface AgentDefinition {
   model?: string;
   maxTurns?: number;
   timeoutMs?: number;
+  context?: "fresh" | "forked";
 }
 
 function agentDir(): string {
@@ -99,6 +100,12 @@ function parseFrontmatter(raw: string): Partial<AgentDefinition> & { body: strin
     if (key === "model") {
       const model = parseStringScalar(rawValue);
       if (model) parsed.model = model;
+      continue;
+    }
+
+    if (key === "context") {
+      const mode = parseStringScalar(rawValue);
+      if (mode === "fresh" || mode === "forked") parsed.context = mode;
       continue;
     }
 
