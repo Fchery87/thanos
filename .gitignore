@@ -22,6 +22,7 @@ package-lock.json
 # ── Runtime and state files ──────────────────────────────────────────
 mcp-state.json
 agent/sessions/
+agent/run-history.jsonl
 context-mode/
 
 # ── pi-lens runtime data ─────────────────────────────────────────────
