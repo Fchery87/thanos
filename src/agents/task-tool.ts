@@ -10,6 +10,7 @@ import { resolveContextMode, buildContextArgs } from "./context-mode";
 import { narrowPolicyForAgent } from "./policy";
 import { parseSubagentResult } from "./result";
 import type { SubagentResultContract } from "./result";
+export { needsClarification, parseSubagentResult } from "./result";
 import { writeTranscriptMetadata } from "./transcripts";
 import { createWorktree, removeWorktree, generateWorktreeId, gcWorktrees, type Worktree } from "./worktree";
 import {

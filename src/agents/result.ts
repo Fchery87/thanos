@@ -29,6 +29,10 @@ export interface SubagentResultContract {
   metadata?: Record<string, unknown>;
 }
 
+export function needsClarification(contract: SubagentResultContract): boolean {
+  return contract.status === "escalated" || contract.escalations.length > 0;
+}
+
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
