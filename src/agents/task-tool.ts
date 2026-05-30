@@ -10,6 +10,14 @@ import { narrowPolicyForAgent } from "./policy";
 import { parseSubagentResult } from "./result";
 import type { SubagentResultContract } from "./result";
 import { writeTranscriptMetadata } from "./transcripts";
+import { createWorktree, removeWorktree, generateWorktreeId, gcWorktrees, type Worktree } from "./worktree";
+import {
+  buildSubagentEnv,
+  extractLatestAssistantText,
+  getPiInvocation,
+  resolveFinalText,
+} from "./execution";
+export { buildSubagentEnv, extractFinalText, extractLatestAssistantText, getPiInvocation, resolveFinalText } from "./execution";
 
 export function contractToTranscriptStatus(
   c: SubagentResultContract,
@@ -20,7 +28,25 @@ export function contractToTranscriptStatus(
 export function contractReturnPayload(c: SubagentResultContract): string {
   return JSON.stringify(c);
 }
-import { createWorktree, removeWorktree, generateWorktreeId, gcWorktrees, type Worktree } from "./worktree";
+
+export function renderContractForDisplay(result: string): string {
+  const c = parseSubagentResult(result);
+  let out = c.summary;
+  if (c.findings.length > 0) out += `\nFindings: ${c.findings.length}`;
+  if (c.escalations.length > 0) {
+    out += `\nNeeds input: ${c.escalations.map((e) => e.question).join("; ")}`;
+  }
+  return out;
+}
+
+export function applyHarnessStatus(
+  contract: SubagentResultContract,
+  run: { timedOut: boolean; code: number | null },
+): SubagentResultContract {
+  if (run.timedOut) contract.status = "timeout";
+  else if (run.code !== 0 && run.code !== null) contract.status = "error";
+  return contract;
+}
 
 // ── Process-exit worktree cleanup ─────────────────────────────────────────────
 // On SIGINT/SIGTERM, remove any worktrees this process owns before exiting.
@@ -49,14 +75,6 @@ function registerExitHandlers(): void {
 export async function runWorktreeGc(repoDir: string): Promise<Worktree[]> {
   return gcWorktrees(repoDir);
 }
-import {
-  buildSubagentEnv,
-  extractLatestAssistantText,
-  getPiInvocation,
-  resolveFinalText,
-} from "./execution";
-
-export { buildSubagentEnv, extractFinalText, extractLatestAssistantText, getPiInvocation, resolveFinalText } from "./execution";
 
 export const TaskParamsSchema = Type.Object({
   type: Type.Optional(
@@ -231,8 +249,7 @@ export async function executeTask(
       const contract = parseSubagentResult(finalText);
       // The harness owns the authoritative run status; only override the
       // contract status when the run itself failed at the process level.
-      if (timedOut) contract.status = "timeout";
-      else if (code !== 0 && code !== null) contract.status = "error";
+      applyHarnessStatus(contract, { timedOut, code });
       writeTranscriptMetadata(path.join(process.cwd(), ".harness", "subagents"), {
         agentType: params.type,
         status: contractToTranscriptStatus(contract),

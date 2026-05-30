@@ -9,7 +9,7 @@ import { PermissionManager } from "./permissions/manager";
 import { SpecEngine } from "./spec/engine";
 import { makeBeforeToolHandler } from "./hooks/before-tool";
 import { makeAfterToolHandler } from "./hooks/after-tool";
-import { TaskParamsSchema, executeTask, type TaskParams } from "./agents/task-tool";
+import { TaskParamsSchema, executeTask, renderContractForDisplay, type TaskParams } from "./agents/task-tool";
 import { loadPolicyState } from "./policy/state";
 import type { FormalSpec } from "./spec/types";
 import { chooseTaskType } from "./agents/selector";
@@ -973,7 +973,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       // Delegate to the reviewer agent via the task tool
       const policy = await requirePolicy(ctx);
       if (!policy) return;
-      const { executeTask } = await import("./agents/task-tool");
+      const { executeTask, renderContractForDisplay } = await import("./agents/task-tool");
       try {
         const result = await executeTask(
           { type: "reviewer", goal },
@@ -981,17 +981,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
           undefined,
           policy,
         );
-        try {
-          const parsed = JSON.parse(result) as { text?: string; metadata?: { verdict?: string; findings?: unknown[] } };
-          if (parsed.metadata) {
-            const findingCount = Array.isArray(parsed.metadata.findings) ? parsed.metadata.findings.length : 0;
-            ctx.ui.notify(`Review verdict: ${parsed.metadata.verdict ?? "unknown"}\nFindings: ${findingCount}`, "info");
-          } else {
-            ctx.ui.notify(result, "info");
-          }
-        } catch {
-          ctx.ui.notify(result, "info");
-        }
+        ctx.ui.notify(renderContractForDisplay(result), "info");
       } catch (err) {
         ctx.ui.notify(`Review failed: ${String(err)}`, "warning");
       }
@@ -1019,7 +1009,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         undefined,
         policy,
       );
-      ctx.ui.notify(result, "info");
+      ctx.ui.notify(renderContractForDisplay(result), "info");
     } catch (err) {
       ctx.ui.notify(`Designer failed: ${String(err)}`, "warning");
     }
