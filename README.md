@@ -238,6 +238,7 @@ Manual commands:
 | `/designer [goal]` | Spawn the Designer subagent for UI/UX implementation, review, or design-system audit |
 | `/run designer <task>` | Run Designer through `pi-subagents` directly; also appears in `/run` completions after reload |
 | `/lens` | Thanos Lens Lite: changed files, read-before-modify guard, secret scan, manual diagnostics |
+| `/todo` | Show the current todo checklist for this branch (Escape to close); `/todo export` prints the markdown |
 | `/modes` | Select the default specialist mode used by `task` when `type` is omitted (`explore`, `plan`, `build`, `reviewer`, `designer`, `oracle`, `researcher`) |
 | `/yolo` | Toggle yolo mode (bypasses thanos permission checks; Lens Lite secret scan still runs) |
 | `/mcp` | Manage MCP server connections |
@@ -288,7 +289,7 @@ glm-5.1 ❯ D:45% ❯ 42%/200k ❯ think:med ❯ ↑15.2k ↓3.1k ❯ Alora ❯ 
 
 Segments: model · subscription usage · context · thinking · tokens · path · vcs · cost · extension statuses
 
-A custom `segTokens` segment shows per-turn input (↑) and output (↓) token counts. Thanos Lens Lite also exposes a compact `lens:<changed>` status indicator.
+A custom `segTokens` segment shows per-turn input (↑) and output (↓) token counts. Thanos Lens Lite also exposes a compact `lens:<changed>` status indicator. When a todo list is active, a `todo:<done>/<total>` segment reflects checklist progress for the current branch (it reconstructs from the session branch, so it survives reload and is correct after a branch/fork).
 
 ---
 

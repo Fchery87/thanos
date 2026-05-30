@@ -1,7 +1,7 @@
 // src/index.ts
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { matchesKey, Text } from "@earendil-works/pi-tui";
 import { join } from "node:path";
 
 import { AuditLogger } from "./audit/logger";
@@ -43,7 +43,7 @@ import {
   makeTodoDetails, EMPTY_TODO_STATE, TodoParamsSchema,
   type TodoOperation, type TodoState, type TodoDetails,
 } from "./interaction/todo";
-import { renderTodoLines } from "./interaction/todo-render";
+import { renderTodoLines, todoSummary } from "./interaction/todo-render";
 import { FindingParamsSchema, addFinding, formatReviewSummary, type ReviewFinding } from "./review/findings";
 import { LensLite, registerLensLiteCommand } from "./lens/lite";
 
@@ -112,8 +112,11 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   const agentType = isSubagent ? "subagent" : "parent" as const;
   let defaultTaskType: TaskParams["type"] | undefined;
   let todoState: TodoState = createTodoState([]);
-  // Temporary stub — replaced by the real implementation in Task 1.4.
-  const todoStatusSegment = (_ctx: ExtensionContext, _state: TodoState): string | undefined => undefined;
+
+  function todoStatusSegment(ctx: ExtensionContext, state: TodoState): string | undefined {
+    const s = todoSummary(state);
+    return s ? ctx.ui.theme.fg("accent", s) : undefined;
+  }
   let reviewFindings: ReviewFinding[] = [];
   const lens = new LensLite(sessionId);
 
@@ -248,6 +251,30 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       ctx.ui.setStatus("harness-mode", ctx.ui.theme.fg("accent", `modes:${selected}`));
       ctx.ui.notify(`Default subagent mode: ${selected}`, "info");
     },
+  });
+
+  pi.registerCommand("todo", {
+    description: "Show the current todo checklist for this branch",
+    handler: async (args, ctx) => {
+      const trimmed = args.trim();
+      if (trimmed === "export" || !ctx.hasUI) {
+        ctx.ui.notify(exportTodoMarkdown(todoState), "info");
+        return;
+      }
+      const theme = ctx.ui.theme;
+      await ctx.ui.custom<void>((_tui, _theme, _kb, done) => ({
+        handleInput(data: string) {
+          if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) done();
+        },
+        render(width: number) {
+          const lines = ["", ...renderTodoLines(todoState, theme), "", theme.fg("dim", "  Press Escape to close")];
+          return lines.map((l) => l.slice(0, width));
+        },
+        invalidate() {},
+      }));
+    },
+    getArgumentCompletions: (prefix) =>
+      "export".startsWith(prefix) ? [{ value: "export", label: "export markdown" }] : null,
   });
 
   // ── /yolo — bypass all permission checks ──────────────────────────

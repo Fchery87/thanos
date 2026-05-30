@@ -212,7 +212,7 @@ describe("register", () => {
       {
         cwd,
         model: { id: "model-id", name: "Model Name" },
-        sessionManager: { getSessionDir: () => join(cwd, "sessions") },
+        sessionManager: { getSessionDir: () => join(cwd, "sessions"), getBranch: () => [] },
         ui: {
           setHeader,
           setStatus: vi.fn(),
@@ -263,7 +263,7 @@ describe("register", () => {
       {
         cwd: process.cwd(),
         model: undefined,
-        sessionManager: { getSessionDir: () => join(process.cwd(), "sessions") },
+        sessionManager: { getSessionDir: () => join(process.cwd(), "sessions"), getBranch: () => [] },
         ui: { setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn(), theme: noopTheme },
       },
     );
