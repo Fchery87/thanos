@@ -24,4 +24,25 @@ describe("writeArtifact", () => {
     const ref = await writeArtifact(dir, "../../etc/passwd", "x");
     expect(ref.path).not.toContain("..");
   });
+
+  it("rejects pure-dot names that would escape the artifacts dir", async () => {
+    dir = await mkdtemp(join(tmpdir(), "thanos-artifacts-"));
+    const dotdot = await writeArtifact(dir, "..", "x");
+    const dot = await writeArtifact(dir, ".", "x");
+    // Both must resolve to a real file strictly inside <dir>/artifacts/, not the dir itself or its parent.
+    for (const ref of [dotdot, dot]) {
+      expect(await readFile(ref.path, "utf-8")).toBe("x");
+      const artifactsRoot = join(dir, "artifacts");
+      expect(ref.path.startsWith(artifactsRoot + "/")).toBe(true);
+      expect(ref.name).not.toBe("..");
+      expect(ref.name).not.toBe(".");
+    }
+  });
+
+  it("uses the fallback name for empty input", async () => {
+    dir = await mkdtemp(join(tmpdir(), "thanos-artifacts-"));
+    const ref = await writeArtifact(dir, "", "x");
+    expect(ref.name).toBe("artifact");
+    expect(await readFile(ref.path, "utf-8")).toBe("x");
+  });
 });
