@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSubagentResult } from "../../src/agents/result";
+import { needsClarification, parseSubagentResult } from "../../src/agents/result";
 
 describe("parseSubagentResult", () => {
   it("wraps plain text as a success contract with empty collections", () => {
@@ -42,5 +42,36 @@ describe("parseSubagentResult", () => {
     expect(c.status).toBe("success");
     expect(c.summary).toBe("legacy");
     expect(c.metadata).toEqual({ a: 1 });
+  });
+});
+
+describe("needsClarification", () => {
+  it("flags a contract that requires parent clarification", () => {
+    const c = parseSubagentResult(JSON.stringify({
+      status: "escalated",
+      summary: "blocked",
+      escalations: [{ question: "which db?", options: ["pg", "sqlite"], recommended: "pg" }],
+    }));
+    expect(c.status).toBe("escalated");
+    expect(c.escalations[0].recommended).toBe("pg");
+    expect(needsClarification(c)).toBe(true);
+  });
+
+  it("needsClarification true when escalations present even if status success", () => {
+    const c = parseSubagentResult(JSON.stringify({
+      status: "success",
+      summary: "done but asking",
+      escalations: [{ question: "which db?" }],
+    }));
+    expect(needsClarification(c)).toBe(true);
+  });
+
+  it("needsClarification false for a clean success contract", () => {
+    const c = parseSubagentResult(JSON.stringify({
+      status: "success",
+      summary: "all good",
+      escalations: [],
+    }));
+    expect(needsClarification(c)).toBe(false);
   });
 });

@@ -9,7 +9,7 @@ import { PermissionManager } from "./permissions/manager";
 import { SpecEngine } from "./spec/engine";
 import { makeBeforeToolHandler } from "./hooks/before-tool";
 import { makeAfterToolHandler } from "./hooks/after-tool";
-import { TaskParamsSchema, executeTask, renderContractForDisplay, type TaskParams } from "./agents/task-tool";
+import { TaskParamsSchema, executeTask, needsClarification, parseSubagentResult, renderContractForDisplay, type TaskParams } from "./agents/task-tool";
 import { AGENT_TYPES } from "./agents/registry";
 import { loadPolicyState } from "./policy/state";
 import type { FormalSpec } from "./spec/types";
@@ -1215,6 +1215,13 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
             ? (partial: { content: { type: "text"; text: string }[] }) => onUpdate({ ...partial, details: undefined })
             : undefined;
           const text = await _executeTask(resolved as TaskParams & { type: NonNullable<TaskParams["type"]> }, signal, update, policy, toolCtx.sessionManager?.getSessionId() || undefined);
+          const contract = parseSubagentResult(text);
+          if (needsClarification(contract)) {
+            return {
+              content: [{ type: "text" as const, text: `[clarification-needed] The subagent could not proceed without input. Surface this to the user via your ask tool before continuing.\n${text}` }],
+              details: undefined,
+            };
+          }
           return { content: [{ type: "text" as const, text }], details: undefined };
         } catch (err) {
           return { content: [{ type: "text" as const, text: String(err) }], isError: true, details: undefined };

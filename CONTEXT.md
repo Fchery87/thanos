@@ -90,7 +90,7 @@ Singleton per session. Runs classify → generate → verify lifecycle. `reset()
 Session-level Pi CLI flag. When set, upgrades `ambient` tier to `explicit`. Never affects `instant` tier — read-only questions always run immediately.
 
 **Specialist**
-One of `explore | plan | build | reviewer | designer | oracle`. Each maps to a markdown agent file in `~/.pi/agent/agents/`. The markdown file specifies the system prompt, optional `tools` allowlist, optional `model`, and optional **Context Mode**. Specialists split into **adversarial/read-only roles** (`explore`, `plan`, `reviewer`, `oracle`) which must run fresh and unbiased, and **continuity roles** (`build`, `designer`) which may opt into forked context.
+One of `explore | plan | build | reviewer | designer | oracle | researcher`. Each maps to a markdown agent file in `~/.pi/agent/agents/`. The markdown file specifies the system prompt, optional `tools` allowlist, optional `model`, and optional **Context Mode**. Specialists split into **adversarial/read-only roles** (`explore`, `plan`, `reviewer`, `oracle`, `researcher`) which must run fresh and unbiased, and **continuity roles** (`build`, `designer`) which may opt into forked context. The read-only roles also receive no worktree; only **Writing Agents** do.
 _Avoid_: Adding redundant roles (`delegate`, `context-builder`) that duplicate existing specialists
 
 **Oracle**
@@ -110,8 +110,16 @@ Per-agent context inheritance: `fresh` (isolated `--no-session` context, the def
 _Avoid_: Forked context for `oracle`/`reviewer`/`explore`; forked as the default
 
 **Governed Clarification**
-The governed child→parent escalation channel: when a subagent genuinely needs user input, it raises a typed request through the **Ask Tool** that surfaces to the parent (which owns all user communication), rather than opening a side-channel to the user. Carried in the `escalations[]` field of the **Subagent Result Contract**.
+The governed child→parent escalation channel: when a subagent genuinely needs user input, it raises a typed request through the **Ask Tool** that surfaces to the parent (which owns all user communication), rather than opening a side-channel to the user. Carried in the `escalations[]` field of the **Subagent Result Contract**. Structurally enforced: a subagent process registers neither the `task` nor the `ask` tool, so its only upward channel is its returned contract.
 _Avoid_: Raw child-to-user side-channels, ungoverned intercom
+
+**Writing Agent**
+A specialist whose policy ceiling permits `edit` — currently `build` and `designer` (the complement of the read-only roles). Writing Agents run in an isolated git **worktree** so their edits never touch the parent's working tree; read-only roles run in `process.cwd()` with no worktree. Derived from a single source of truth (`agentWrites(type)` = not read-only), so adding a future writer role automatically grants it worktree isolation.
+_Avoid_: Special-casing `build` for worktrees; giving read-only roles a worktree
+
+**Background Subagent**
+A subagent launched with `background: true` that runs detached past the parent's current turn. Instead of blocking the parent, the `task` tool returns an immediate handle and the child writes its finished **Subagent Result Contract** to `.harness/subagents/<id>.result.json`, which the parent polls with its own `read` tool. Foreground (blocking) execution remains the default. See ADR 0005.
+_Avoid_: Re-injecting a late result into parent context, a bespoke polling tool, blocking the parent on long writes
 
 **HARNESS_SUBAGENT**
 Environment variable set to `"1"` when spawning a subagent subprocess. Causes the harness extension to skip registering the `task` tool, preventing recursive delegation. The depth-1 guard is a deliberate strength, not a limitation: deep nesting is a recognized anti-pattern.
@@ -145,8 +153,9 @@ Pi lifecycle event fired after each tool execution. Used to collect tool output 
 - An **Audit Log** records policy decisions from parent agents, subagents, interactive sessions, and headless runs.
 - A **Rule ID** is the join key between **Policy File** rules, **Policy Denial** messages, and **Audit Log** entries.
 - **Policy File** rules use first-match-wins evaluation (deterministic, suitable for security invariants). **PermissionManager** session rules use last-match-wins (recency-weighted, so the latest decision overrides earlier ones). The split is intentional: policy is authoritative and predictable; session overrides reflect the most recent user intent.
-- **Reviewer** subagents may spawn `explore` subagents at depth 1. All other specialist subagent types (`explore`, `plan`, `build`, `designer`, `oracle`) are leaves and cannot spawn further subagents.
-- **Oracle** and **Reviewer** are adversarial roles and run fresh-context only; their value depends on being unbiased by the parent's prior decisions.
+- **Reviewer** subagents may spawn `explore` subagents at depth 1. All other specialist subagent types (`explore`, `plan`, `build`, `designer`, `oracle`, `researcher`) are leaves and cannot spawn further subagents.
+- **Oracle**, **Reviewer**, and `researcher` are adversarial/read-only roles and run fresh-context only; their value depends on being unbiased by the parent's prior decisions.
+- A **Writing Agent** (`build`, `designer`) runs in an isolated **worktree**; read-only roles (`explore`, `plan`, `reviewer`, `oracle`, `researcher`) do not. The distinction is derived from the read-only policy list, not hard-coded per role.
 
 **Extension-first Hybrid Strategy**
 Thanos should remain Pi-based and prefer extension, slash-command, MCP, policy, installer, and configuration surfaces for new capabilities. Vendoring or forking runtime pieces is allowed only when a target capability is impossible, unsafe, or ergonomically broken through Pi's extension API, and should copy the smallest subsystem needed.
@@ -217,6 +226,9 @@ _Avoid_: Unstructured review prose that cannot be aggregated or audited
 - "Strong subagent system" has been resolved as: keep the governance spine, and add typed result contracts, an **Oracle** specialist, governed clarification via Ask, artifact references, background+worktree isolation for writers, and a gated `researcher` — not as a feature-maximalist framework swap.
 - "Subagent context isolation" has been resolved as fresh-by-default with an opt-in `forked` mode for continuity roles only (`build`, `designer`); adversarial roles (`explore`, `plan`, `reviewer`, `oracle`) are fresh-only. Recorded in ADR 0004 superseding part of ADR 0001.
 - "researcher specialist" has been resolved as in-scope but read-only and network-policy-gated, sequenced after the governed interaction primitives — not rejected, and not ahead of the interaction tranche.
+- "background result delivery" has been resolved as **(b) file polling**: a background subagent writes its contract to `.harness/subagents/<id>.result.json` and the parent polls it with `read`, rather than re-injecting a late result into parent context or adding a bespoke polling tool. Recorded in ADR 0005. Foreground blocking execution remains the default; `background: true` is opt-in.
+- "worktree isolation scope" has been resolved as **any Writing Agent**, not just `build`: worktree creation is gated on `agentWrites(type)` (the complement of the read-only policy list), so `designer` and any future writer get isolation automatically while read-only roles get none.
+- "governed clarification enforcement" has been resolved as **structural, not just conventional**: a subagent process registers neither `task` nor `ask`, so the parent-owns-user-comms invariant cannot be bypassed by a child; escalations are the only upward channel. A `needsClarification(contract)` helper drives deterministic parent-side surfacing.
 - "forked spawn feasibility" has been resolved: Pi forks via `--fork <path|id>`, and the parent session id is reachable from extension code via `ctx.sessionManager.getSessionId()`, so forked context is implemented end-to-end (continuity roles only). Session-id access is defensive (`?.`), failing safe to fresh when absent. Known follow-up: a forked run that falls back to fresh (no parent ref) is still recorded as `contextMode: forked` in the transcript — audit fidelity could be improved to mark the effective mode.
 - "Governed interaction build order" has been resolved as Ask → Todo → Report Finding/review → Task batching/structured outputs.
 - "Permission rules" now means durable **Policy File** rules by default; session rules are temporary prompt-cycle decisions.

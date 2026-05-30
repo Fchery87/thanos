@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Value } from "typebox/value";
-import { formatTaskRunResult, TaskBatchParamsSchema, validateTaskBatch } from "../../src/agents/task-tool";
+import { formatTaskRunResult, TaskBatchParamsSchema, TaskParamsSchema, validateTaskBatch } from "../../src/agents/task-tool";
 import { contractToTranscriptStatus, contractReturnPayload } from "../../src/agents/task-tool";
 import { renderContractForDisplay, applyHarnessStatus } from "../../src/agents/task-tool";
 import type { SubagentResultContract } from "../../src/agents/result";
@@ -40,6 +40,24 @@ describe("task batch schema", () => {
       { id: "Same", type: "explore", goal: "A" },
       { id: "Same", type: "explore", goal: "B" },
     ])).toThrow(/duplicate/i);
+  });
+});
+
+describe("task params schema", () => {
+  it("accepts background: true", () => {
+    expect(Value.Check(TaskParamsSchema, { goal: "do a thing", background: true })).toBe(true);
+  });
+
+  it("accepts background: false", () => {
+    expect(Value.Check(TaskParamsSchema, { goal: "do a thing", background: false })).toBe(true);
+  });
+
+  it("validates when background is omitted (optional boolean)", () => {
+    expect(Value.Check(TaskParamsSchema, { goal: "do a thing" })).toBe(true);
+  });
+
+  it("rejects a non-boolean background (proves the field is typed)", () => {
+    expect(Value.Check(TaskParamsSchema, { goal: "do a thing", background: "yes" })).toBe(false);
   });
 });
 
