@@ -8,6 +8,18 @@ function nextTodoId(): string {
   return String(_todoIdCounter);
 }
 
+/** Re-seed the id counter so newly created items never collide with restored ids. */
+export function seedTodoIds(state: TodoState): void {
+  let max = 0;
+  for (const phase of state.phases) {
+    for (const item of phase.items) {
+      const n = Number(item.id);
+      if (Number.isFinite(n) && n > max) max = n;
+    }
+  }
+  if (max > _todoIdCounter) _todoIdCounter = max;
+}
+
 export interface TodoItem {
   id: string;
   content: string;

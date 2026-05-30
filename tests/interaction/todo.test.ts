@@ -4,6 +4,7 @@ import {
   applyTodoOperation,
   exportTodoMarkdown,
   importTodoMarkdown,
+  seedTodoIds,
 } from "../../src/interaction/todo";
 
 describe("todo state", () => {
@@ -78,5 +79,17 @@ describe("todo id-based matching", () => {
     expect(state.phases[0].items[0].status).toBe("in_progress"); // a untouched (was in_progress)
     expect(state.phases[0].items[1].status).toBe("completed");   // b completed
     expect(state.phases[0].items[2].status).toBe("pending");      // c untouched
+  });
+});
+
+describe("seedTodoIds", () => {
+  it("makes the next created item id exceed the max id already present", () => {
+    const restored = importTodoMarkdown("# TODO\n\n## A\n- [x] one\n- [ ] two\n");
+    // Force the restored items to have high numeric ids.
+    restored.phases[0].items[0].id = "40";
+    restored.phases[0].items[1].id = "41";
+    seedTodoIds(restored);
+    const next = createTodoState([{ phase: "B", items: ["fresh"] }]);
+    expect(Number(next.phases[0].items[0].id)).toBeGreaterThan(41);
   });
 });
