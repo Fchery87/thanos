@@ -272,11 +272,14 @@ export async function executeTask(
         metadata: { ...(contract.metadata ?? {}), contextMode },
       }).catch(() => {});
       if (backgroundId) {
-        fsp.writeFile(
-          path.join(process.cwd(), ".harness", "subagents", `${backgroundId}.result.json`),
-          contractReturnPayload(contract),
-          "utf-8",
-        ).catch(() => {});
+        const subagentsDir = path.join(process.cwd(), ".harness", "subagents");
+        fsp.mkdir(subagentsDir, { recursive: true })
+          .then(() => fsp.writeFile(
+            path.join(subagentsDir, `${backgroundId}.result.json`),
+            contractReturnPayload(contract),
+            "utf-8",
+          ))
+          .catch(() => {});
       } else {
         resolve(contractReturnPayload(contract));
       }
