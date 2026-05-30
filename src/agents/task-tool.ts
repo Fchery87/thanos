@@ -8,7 +8,18 @@ import { AGENT_TYPES, type AgentType } from "./registry";
 import { loadAgent } from "./loader";
 import { narrowPolicyForAgent } from "./policy";
 import { parseSubagentResult } from "./result";
+import type { SubagentResultContract } from "./result";
 import { writeTranscriptMetadata } from "./transcripts";
+
+export function contractToTranscriptStatus(
+  c: SubagentResultContract,
+): "success" | "error" | "timeout" | "escalated" {
+  return c.status;
+}
+
+export function contractReturnPayload(c: SubagentResultContract): string {
+  return JSON.stringify(c);
+}
 import { createWorktree, removeWorktree, generateWorktreeId, gcWorktrees, type Worktree } from "./worktree";
 
 // ── Process-exit worktree cleanup ─────────────────────────────────────────────
@@ -217,16 +228,20 @@ export async function executeTask(
         timedOut,
         timeoutMs: agent.timeoutMs,
       });
-      const parsed = parseSubagentResult(finalText);
+      const contract = parseSubagentResult(finalText);
+      // The harness owns the authoritative run status; only override the
+      // contract status when the run itself failed at the process level.
+      if (timedOut) contract.status = "timeout";
+      else if (code !== 0 && code !== null) contract.status = "error";
       writeTranscriptMetadata(path.join(process.cwd(), ".harness", "subagents"), {
         agentType: params.type,
-        status: timedOut ? "timeout" : code === 0 || code === null ? "success" : "error",
-        summary: parsed.text.slice(0, 500),
+        status: contractToTranscriptStatus(contract),
+        summary: contract.summary.slice(0, 500),
         startedAt,
         endedAt,
-        metadata: parsed.metadata,
+        metadata: contract.metadata,
       }).catch(() => {});
-      resolve(parsed.metadata ? JSON.stringify(parsed) : parsed.text);
+      resolve(contractReturnPayload(contract));
     });
     child.on("error", (err) => {
       cleanup();

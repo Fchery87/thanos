@@ -4,7 +4,7 @@ import type { AgentType } from "./registry";
 
 export interface TranscriptMetadata {
   agentType: AgentType;
-  status: "success" | "error" | "timeout";
+  status: "success" | "error" | "timeout" | "escalated";
   summary: string;
   startedAt: string;
   endedAt: string;
