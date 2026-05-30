@@ -6,6 +6,7 @@ import { Type } from "typebox";
 import type { HarnessPolicy } from "../policy/types";
 import { AGENT_TYPES, type AgentType } from "./registry";
 import { loadAgent } from "./loader";
+import { resolveContextMode, buildContextArgs } from "./context-mode";
 import { narrowPolicyForAgent } from "./policy";
 import { parseSubagentResult } from "./result";
 import type { SubagentResultContract } from "./result";
@@ -148,8 +149,10 @@ export async function executeTask(
   signal: AbortSignal | undefined,
   onUpdate: OnUpdate | undefined,
   parentPolicy?: HarnessPolicy,
+  parentSessionRef?: string,
 ): Promise<string> {
   const agent = await loadAgent(params.type);
+  const contextMode = resolveContextMode(params.type, agent.context);
   const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), "harness-subagent-"));
 
   const repoDir = process.cwd();
@@ -171,7 +174,7 @@ export async function executeTask(
     await fsp.writeFile(policyFile, JSON.stringify(narrowed), "utf-8");
   }
 
-  const piArgs: string[] = ["--mode", "json", "-p", "--no-session"];
+  const piArgs: string[] = ["--mode", "json", "-p", ...buildContextArgs(contextMode, parentSessionRef)];
   if (agent.tools && agent.tools.length > 0) piArgs.push("--tools", agent.tools.join(","));
   if (agent.model) piArgs.push("--model", agent.model);
   piArgs.push("--append-system-prompt", promptFile);
@@ -256,7 +259,7 @@ export async function executeTask(
         summary: contract.summary.slice(0, 500),
         startedAt,
         endedAt,
-        metadata: contract.metadata,
+        metadata: { ...(contract.metadata ?? {}), contextMode },
       }).catch(() => {});
       resolve(contractReturnPayload(contract));
     });

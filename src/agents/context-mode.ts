@@ -17,3 +17,9 @@ export function resolveContextMode(type: AgentType, requested: ContextMode | und
   }
   return "forked";
 }
+
+export function buildContextArgs(mode: ContextMode, parentSessionRef?: string): string[] {
+  if (mode === "forked" && parentSessionRef) return ["--fork", parentSessionRef];
+  // Fresh, or forked without a resolvable parent session → stay ephemeral.
+  return ["--no-session"];
+}

@@ -1008,6 +1008,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         undefined,
         undefined,
         policy,
+        ctx.sessionManager.getSessionId() || undefined,
       );
       ctx.ui.notify(renderContractForDisplay(result), "info");
     } catch (err) {
@@ -1213,7 +1214,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
           const update = onUpdate
             ? (partial: { content: { type: "text"; text: string }[] }) => onUpdate({ ...partial, details: undefined })
             : undefined;
-          const text = await _executeTask(resolved as TaskParams & { type: NonNullable<TaskParams["type"]> }, signal, update, policy);
+          const text = await _executeTask(resolved as TaskParams & { type: NonNullable<TaskParams["type"]> }, signal, update, policy, toolCtx.sessionManager.getSessionId() || undefined);
           return { content: [{ type: "text" as const, text }], details: undefined };
         } catch (err) {
           return { content: [{ type: "text" as const, text: String(err) }], isError: true, details: undefined };
