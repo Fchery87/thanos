@@ -163,6 +163,10 @@ export async function executeTask(
   const contextMode = resolveContextMode(params.type, agent.context);
   const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), "harness-subagent-"));
 
+  // Background runs return an immediate handle; the contract (including any
+  // escalations) lands in <id>.result.json for the parent to poll. A backgrounded
+  // child therefore surfaces clarification via file polling, not the synchronous
+  // needsClarification directive on the task tool's return.
   const backgroundId = params.background ? generateWorktreeId() : undefined;
 
   const repoDir = process.cwd();

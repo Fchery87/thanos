@@ -55,6 +55,10 @@ describe("task params schema", () => {
   it("validates when background is omitted (optional boolean)", () => {
     expect(Value.Check(TaskParamsSchema, { goal: "do a thing" })).toBe(true);
   });
+
+  it("rejects a non-boolean background (proves the field is typed)", () => {
+    expect(Value.Check(TaskParamsSchema, { goal: "do a thing", background: "yes" })).toBe(false);
+  });
 });
 
 describe("task-tool contract helpers", () => {
