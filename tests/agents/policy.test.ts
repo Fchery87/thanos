@@ -58,6 +58,21 @@ describe("narrowPolicyForAgent", () => {
     });
   });
 
+  describe("researcher (read-only, network-gated)", () => {
+    it("cannot edit", () => {
+      const narrowed = narrowPolicyForAgent("researcher", basePolicy);
+      const result = evaluatePolicy(narrowed, "edit", "f.ts");
+      expect(result).not.toBeNull();
+      expect(result?.decision).toBe("deny");
+    });
+    it("cannot exec", () => {
+      const narrowed = narrowPolicyForAgent("researcher", basePolicy);
+      const result = evaluatePolicy(narrowed, "exec", "curl x");
+      expect(result).not.toBeNull();
+      expect(result?.decision).toBe("deny");
+    });
+  });
+
   describe("build", () => {
     it("gets full parent policy with no narrowing", () => {
       const narrowed = narrowPolicyForAgent("build", basePolicy);

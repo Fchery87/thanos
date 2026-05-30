@@ -83,7 +83,7 @@ describe("loadAgent", () => {
   });
 
   it("every agent type has a definition file with a tools allowlist", async () => {
-    const types = ["explore", "plan", "build", "reviewer", "designer", "oracle"] as const;
+    const types = ["explore", "plan", "build", "reviewer", "designer", "oracle", "researcher"] as const;
     for (const type of types) {
       const def = await loadAgent(type);
       expect(def.tools, `${type} should have tools defined`).toBeDefined();

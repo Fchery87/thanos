@@ -17,7 +17,7 @@ describe("resolveContextMode", () => {
     expect(resolveContextMode("designer", "fresh")).toBe("fresh");
   });
 
-  it.each(["explore", "plan", "reviewer", "oracle"] as const)(
+  it.each(["explore", "plan", "reviewer", "oracle", "researcher"] as const)(
     "throws when forked is requested for adversarial role %s",
     (type) => {
       expect(() => resolveContextMode(type, "forked")).toThrow(/forked/i);
