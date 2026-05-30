@@ -302,9 +302,10 @@ A custom `segTokens` segment shows per-turn input (↑) and output (↓) token c
 | sequential-thinking | stdio | Step-by-step reasoning |
 | convex-mcp | stdio | Convex database integration |
 | mgrep | stdio | Fast ripgrep-based code search |
-| neon | SSE | Neon Postgres (disabled) |
-| stitch | SSE | Google Stitch design tools (disabled) |
-| exa | stdio | Web search (disabled — replaced by pi-web-access) |
+| neon | SSE | Neon Postgres integration |
+| stitch | SSE | Google Stitch design tools |
+
+Web search is provided by the `pi-web-access` package (Exa), not an MCP server — the redundant `exa` MCP server was removed.
 
 Copy `mcp.example.json` to `mcp.json` and fill in your API keys.
 
