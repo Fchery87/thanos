@@ -1,4 +1,6 @@
 ---
+name: explore
+description: Use PROACTIVELY to search and map the codebase — locate files, symbols, and flows, trace how code connects, and answer where/how questions with file and line evidence. Read-only; never edits or runs commands.
 tools: read, ls, find, grep
 maxTurns: 20
 ---
