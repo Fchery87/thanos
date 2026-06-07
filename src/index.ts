@@ -1308,7 +1308,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     pi.registerTool({
       name: "ask",
       label: "Ask structured question",
-      description: "Ask the user one typed, option-based question and return a governed decision record.",
+      description: "Ask the user one option-based question and return a governed decision record. Always set `recommended` to your strongest option (shown to the user, marked '(Recommended)' and listed first) and give each option a `description` explaining its trade-off. The user can type a free-text answer unless `allowOther` is false.",
       parameters: AskParamsSchema,
       async execute(_toolCallId, params: AskQuestion, _signal, _onUpdate, toolCtx) {
         try {
@@ -1330,12 +1330,42 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
             return { content: [{ type: "text" as const, text: JSON.stringify(decision) }], details: undefined };
           }
 
-          const optionIds = params.options.map((option) => option.id);
-          const selected = await toolCtx.ui.select(params.question, optionIds);
-          if (!selected) {
+          // Order options with the recommended one first, then render label — description,
+          // tagging the recommendation so the user can see it (Claude Code AskUserQuestion parity).
+          const recommended = params.options.find((o) => o.id === params.recommended);
+          const rest = params.options.filter((o) => o.id !== params.recommended);
+          const ordered = recommended ? [recommended, ...rest] : [...params.options];
+          const display = (o: { id: string; label: string; description?: string }) => {
+            const base = o.description ? `${o.label} — ${o.description}` : o.label;
+            return o.id === params.recommended ? `${base} (Recommended)` : base;
+          };
+          const rendered = ordered.map((o) => ({ id: o.id, text: display(o) }));
+
+          // Free-text "Other" is offered by default; allowOther:false locks the choice set.
+          const showOther = params.allowOther !== false;
+          const OTHER_LABEL = "✎ Other (type your own answer…)";
+          const choices = rendered.map((r) => r.text);
+          if (showOther) choices.push(OTHER_LABEL);
+
+          const picked = await toolCtx.ui.select(params.question, choices);
+          if (!picked) {
             return { content: [{ type: "text" as const, text: "ask cancelled" }], isError: true, details: undefined };
           }
-          const decision = buildAskDecision(params, [selected], "user");
+
+          if (showOther && picked === OTHER_LABEL) {
+            const typed = await toolCtx.ui.input(params.question, "Type your answer");
+            if (typed === undefined || typed.trim().length === 0) {
+              return { content: [{ type: "text" as const, text: "ask cancelled" }], isError: true, details: undefined };
+            }
+            const decision = buildAskDecision(params, [typed.trim()], "user", undefined, true);
+            return { content: [{ type: "text" as const, text: JSON.stringify(decision) }], details: undefined };
+          }
+
+          const match = rendered.find((r) => r.text === picked);
+          if (!match) {
+            return { content: [{ type: "text" as const, text: "ask cancelled" }], isError: true, details: undefined };
+          }
+          const decision = buildAskDecision(params, [match.id], "user");
           return { content: [{ type: "text" as const, text: JSON.stringify(decision) }], details: undefined };
         } catch (err) {
           return { content: [{ type: "text" as const, text: String(err) }], isError: true, details: undefined };

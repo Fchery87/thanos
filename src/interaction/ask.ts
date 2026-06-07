@@ -34,6 +34,8 @@ export type AskDecision = {
   selected: string[];
   recommended: string;
   source: AskDecisionSource;
+  /** True when the user typed a free-text answer ("Other") instead of picking a known option id. */
+  custom?: boolean;
   rationale?: string;
   evidenceScope?: string;
 };
@@ -58,11 +60,17 @@ export function buildAskDecision(
   selected: string[],
   source: AskDecisionSource,
   rationale?: string,
+  custom = false,
 ): AskDecision {
   const ids = optionIds(question);
   assertUnique(ids);
-  assertKnown(ids, selected);
   if (selected.length !== 1) throw new Error("ask requires exactly one selection");
+  if (custom) {
+    const text = selected[0];
+    if (!text || text.trim().length === 0) throw new Error("ask requires a non-empty custom answer");
+  } else {
+    assertKnown(ids, selected);
+  }
 
   return {
     question: question.question,
@@ -70,6 +78,7 @@ export function buildAskDecision(
     selected,
     recommended: question.recommended,
     source,
+    ...(custom ? { custom: true } : {}),
     ...(rationale ? { rationale } : {}),
     ...(question.evidenceScope ? { evidenceScope: question.evidenceScope } : {}),
   };
@@ -79,9 +88,11 @@ export function buildAskAuditMetadata(decision: AskDecision): Record<string, unk
   return {
     question: decision.question,
     options: decision.options,
-    selected: decision.selected,
+    // Free-text answers are not logged verbatim — record only that a custom answer was given.
+    selected: decision.custom ? ["(custom answer)"] : decision.selected,
     recommended: decision.recommended,
     source: decision.source,
+    ...(decision.custom ? { custom: true } : {}),
     ...(decision.rationale ? { rationale: decision.rationale } : {}),
   };
 }

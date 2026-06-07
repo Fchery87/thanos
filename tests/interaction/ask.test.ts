@@ -58,6 +58,22 @@ describe("buildAskDecision", () => {
   it("requires exactly one selection", () => {
     expect(() => buildAskDecision(baseQuestion, ["extend", "fork"], "user")).toThrow(/exactly one/i);
   });
+
+  it("accepts a free-text answer when custom is set", () => {
+    const decision = buildAskDecision(baseQuestion, ["Use a hybrid approach"], "user", undefined, true);
+    expect(decision).toEqual({
+      question: baseQuestion.question,
+      options: ["extend", "fork"],
+      selected: ["Use a hybrid approach"],
+      recommended: "extend",
+      source: "user",
+      custom: true,
+    });
+  });
+
+  it("rejects an empty custom answer", () => {
+    expect(() => buildAskDecision(baseQuestion, ["   "], "user", undefined, true)).toThrow(/non-empty custom answer/i);
+  });
 });
 
 describe("resolveHeadlessAsk", () => {
@@ -85,6 +101,18 @@ describe("buildAskAuditMetadata", () => {
       recommended: "extend",
       source: "user",
       rationale: "safe rationale",
+    });
+  });
+
+  it("redacts free-text answers from audit metadata", () => {
+    const decision = buildAskDecision(baseQuestion, ["a sensitive freeform answer"], "user", undefined, true);
+    expect(buildAskAuditMetadata(decision)).toEqual({
+      question: baseQuestion.question,
+      options: ["extend", "fork"],
+      selected: ["(custom answer)"],
+      recommended: "extend",
+      source: "user",
+      custom: true,
     });
   });
 });
