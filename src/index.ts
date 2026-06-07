@@ -10,7 +10,7 @@ import { PermissionManager } from "./permissions/manager";
 import { SpecEngine } from "./spec/engine";
 import { makeBeforeToolHandler } from "./hooks/before-tool";
 import { makeAfterToolHandler } from "./hooks/after-tool";
-import { TaskParamsSchema, executeTask, needsClarification, parseSubagentResult, renderContractForDisplay, type TaskParams } from "./agents/task-tool";
+import { TaskParamsSchema, executeTask, needsClarification, parseSubagentResult, type TaskParams } from "./agents/task-tool";
 import { AGENT_TYPES } from "./agents/registry";
 import { loadPolicyState } from "./policy/state";
 import type { FormalSpec } from "./spec/types";
@@ -1012,23 +1012,17 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         ctx.ui.notify("Code review is only available in the main session.", "warning");
         return;
       }
-      const goal = "Review the code changes in this session. Investigate any questions about the wider codebase by spawning explore agents. Report findings by severity and give an overall decision.";
-      ctx.ui.notify("Starting code review…", "info");
-      // Delegate to the reviewer agent via the task tool
-      const policy = await requirePolicy(ctx);
-      if (!policy) return;
-      const { executeTask, renderContractForDisplay } = await import("./agents/task-tool");
-      try {
-        const result = await executeTask(
-          { type: "reviewer", goal },
-          undefined,
-          undefined,
-          policy,
-        );
-        ctx.ui.notify(renderContractForDisplay(result), "info");
-      } catch (err) {
-        ctx.ui.notify(`Review failed: ${String(err)}`, "warning");
-      }
+      ctx.ui.notify("Delegating code review to the reviewer subagent…", "info");
+      // Route through the pi-subagents engine (unified delegation + rich render).
+      // The reviewer agent runs read-only under its tool ceiling; governance is
+      // inherited by the child process.
+      await pi.sendUserMessage(
+        "Use the `subagent` tool to run the `reviewer` agent on this task: Review the " +
+        "code changes in this session. Investigate any questions about the wider codebase " +
+        "by delegating to `explore` subagents. Report findings by severity (P0–P3) and give " +
+        "an overall decision.",
+        { deliverAs: "followUp" },
+      );
     },
   });
 
@@ -1043,21 +1037,12 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       ctx.ui.notify("Designer is only available in the main session.", "warning");
       return;
     }
-    ctx.ui.notify("Starting designer agent…", "info");
-    const policy = await requirePolicy(ctx);
-    if (!policy) return;
-    try {
-      const result = await _executeTask(
-        { type: "designer", goal },
-        undefined,
-        undefined,
-        policy,
-        ctx.sessionManager?.getSessionId() || undefined,
-      );
-      ctx.ui.notify(renderContractForDisplay(result), "info");
-    } catch (err) {
-      ctx.ui.notify(`Designer failed: ${String(err)}`, "warning");
-    }
+    ctx.ui.notify("Delegating to the designer subagent…", "info");
+    // Route through the pi-subagents engine (unified delegation + rich render).
+    await pi.sendUserMessage(
+      `Use the \`subagent\` tool to run the \`designer\` agent on this task: ${goal}`,
+      { deliverAs: "followUp" },
+    );
   };
 
   pi.registerCommand("designer", {
@@ -1157,7 +1142,23 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
 
     // Model router removed — /models command handles model selection
 
-    return injected ? { systemPrompt: injected } : undefined;
+    // ── Auto-invoke: nudge the top-level agent to delegate proactively ──
+    // Parent only — children must not recursively fan out. The per-agent
+    // `description` frontmatter (~/.pi/agent/agents/*.md) is the routing signal.
+    const delegationDirective = isSubagent ? "" :
+      "Specialist subagents are available via the `subagent` tool. Before doing " +
+      "non-trivial work yourself, call `subagent` with {action:\"list\"} to see the " +
+      "available specialists, then PROACTIVELY delegate matching work: codebase " +
+      "search/mapping → explore, planning → plan, implementation → build/worker, " +
+      "code review → reviewer, second opinions → oracle, web/doc research → " +
+      "researcher, UI/UX → designer, fast recon for handoff → scout. Prefer " +
+      "delegating to a specialist over doing specialist work inline; use the " +
+      "parallel/chain modes when tasks are independent or form a pipeline. " +
+      "Read-only specialists cannot edit or run commands by design.";
+
+    const systemPrompt = [injected, delegationDirective].filter(Boolean).join("\n\n");
+
+    return systemPrompt ? { systemPrompt } : undefined;
   });
 
   // ── Permission + explicit-spec approval gate ───────────────────────
@@ -1243,6 +1244,11 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   // registerSearchTool removed — superseded by npm:pi-web-access
 
   if (!isSubagent) {
+    // Legacy Thanos `task` tool — superseded by the pi-subagents `subagent` tool.
+    // Kept dormant so it can be re-enabled with THANOS_LEGACY_TASK=1. The
+    // executeTask stays imported solely for this dormant tool; /review and
+    // /designer now route through the pi-subagents `subagent` engine instead.
+    if (process.env.THANOS_LEGACY_TASK === "1") {
     pi.registerTool({
       name: "task",
       label: "Delegate to subagent",
@@ -1272,6 +1278,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         }
       },
     });
+    }
 
     pi.registerTool({
       name: "todo",

@@ -6,6 +6,7 @@ type RegisterApi = Parameters<typeof register>[0];
 
 afterEach(() => {
   vi.clearAllMocks();
+  delete process.env.THANOS_LEGACY_TASK;
 });
 
 function createFakePi(overrides?: Partial<RegisterApi>) {
@@ -52,6 +53,8 @@ describe("register /modes command", () => {
   });
 
   it("reuses the selected mode for task calls that omit type", async () => {
+    // The legacy `task` tool is dormant by default; enable it for this test.
+    process.env.THANOS_LEGACY_TASK = "1";
     const mockExecuteTask = vi.fn(async () => "task result");
     const select = vi.fn(async () => "build");
     const { api, handlers } = createFakePi();
