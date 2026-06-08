@@ -14,7 +14,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src tests",
-    "ci": "bun run typecheck && bun run lint && bun test"
+    "ci": "bun run typecheck && bun run lint && bun run test"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.75.3",
