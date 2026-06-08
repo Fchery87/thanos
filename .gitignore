@@ -13,10 +13,10 @@ web-search.json
 agent/*.local.secret.json
 
 # ── Dependencies ─────────────────────────────────────────────────────
+# bun.lock is committed on purpose — release CI uses `bun install --frozen-lockfile`
 node_modules/
 agent/npm/
 agent/git/
-bun.lock
 package-lock.json
 
 # ── Runtime and state files ──────────────────────────────────────────
