@@ -1,0 +1,20 @@
+{
+  "exaApiKey": "",
+  "provider": "exa",
+  "shortcuts": {
+    "curate": "ctrl+shift+s",
+    "activity": "ctrl+shift+n"
+  },
+  "githubClone": {
+    "enabled": true,
+    "maxRepoSizeMB": 350,
+    "cloneTimeoutSeconds": 30
+  },
+  "youtube": {
+    "enabled": true
+  },
+  "video": {
+    "enabled": true,
+    "maxSizeMB": 50
+  }
+}

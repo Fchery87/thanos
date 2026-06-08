@@ -223,29 +223,6 @@ prepare_install_source() {
   fi
 
   install_release_tarball
-  return
-
-  ensure_git
-
-  if is_thanos_repo; then
-    info "Updating existing Thanos checkout at $THANOS_DIR to $THANOS_REF"
-    checkout_ref "$THANOS_REF"
-    return
-  fi
-
-  if [ -e "$THANOS_DIR" ]; then
-    if [ "$FORCE_INSTALL" = "1" ]; then
-      backup_existing_dir
-    else
-      die "$THANOS_DIR already exists and is not the Thanos repository. Re-run with --force to back it up, or set THANOS_DIR to another path."
-    fi
-  fi
-
-  parent_dir=$(dirname "$THANOS_DIR")
-  mkdir -p "$parent_dir"
-  info "Cloning Thanos from $THANOS_REPO_URL into $THANOS_DIR"
-  git clone "$THANOS_REPO_URL" "$THANOS_DIR"
-  checkout_ref "$THANOS_REF"
 }
 
 ensure_pi() {
@@ -299,6 +276,21 @@ setup_mcp() {
   fi
 }
 
+setup_models() {
+  if [ ! -f "$THANOS_DIR/agent/models.json" ] && [ -f "$THANOS_DIR/agent/models.example.json" ]; then
+    mkdir -p "$THANOS_DIR/agent"
+    cp "$THANOS_DIR/agent/models.example.json" "$THANOS_DIR/agent/models.json"
+    info "Created agent/models.json from the provider catalog — add keys via env vars or 'pi' /login"
+  fi
+}
+
+setup_web_search() {
+  if [ ! -f "$THANOS_DIR/web-search.json" ] && [ -f "$THANOS_DIR/web-search.example.json" ]; then
+    cp "$THANOS_DIR/web-search.example.json" "$THANOS_DIR/web-search.json"
+    info "Created web-search.json from template — add your Exa API key to enable web search"
+  fi
+}
+
 install_wrapper() {
   mkdir -p "$BIN_DIR"
   WRAPPER="$BIN_DIR/thanos"
@@ -339,13 +331,17 @@ main() {
   ensure_pi
   report_pi_version
   setup_user_settings
+  setup_models
   setup_mcp
+  setup_web_search
   install_harness
   install_wrapper
   ensure_path
   success "Thanos installed! Run 'thanos' to start a session."
   success "Run 'thanos update' anytime to pull the latest Thanos config."
-  warn "Provider/API keys are not bundled. Add your own keys as environment variables or edit $THANOS_DIR/mcp.json."
+  warn "Provider/API keys are not bundled. Add your own keys with 'pi' /login, as environment"
+  warn "variables (e.g. export THECLAWBAY_API_KEY=...), or by editing $THANOS_DIR/agent/models.json."
+  warn "MCP keys go in $THANOS_DIR/mcp.json (and optional $THANOS_DIR/mcp-secrets.json)."
 }
 
 main "$@"

@@ -60,28 +60,42 @@ The default install location is `~/.pi` because Pi reads user packages and setti
 
 ## User API keys and provider setup
 
-Thanos does **not** ship maintainer API keys or force a specific model provider. Each user chooses their own Pi provider/model and supplies their own keys.
+Thanos ships a **curated provider/model catalog** but **no maintainer API keys**. Every provider
+and model is present out of the box — you only add your own keys.
 
-After install, users can browse registered providers and models with `/models`. The picker shows unauthenticated providers too, marked as needing a key, so users can choose what they want before adding credentials.
+The catalog is committed as `agent/models.example.json`. The installer copies it to
+`agent/models.json` on first install (it never overwrites an existing one). After install, browse
+the full catalog with `/models` — unauthenticated providers appear marked as needing a key.
 
 ```bash
 thanos
-# then use /models to browse/select, or /settings and /login to configure credentials
+# then use /models to browse/select, or /login to add credentials
 ```
 
-Users who want custom providers can create or edit:
+### Adding keys
 
-```text
-~/.pi/agent/models.json
-```
+You can authenticate any of three ways (they coexist; `/login` always takes priority):
 
-and reference their own environment variables or credential commands there. MCP server keys go in:
+1. **`/login` (recommended).** Pick a provider, choose "Use an API key", paste your key. It is
+   stored in `~/.pi/agent/auth.json` (gitignored). `/logout` removes it again. This works for
+   every provider in the shipped catalog.
+2. **Environment variables.** Each provider's `apiKey` field names an env var. Export it and Pi
+   resolves it at runtime:
 
-```text
-~/.pi/mcp.json
-```
+   ```bash
+   export THECLAWBAY_API_KEY=...   # theclawbay + theclawbay-claude
+   export CROFAI_API_KEY=...       # CrofAI
+   ```
+3. **Shell command.** Set a provider's `apiKey` to `"!your-secret-command"` in
+   `~/.pi/agent/models.json` (e.g. `"!op read op://vault/key"`).
 
-The installer creates `mcp.json` from `mcp.example.json` when it does not exist.
+> Use the bare env-var name (`"THECLAWBAY_API_KEY"`), **not** `"$THECLAWBAY_API_KEY"` — Pi looks
+> up the string verbatim in the environment.
+
+MCP server keys go in `~/.pi/mcp.json` (created from `mcp.example.json` on install). Optional
+secret overlays for MCP servers go in `~/.pi/mcp.json`'s companion `mcp-secrets.json` (template:
+`mcp-secrets.example.json`; **not** auto-created, so unconfigured servers never start with bogus
+credentials). Web search keys go in `~/.pi/web-search.json` (created from `web-search.example.json`).
 
 ---
 
@@ -91,9 +105,12 @@ The installer creates `mcp.json` from `mcp.example.json` when it does not exist.
 ~/.pi/
 ├── agent/
 │   ├── agents/                 # Specialist subagent definitions (explore, plan, build, reviewer, designer, oracle, researcher)
-│   ├── skills/                 # Installed Pi skills (86+)
+│   ├── skills/                 # Installed Pi skills
+│   ├── models.example.json     # Curated provider/model catalog template (no keys)
+│   ├── models.json             # User-owned catalog created by installer (gitignored)
 │   ├── settings.example.json   # Thanos default Pi package/settings template
-│   └── settings.json           # User-owned local copy created by installer (gitignored)
+│   ├── settings.json           # User-owned local copy created by installer (gitignored)
+│   └── auth.json               # Credentials saved by /login (gitignored)
 ├── src/                        # Thanos Harness extension source
 ├── scripts/
 │   └── sync-models-dev.mjs     # Sync model metadata from models.dev
@@ -101,9 +118,11 @@ The installer creates `mcp.json` from `mcp.example.json` when it does not exist.
 │   ├── adr/                    # Architecture Decision Records
 │   └── plans/                  # Implementation planning documents
 ├── CONTEXT.md                  # Design glossary and approved direction
-├── mcp.json                    # User-owned MCP server config (gitignored)
 ├── mcp.example.json            # MCP server config template
-├── web-search.json             # Optional user-owned pi-web-access config (gitignored)
+├── mcp.json                    # User-owned MCP server config (gitignored)
+├── mcp-secrets.example.json    # Optional MCP secret-overlay template
+├── web-search.example.json     # pi-web-access config template
+├── web-search.json             # User-owned pi-web-access config (gitignored)
 └── .gitignore
 ```
 
@@ -281,6 +300,11 @@ All shortcuts use `Ctrl+Shift+<key>` for cross-platform consistency. On macOS, p
 
 ## Status bar
 
+> The shipped default status bar is `npm:@npm-ken/pi-bar`; the rytswd `statusline/*` extension is
+> disabled in `settings.example.json`. To use the rytswd statusline instead, enable `statusline/*`
+> and remove `npm:@npm-ken/pi-bar` in `~/.pi/agent/settings.json`. The segments below describe the
+> rytswd statusline layout.
+
 The rytswd statusline shows a single condensed line below the editor:
 
 ```
@@ -375,20 +399,26 @@ Audit events are written to `.harness/audit.jsonl` (gitignored). View entries wi
 
 ## Provider and model configuration
 
-Thanos leaves provider credentials to each user. The `/models` command lists registered models from the user's Pi installation and any provider catalogs they add locally, even before credentials are configured.
+Thanos ships the provider/model catalog but leaves credentials to each user. The catalog template
+`agent/models.example.json` is committed; the installer copies it to `agent/models.json` on first
+run. `/models` lists every model in it, even before credentials are configured.
 
-Users can configure providers through Pi's built-in settings/login flow or by adding their own local provider catalog at:
+Add or edit providers in `~/.pi/agent/models.json`, supplying keys via `/login`, env vars (bare
+name in the `apiKey` field), or a `!command`. See [Adding keys](#adding-keys).
+
+The user-owned copies are gitignored so credentials and local edits are never published:
 
 ```text
-~/.pi/agent/models.json
+~/.pi/agent/models.json     # your catalog + any keys you inline
+~/.pi/agent/auth.json       # /login credentials
+~/.pi/agent/settings.json   # your local settings
+~/.pi/mcp.json              # MCP server config + keys
+~/.pi/mcp-secrets.json      # optional MCP secret overlay
+~/.pi/web-search.json       # pi-web-access config + Exa key
 ```
 
-Local user configuration files are gitignored by Thanos so provider catalogs, credentials, and model defaults are never published by this repo:
-
-```text
-~/.pi/agent/models.json
-~/.pi/agent/settings.json
-```
+The committed `*.example.json` templates carry no secrets, so the published repo and release
+tarballs (built via `git archive`, which exports tracked files only) can never leak credentials.
 
 ---
 

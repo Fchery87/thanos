@@ -150,6 +150,25 @@ function Setup-Mcp {
   }
 }
 
+function Setup-Models {
+  $models = Join-Path $ThanosDir "agent\models.json"
+  $example = Join-Path $ThanosDir "agent\models.example.json"
+  if ((-not (Test-Path $models)) -and (Test-Path $example)) {
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $models) | Out-Null
+    Copy-Item $example $models
+    Info "Created agent/models.json from the provider catalog — add keys via env vars or 'pi' /login"
+  }
+}
+
+function Setup-WebSearch {
+  $ws = Join-Path $ThanosDir "web-search.json"
+  $example = Join-Path $ThanosDir "web-search.example.json"
+  if ((-not (Test-Path $ws)) -and (Test-Path $example)) {
+    Copy-Item $example $ws
+    Info "Created web-search.json from template — add your Exa API key to enable web search"
+  }
+}
+
 function Install-Wrapper {
   New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
   $wrapperPath = Join-Path $BinDir "thanos.cmd"
@@ -190,10 +209,14 @@ Ensure-Pi
 $piVersion = try { pi --version } catch { "unknown version" }
 Info "Pi version: $piVersion"
 Setup-UserSettings
+Setup-Models
 Setup-Mcp
+Setup-WebSearch
 Install-Harness
 Install-Wrapper
 Ensure-Path
 Success "Thanos installed! Run 'thanos' to start a session."
 Success "Run 'thanos update' anytime to pull the latest Thanos config."
-Warn "Provider/API keys are not bundled. Add your own keys as environment variables or edit $ThanosDir\mcp.json."
+Warn "Provider/API keys are not bundled. Add your own keys with 'pi' /login, as environment"
+Warn "variables (e.g. `$env:THECLAWBAY_API_KEY), or by editing $ThanosDir\agent\models.json."
+Warn "MCP keys go in $ThanosDir\mcp.json (and optional $ThanosDir\mcp-secrets.json)."

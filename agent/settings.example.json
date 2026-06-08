@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.75.5",
+  "lastChangelogVersion": "0.78.1",
   "packages": [
     "npm:@victor-software-house/pi-curated-themes",
     "npm:context-mode",
@@ -14,12 +14,16 @@
         "questionnaire/*",
         "slow-mode/*",
         "!stash/*",
-        "statusline/*"
+        "!statusline/*"
       ]
     },
     "npm:pi-subagents",
-    "npm:pi-web-access"
+    "npm:pi-web-access",
+    "npm:@npm-ken/pi-bar"
   ],
+  "subagents": {
+    "disableBuiltins": true
+  },
   "theme": "brogrammer",
   "defaultThinkingLevel": "high",
   "treeFilterMode": "default",
