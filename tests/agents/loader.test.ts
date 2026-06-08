@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdir, writeFile, mkdtemp } from "node:fs/promises";
+import { mkdir, writeFile, mkdtemp, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadAgent } from "../../src/agents/loader";
@@ -9,6 +9,17 @@ const originalHome = process.env.HOME;
 afterEach(() => {
   process.env.HOME = originalHome;
 });
+
+// The loader resolves agent definitions from `$HOME/.pi/agent/agents`. That is correct at
+// runtime (Pi installs to ~/.pi) but means tests against the *real* committed definitions
+// must not depend on the repo happening to live at ~/.pi. Point HOME at a temp dir whose
+// `.pi/agent` symlinks to this repo's `agent/` so these assertions hold in CI and any clone.
+async function repoHomeWithRealAgents(): Promise<string> {
+  const home = await mkdtemp(join(tmpdir(), "thanos-agent-home-"));
+  await mkdir(join(home, ".pi"), { recursive: true });
+  await symlink(join(process.cwd(), "agent"), join(home, ".pi", "agent"), "dir");
+  return home;
+}
 
 describe("loadAgent", () => {
   it("parses frontmatter fields into structured agent metadata", async () => {
@@ -41,6 +52,7 @@ describe("loadAgent", () => {
   });
 
   it("loads tools from agent markdown frontmatter for explore type", async () => {
+    process.env.HOME = await repoHomeWithRealAgents();
     const def = await loadAgent("explore");
     expect(def.tools).toBeDefined();
     expect(def.tools).toContain("read");
@@ -48,6 +60,7 @@ describe("loadAgent", () => {
   });
 
   it("loads tools from agent markdown frontmatter for designer type", async () => {
+    process.env.HOME = await repoHomeWithRealAgents();
     const def = await loadAgent("designer");
     expect(def.tools).toBeDefined();
     expect(def.tools).toContain("edit");
@@ -83,6 +96,7 @@ describe("loadAgent", () => {
   });
 
   it("every agent type has a definition file with a tools allowlist", async () => {
+    process.env.HOME = await repoHomeWithRealAgents();
     const types = ["explore", "plan", "build", "reviewer", "designer", "oracle", "researcher"] as const;
     for (const type of types) {
       const def = await loadAgent(type);
