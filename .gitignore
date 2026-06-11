@@ -23,6 +23,8 @@ package-lock.json
 mcp-state.json
 agent/sessions/
 agent/run-history.jsonl
+agent/trust.json
+exa-usage.json
 context-mode/
 
 # ── pi-lens runtime data ─────────────────────────────────────────────
