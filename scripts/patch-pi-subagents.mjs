@@ -31,6 +31,25 @@ const patches = [
       "\t\t\tfiles.push(...listFilesRecursive(filePath, predicate));",
   },
   {
+    file: join(ROOT, "extension", "fanout-child.ts"),
+    marker: "thanos-patch: process-global fanout tool guard",
+    needle:
+      "\tif (registeredApis.has(pi)) return;\n" +
+      "\tregisteredApis.add(pi);",
+    replacement:
+      "\tif (registeredApis.has(pi)) return;\n" +
+      "\tregisteredApis.add(pi);\n" +
+      "\t// thanos-patch: process-global fanout tool guard — the upstream WeakSet only\n" +
+      "\t// dedupes per ExtensionAPI instance, but pi loads this file twice in fanout\n" +
+      "\t// children (explicit --extension fanout-child.ts AND the settings package's\n" +
+      "\t// index.ts dispatch), each with its own API object. Both then register the\n" +
+      '\t// "subagent" tool and the second load crashes with a tool-name conflict,\n' +
+      "\t// killing every reviewer→explore nested run with exit 1.\n" +
+      '\tconst __thanosToolKey = "__piSubagentFanoutChildToolRegistered";\n' +
+      "\tif (globalStore[__thanosToolKey] === true) return;\n" +
+      "\tglobalStore[__thanosToolKey] = true;",
+  },
+  {
     file: join(ROOT, "tui", "render.ts"),
     marker: "thanos-patch: multi-line management output",
     needle:

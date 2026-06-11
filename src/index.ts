@@ -1154,7 +1154,11 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       "researcher, UI/UX → designer, fast recon for handoff → scout. Prefer " +
       "delegating to a specialist over doing specialist work inline; use the " +
       "parallel/chain modes when tasks are independent or form a pipeline. " +
-      "Read-only specialists cannot edit or run commands by design.";
+      "Read-only specialists cannot edit or run commands by design. " +
+      "Do NOT pass timeoutMs/maxRuntimeMs when delegating — every agent has its " +
+      "own maxExecutionTimeMs budget, and short caller timeouts kill healthy runs " +
+      "mid-flight, wasting all their work. If you must bound a run, use at least " +
+      "600000 (10 minutes).";
 
     const systemPrompt = [injected, delegationDirective].filter(Boolean).join("\n\n");
 
