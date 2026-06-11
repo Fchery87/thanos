@@ -3,13 +3,10 @@ import { formatMemoriesForInjection } from "../../src/memory/injector";
 import type { MemoryRecord } from "../../src/memory/types";
 
 describe("formatMemoriesForInjection", () => {
-  const makeRecord = (correction: string): MemoryRecord => ({
+  const makeRecord = (text: string): MemoryRecord => ({
     id: "test-id",
     project: "proj",
-    spec_tier: "",
-    capability: "",
-    pattern: "",
-    correction,
+    text,
     timestamp: Date.now(),
   });
 

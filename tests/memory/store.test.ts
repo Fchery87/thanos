@@ -1,8 +1,8 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { MemoryStore } from "../../src/memory/store";
+import { MemoryStore, MAX_MEMORY_LENGTH } from "../../src/memory/store";
 
 let dir: string;
 let dbPath: string;
@@ -19,49 +19,65 @@ afterEach(async () => {
 describe("MemoryStore", () => {
   it("saves and queries records by project", () => {
     const store = MemoryStore.open(dbPath);
-    store.save({ project: "my-app", spec_tier: "ambient", capability: "edit", pattern: "refactor", correction: "don't use var" });
-    store.save({ project: "other-app", spec_tier: "ambient", capability: "edit", pattern: "", correction: "unrelated" });
+    expect(store.save({ project: "my-app", text: "don't use var" }).saved).toBe(true);
+    expect(store.save({ project: "other-app", text: "unrelated" }).saved).toBe(true);
 
     const results = store.query({ project: "my-app" });
     expect(results).toHaveLength(1);
-    expect(results[0].correction).toBe("don't use var");
+    expect(results[0].text).toBe("don't use var");
     expect(results[0].project).toBe("my-app");
   });
 
-  it("filters by spec_tier", () => {
+  it("rejects empty and whitespace-only text", () => {
     const store = MemoryStore.open(dbPath);
-    store.save({ project: "proj", spec_tier: "ambient", capability: "", pattern: "", correction: "ambient rule" });
-    store.save({ project: "proj", spec_tier: "explicit", capability: "", pattern: "", correction: "explicit rule" });
-
-    const results = store.query({ project: "proj", spec_tier: "ambient" });
-    expect(results).toHaveLength(1);
-    expect(results[0].correction).toBe("ambient rule");
+    expect(store.save({ project: "proj", text: "" })).toEqual({ saved: false, reason: "empty" });
+    expect(store.save({ project: "proj", text: "   " })).toEqual({ saved: false, reason: "empty" });
+    expect(store.all()).toHaveLength(0);
   });
 
-  it("filters by capability", () => {
+  it("rejects text over the length cap", () => {
     const store = MemoryStore.open(dbPath);
-    store.save({ project: "proj", spec_tier: "", capability: "edit", pattern: "", correction: "edit pref" });
-    store.save({ project: "proj", spec_tier: "", capability: "exec", pattern: "", correction: "exec pref" });
+    const result = store.save({ project: "proj", text: "a".repeat(MAX_MEMORY_LENGTH + 1) });
+    expect(result).toEqual({ saved: false, reason: "too-long" });
+    expect(store.save({ project: "proj", text: "a".repeat(MAX_MEMORY_LENGTH) }).saved).toBe(true);
+  });
 
-    const results = store.query({ project: "proj", capability: "exec" });
-    expect(results).toHaveLength(1);
-    expect(results[0].correction).toBe("exec pref");
+  it("rejects duplicates within the same project but allows them across projects", () => {
+    const store = MemoryStore.open(dbPath);
+    expect(store.save({ project: "proj", text: "use bun" }).saved).toBe(true);
+    expect(store.save({ project: "proj", text: "  use bun  " })).toEqual({ saved: false, reason: "duplicate" });
+    expect(store.save({ project: "other", text: "use bun" }).saved).toBe(true);
+  });
+
+  it("trims text before saving", () => {
+    const store = MemoryStore.open(dbPath);
+    const result = store.save({ project: "proj", text: "  hello  " });
+    expect(result.saved && result.record.text).toBe("hello");
+  });
+
+  it("removes a record by id and reports misses", () => {
+    const store = MemoryStore.open(dbPath);
+    const result = store.save({ project: "proj", text: "to be forgotten" });
+    if (!result.saved) throw new Error("save failed");
+    expect(store.remove(result.record.id)).toBe(true);
+    expect(store.remove(result.record.id)).toBe(false);
+    expect(store.all()).toHaveLength(0);
   });
 
   it("returns most recent records first", () => {
     const store = MemoryStore.open(dbPath);
-    store.save({ project: "proj", spec_tier: "", capability: "", pattern: "", correction: "first" });
-    store.save({ project: "proj", spec_tier: "", capability: "", pattern: "", correction: "second" });
+    store.save({ project: "proj", text: "first" });
+    store.save({ project: "proj", text: "second" });
 
     const results = store.query({ project: "proj" });
-    expect(results[0].correction).toBe("second");
-    expect(results[1].correction).toBe("first");
+    expect(results[0].text).toBe("second");
+    expect(results[1].text).toBe("first");
   });
 
   it("respects the limit option", () => {
     const store = MemoryStore.open(dbPath);
     for (let i = 0; i < 5; i++) {
-      store.save({ project: "proj", spec_tier: "", capability: "", pattern: "", correction: `item ${i}` });
+      store.save({ project: "proj", text: `item ${i}` });
     }
 
     const results = store.query({ project: "proj", limit: 3 });
@@ -75,11 +91,24 @@ describe("MemoryStore", () => {
 
   it("assigns unique ids and timestamps to each record", () => {
     const store = MemoryStore.open(dbPath);
-    store.save({ project: "proj", spec_tier: "", capability: "", pattern: "", correction: "a" });
-    store.save({ project: "proj", spec_tier: "", capability: "", pattern: "", correction: "b" });
+    store.save({ project: "proj", text: "a" });
+    store.save({ project: "proj", text: "b" });
 
     const all = store.all();
     expect(all[0].id).not.toBe(all[1].id);
     expect(all[0].timestamp).toBeTypeOf("number");
+  });
+
+  it("normalizes legacy auto-capture records on read", async () => {
+    await writeFile(dbPath, JSON.stringify([
+      { id: "legacy-1", project: "proj", spec_tier: "ambient", capability: "", pattern: "", correction: "old preference", timestamp: 1 },
+      { id: "legacy-2", project: "proj", spec_tier: "", capability: "", pattern: "", correction: "", timestamp: 2 },
+    ]));
+    const store = MemoryStore.open(dbPath);
+    const results = store.query({ project: "proj" });
+    expect(results).toHaveLength(1);
+    expect(results[0].text).toBe("old preference");
+    // saving alongside a legacy record dedupes against its normalized text
+    expect(store.save({ project: "proj", text: "old preference" })).toEqual({ saved: false, reason: "duplicate" });
   });
 });

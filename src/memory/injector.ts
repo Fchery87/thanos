@@ -9,7 +9,7 @@ export function formatMemoriesForInjection(memories: MemoryRecord[]): string | n
   if (memories.length === 0) return null;
   const lines = memories
     .slice(0, 10)
-    .map((m) => `- ${m.correction}`)
+    .map((m) => `- ${m.text}`)
     .join("\n");
   return [
     "## Remembered preferences for this project",
