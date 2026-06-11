@@ -14,7 +14,7 @@ The governance pillar inside Thanos: policy, verification, audit, and delegation
 _Avoid_: Multi-tenant runtime
 
 **Pi**
-The installed coding agent CLI — package `@earendil-works/pi-coding-agent` v0.74.0. Loaded via nvm node v24.15.0. Binary at `~/.nvm/versions/node/v24.15.0/bin/pi`.
+The installed coding agent CLI — package `@earendil-works/pi-coding-agent` (currently v0.79.x; keep the repo's devDependency aligned with the installed CLI so the extension typechecks against the runtime API). Loaded via nvm node v24.15.0. Binary at `~/.nvm/versions/node/v24.15.0/bin/pi`.
 
 **Welcome Header**
 The startup TUI surface for Thanos. It should orient the user to the current **Agent Distribution** session by showing the active model, thinking level, specialist mode, MCP connectivity, policy/audit posture, recent work, and the commands that answer "what can I do next?".
@@ -90,7 +90,7 @@ Singleton per session. Runs classify → generate → verify lifecycle. `reset()
 Session-level Pi CLI flag. When set, upgrades `ambient` tier to `explicit`. Never affects `instant` tier — read-only questions always run immediately.
 
 **Specialist**
-One of `explore | plan | build | reviewer | designer | oracle | researcher`. Each maps to a markdown agent file in `~/.pi/agent/agents/`. The markdown file specifies the system prompt, optional `tools` allowlist, optional `model`, and optional **Context Mode**. Specialists split into **adversarial/read-only roles** (`explore`, `plan`, `reviewer`, `oracle`, `researcher`) which must run fresh and unbiased, and **continuity roles** (`build`, `designer`) which may opt into forked context. The read-only roles also receive no worktree; only **Writing Agents** do.
+One of `explore | plan | build | reviewer | designer | oracle | researcher | scout | worker`. Each maps to a markdown agent file in `~/.pi/agent/agents/`. The markdown file specifies the system prompt, optional `tools` allowlist, optional `model`, a `maxExecutionTimeMs` budget (the field pi-subagents actually enforces — `timeoutMs` is not a recognized frontmatter field), and optional **Context Mode**. `scout` (fast recon for handoff) and `worker` (fork-context implementer) came with the pi-subagents engine migration. Specialists split into **adversarial/read-only roles** (`explore`, `plan`, `reviewer`, `oracle`, `researcher`) which must run fresh and unbiased, and **continuity roles** (`build`, `designer`) which may opt into forked context. The read-only roles also receive no worktree; only **Writing Agents** do.
 _Avoid_: Adding redundant roles (`delegate`, `context-builder`) that duplicate existing specialists
 
 **Oracle**
