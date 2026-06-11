@@ -32,7 +32,7 @@ import { formatLabel, formatValue, formatSpecForApproval, formatPanel, noopTheme
 import { renderAuditPanel, renderPolicyPanel, renderSessionSnapshotPanel, renderSpecVerificationPanel } from "./commands/presenters";
 import { renderWelcomeHeader, formatTimeAgo, type WelcomeMcpSummary, type WelcomePolicySummary } from "./welcome/header";
 import { MemoryStore } from "./memory/store";
-import { shouldSaveMemory, extractCorrection, formatMemoriesForInjection } from "./memory/injector";
+import { formatMemoriesForInjection } from "./memory/injector";
 // Model router removed — use /models command or pi-subagents for model selection
 import { createSnapshot } from "./security/snapshot";
 import { classifyRisk } from "./permissions/risk";
@@ -1126,28 +1126,19 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     lens.setStatus(ctx);
 
 
-    // ── Memory: save corrections, inject preferences ───────────────
-    // Parent sessions only. A subagent's prompt is a one-off task, not a
-    // durable preference — capturing it poisons the store, and injecting
-    // parent-session memories into children replays parent-level delegation
-    // instructions inside them (observed: a remembered "just delegate to the
-    // reviewer" caused reviewer→reviewer recursion until budgets killed it).
+    // ── Memory: inject hand-curated preferences ────────────────────
+    // Read-only: entries come from deliberate edits to .harness/memory.json,
+    // never from auto-capture. The old prompt-pattern capture path memorized
+    // any prompt containing "do not" as a durable preference and replayed it
+    // into later sessions — including a parent's "just delegate to the
+    // reviewer", which caused reviewer→reviewer recursion in children.
+    // Parent sessions only: a subagent's context is its task, not the
+    // parent project's preference list.
     let injected: string | null = null;
     if (!isSubagent) {
       const memoryPath = join(process.cwd(), ".harness", "memory.json");
       const project = process.cwd().split("/").pop() ?? "unknown";
       const store = MemoryStore.open(memoryPath);
-
-      if (shouldSaveMemory(event.prompt)) {
-        store.save({
-          project,
-          spec_tier: spec.activeSpec?.tier ?? "",
-          capability: "",
-          pattern: "",
-          correction: extractCorrection(event.prompt),
-        });
-      }
-
       const memories = store.query({ project, limit: 10 });
       injected = formatMemoriesForInjection(memories);
     }

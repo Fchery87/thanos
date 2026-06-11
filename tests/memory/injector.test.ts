@@ -1,40 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { shouldSaveMemory, extractCorrection, formatMemoriesForInjection } from "../../src/memory/injector";
+import { formatMemoriesForInjection } from "../../src/memory/injector";
 import type { MemoryRecord } from "../../src/memory/types";
-
-describe("shouldSaveMemory", () => {
-  it("detects 'don't' corrections", () => {
-    expect(shouldSaveMemory("please don't use var declarations")).toBe(true);
-    expect(shouldSaveMemory("don't add comments to every line")).toBe(true);
-  });
-
-  it("detects 'never' and 'avoid'", () => {
-    expect(shouldSaveMemory("never use any type in TypeScript")).toBe(true);
-    expect(shouldSaveMemory("avoid mocking the database in tests")).toBe(true);
-  });
-
-  it("detects 'instead' and 'prefer'", () => {
-    expect(shouldSaveMemory("use bun instead of node")).toBe(true);
-    expect(shouldSaveMemory("prefer const over let")).toBe(true);
-  });
-
-  it("returns false for normal prompts", () => {
-    expect(shouldSaveMemory("add pagination to the user list")).toBe(false);
-    expect(shouldSaveMemory("fix the failing tests")).toBe(false);
-    expect(shouldSaveMemory("refactor the auth module")).toBe(false);
-  });
-});
-
-describe("extractCorrection", () => {
-  it("truncates long prompts to 300 chars", () => {
-    const long = "a".repeat(500);
-    expect(extractCorrection(long).length).toBeLessThanOrEqual(300);
-  });
-
-  it("trims whitespace", () => {
-    expect(extractCorrection("  hello  ")).toBe("hello");
-  });
-});
 
 describe("formatMemoriesForInjection", () => {
   const makeRecord = (correction: string): MemoryRecord => ({
