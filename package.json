@@ -17,9 +17,9 @@
     "ci": "bun run typecheck && bun run lint && bun run test"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.75.3",
-    "typebox": "^1.1.24",
+    "@earendil-works/pi-coding-agent": "0.79.1",
     "eslint": "^9.0.0",
+    "typebox": "^1.1.24",
     "typescript": "^5.4.0",
     "typescript-eslint": "^8.0.0",
     "vitest": "^2.0.0"

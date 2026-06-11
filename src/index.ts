@@ -1209,7 +1209,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   });
 
   // ── Spec output collection ─────────────────────────────────────────
-  (pi as any).on("tool_result", (event: Parameters<ReturnType<typeof makeAfterToolHandler>>[0], ctx: ExtensionContext) => {
+  pi.on("tool_result", (event, ctx: ExtensionContext) => {
     return policyStatePromise.then((state) => {
       lens.afterTool(event, ctx);
       const auditLogger = state.kind === "ok" && state.policy.audit.enabled
