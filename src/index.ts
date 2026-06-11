@@ -106,7 +106,11 @@ function contextModeExecutionGuard(event: { toolName?: string; input?: unknown }
 export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof executeTask; initialYolo?: boolean }) {
   const _executeTask = deps?.executeTask ?? executeTask;
   const subagentRole = process.env.HARNESS_SUBAGENT; // undefined | "1" | "reviewer"
-  const isSubagent = !!subagentRole;
+  // PI_SUBAGENT_CHILD is set by the pi-subagents engine for every child it
+  // spawns. Without checking it, children get the parent-only delegation
+  // directive and recursively re-delegate (a reviewer spawning a reviewer)
+  // instead of doing their own work, idling until their budget kills them.
+  const isSubagent = !!subagentRole || process.env.PI_SUBAGENT_CHILD === "1";
   const isReviewer = subagentRole === "reviewer";
   const sessionId = crypto.randomUUID();
   const agentType = isSubagent ? "subagent" : "parent" as const;
@@ -1123,22 +1127,30 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
 
 
     // ── Memory: save corrections, inject preferences ───────────────
-    const memoryPath = join(process.cwd(), ".harness", "memory.json");
-    const project = process.cwd().split("/").pop() ?? "unknown";
-    const store = MemoryStore.open(memoryPath);
+    // Parent sessions only. A subagent's prompt is a one-off task, not a
+    // durable preference — capturing it poisons the store, and injecting
+    // parent-session memories into children replays parent-level delegation
+    // instructions inside them (observed: a remembered "just delegate to the
+    // reviewer" caused reviewer→reviewer recursion until budgets killed it).
+    let injected: string | null = null;
+    if (!isSubagent) {
+      const memoryPath = join(process.cwd(), ".harness", "memory.json");
+      const project = process.cwd().split("/").pop() ?? "unknown";
+      const store = MemoryStore.open(memoryPath);
 
-    if (shouldSaveMemory(event.prompt)) {
-      store.save({
-        project,
-        spec_tier: spec.activeSpec?.tier ?? "",
-        capability: "",
-        pattern: "",
-        correction: extractCorrection(event.prompt),
-      });
+      if (shouldSaveMemory(event.prompt)) {
+        store.save({
+          project,
+          spec_tier: spec.activeSpec?.tier ?? "",
+          capability: "",
+          pattern: "",
+          correction: extractCorrection(event.prompt),
+        });
+      }
+
+      const memories = store.query({ project, limit: 10 });
+      injected = formatMemoriesForInjection(memories);
     }
-
-    const memories = store.query({ project, limit: 10 });
-    const injected = formatMemoriesForInjection(memories);
 
     // Model router removed — /models command handles model selection
 

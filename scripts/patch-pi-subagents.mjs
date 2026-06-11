@@ -7,7 +7,13 @@
 //   frontmatter) get mis-registered as agents — flooding discovery. Does NOT affect
 //   how the pi skill system loads skills; only agent discovery.
 //
-// Patch 2 (tui/render.ts): render multi-line "management" tool output (doctor / list /
+// Patch 2 (extension/fanout-child.ts): process-global guard against double
+//   registration of the "subagent" tool. pi loads fanout-child.ts twice in fanout
+//   children (explicit --extension AND the settings package's index.ts dispatch);
+//   upstream's WeakSet only dedupes per ExtensionAPI instance, so the second load
+//   crashed the child with a tool-name conflict (exit 1 on every reviewer run).
+//
+// Patch 3 (tui/render.ts): render multi-line "management" tool output (doctor / list /
 //   get / status) line-by-line. Upstream shoves the entire report into a single
 //   `new Text(truncLine(text, width))`, truncating the whole blob to one line's width
 //   — which is why `/subagents-doctor` cut off mid-line in the Runtime section.
