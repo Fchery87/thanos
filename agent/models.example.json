@@ -452,124 +452,91 @@
         }
       ]
     },
-    "CrofAI": {
-      "baseUrl": "https://crof.ai/v1",
+    "zai": {
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "apiKey": "ZAI_API_KEY",
       "api": "openai-completions",
-      "apiKey": "CROFAI_API_KEY",
       "authHeader": true,
       "models": [
         {
-          "id": "kimi-k2.5",
-          "name": "CrofAI: kimi-k2.5",
-          "contextWindow": 262144,
-          "maxTokens": 32768
-        },
-        {
-          "id": "kimi-k2.5-lightning",
-          "name": "CrofAI: kimi-k2.5-lightning",
-          "contextWindow": 262144,
-          "maxTokens": 32768
+          "id": "glm-5.2",
+          "name": "GLM-5.2",
+          "reasoning": true,
+          "input": [
+            "text"
+          ],
+          "contextWindow": 200000,
+          "maxTokens": 128000
         },
         {
           "id": "glm-5.1",
-          "name": "CrofAI: glm-5.1",
+          "name": "GLM-5.1",
+          "reasoning": true,
+          "input": [
+            "text"
+          ],
           "contextWindow": 200000,
           "maxTokens": 128000
         },
         {
           "id": "glm-5",
-          "name": "CrofAI: glm-5",
+          "name": "GLM-5",
+          "reasoning": true,
+          "input": [
+            "text"
+          ],
           "contextWindow": 200000,
           "maxTokens": 128000
         },
         {
-          "id": "glm-5-lightning",
-          "name": "CrofAI: glm-5-lightning",
+          "id": "glm-5-turbo",
+          "name": "GLM-5 Turbo",
+          "reasoning": true,
+          "input": [
+            "text"
+          ],
           "contextWindow": 200000,
           "maxTokens": 128000
         },
         {
           "id": "glm-4.7",
-          "name": "CrofAI: glm-4.7",
-          "contextWindow": 200000,
-          "maxTokens": 96000
-        },
-        {
-          "id": "glm-4.7-flash",
-          "name": "CrofAI: glm-4.7-flash",
-          "contextWindow": 200000,
-          "maxTokens": 96000
-        },
-        {
-          "id": "gemma-4-31b-it",
-          "name": "CrofAI: gemma-4-31b-it",
-          "contextWindow": 262144,
-          "maxTokens": 32768
-        },
-        {
-          "id": "minimax-m2.5",
-          "name": "CrofAI: minimax-m2.5",
-          "contextWindow": 204800,
-          "maxTokens": 204800
-        },
-        {
-          "id": "qwen3.5-397b-a17b",
-          "name": "CrofAI: qwen3.5-397b-a17b",
-          "contextWindow": 262144,
-          "maxTokens": 32768
-        },
-        {
-          "id": "deepseek-v3.2",
-          "name": "CrofAI: deepseek-v3.2",
-          "contextWindow": 128000,
-          "maxTokens": 32768
-        },
-        {
-          "id": "kimi-k2.6",
-          "name": "CrofAI: kimi-k2.6",
-          "contextWindow": 262144,
-          "maxTokens": 32768
-        },
-        {
-          "id": "kimi-k2.6-precision",
-          "name": "CrofAI: kimi-k2.6-precision",
-          "contextWindow": 262144,
-          "maxTokens": 32768
-        },
-        {
-          "id": "deepseek-v4-pro",
-          "name": "CrofAI: deepseek-v4-pro",
-          "contextWindow": 1000000,
-          "maxTokens": 131072
-        },
-        {
-          "id": "deepseek-v4-pro-precision",
-          "name": "CrofAI: deepseek-v4-pro-precision",
-          "contextWindow": 1000000,
-          "maxTokens": 131072
-        },
-        {
-          "id": "deepseek-v4-flash",
-          "name": "CrofAI: deepseek-v4-flash",
-          "contextWindow": 1000000,
-          "maxTokens": 131072
-        },
-        {
-          "id": "qwen3.6-27b",
-          "name": "CrofAI: qwen3.6-27b",
-          "contextWindow": 262144,
-          "maxTokens": 81920,
-          "input": [
-            "text",
-            "image"
-          ],
+          "name": "GLM-4.7",
           "reasoning": true,
-          "cost": {
-            "input": 0.6,
-            "output": 3.6,
-            "cacheRead": 0,
-            "cacheWrite": 0
-          }
+          "input": [
+            "text"
+          ],
+          "contextWindow": 200000,
+          "maxTokens": 96000
+        },
+        {
+          "id": "glm-4.6",
+          "name": "GLM-4.6",
+          "reasoning": true,
+          "input": [
+            "text"
+          ],
+          "contextWindow": 200000,
+          "maxTokens": 128000
+        },
+        {
+          "id": "glm-4.5-air",
+          "name": "GLM-4.5 Air",
+          "reasoning": true,
+          "input": [
+            "text"
+          ],
+          "contextWindow": 128000,
+          "maxTokens": 96000
+        },
+        {
+          "id": "glm-4.5",
+          "name": "GLM-4.5",
+          "reasoning": true,
+          "input": [
+            "text"
+          ],
+          "contextWindow": 128000,
+          "maxTokens": 96000
         }
       ]
     }
