@@ -15,14 +15,25 @@ const DEFAULT_RULES: PermissionRule[] = [
 export class PermissionManager {
   private rules: PermissionRule[];
   private _yolo = true;
+  private _locked = false;
 
   constructor(rules: PermissionRule[] = [...DEFAULT_RULES]) {
     this.rules = rules;
   }
 
-  get isYolo(): boolean { return this._yolo; }
+  get yoloLocked(): boolean { return this._locked; }
 
-  setYolo(enabled: boolean): void { this._yolo = enabled; }
+  lockYolo(): void {
+    this._locked = true;
+    this._yolo = false;
+  }
+
+  get isYolo(): boolean { return this._locked ? false : this._yolo; }
+
+  setYolo(enabled: boolean): void {
+    if (this._locked) return;
+    this._yolo = enabled;
+  }
 
   evaluate(capability: Capability, target: string): Decision {
     if (this._yolo) return "allow";
