@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { AuditLogger } from "./audit/logger";
 import type { AuditEvent } from "./audit/types";
 import { PermissionManager } from "./permissions/manager";
+import { yoloDisabledByEnv } from "./permissions/yolo-config";
 import { SpecEngine } from "./spec/engine";
 import { makeBeforeToolHandler } from "./hooks/before-tool";
 import { makeAfterToolHandler } from "./hooks/after-tool";
@@ -128,6 +129,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   if (deps?.initialYolo !== undefined) {
     permissions.setYolo(deps.initialYolo);
   }
+  if (yoloDisabledByEnv()) permissions.lockYolo();
   const spec = new SpecEngine();
   const policyStatePromise = loadPolicyState(process.cwd(), process.env.HARNESS_POLICY_FILE);
 
@@ -347,6 +349,10 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   pi.registerCommand("yolo", {
     description: "Toggle yolo mode — skips all permission prompts and policy checks.",
     handler: async (_args, ctx) => {
+      if (permissions.yoloLocked) {
+        ctx.ui.notify("Yolo is disabled by configuration.", "warning");
+        return;
+      }
       const theme = ctx.ui.theme;
       const current = permissions.isYolo;
 
@@ -1147,6 +1153,10 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   pi.registerShortcut("ctrl+shift+y", {
     description: "Toggle yolo mode — bypass all permission checks",
     handler: async (ctx) => {
+      if (permissions.yoloLocked) {
+        ctx.ui.notify("Yolo is disabled by configuration.", "warning");
+        return;
+      }
       const theme = ctx.ui.theme;
       if (!permissions.isYolo) {
         const ok = await ctx.ui.confirm(
