@@ -45,9 +45,13 @@ the existing global yolo into a lockable switch.
 | **no-mistakes** | `ci` | full pipeline MUST pass (typecheck+lint+test+build) | PR or approved merge, only after green | attended |
 | (unknown repo) | falls back to **local-only** | — | — | attended |
 
-`autonomy: unattended` is captain-registry-only, opt-in per repo. It flips `ask→allow`
-within the mode's existing ceiling for low/medium risk; **high-risk always still prompts**;
-`deny` always denies. It never widens reach.
+`autonomy: unattended` is captain-registry-only, opt-in per repo. It **trusts the ceiling**:
+auto-approves anything the delivery-mode policy ceiling already permits (incl. edit/write
+and bash) with no interactive prompt. `deny` rules still block (local-only still can't
+push); the yolo lockout and Lens secret-scanning are untouched. Safety = per-repo opt-in +
+the ceiling, not per-tier prompting. (The earlier "high-risk still prompts" carve-out was
+dropped: with edit/write=high and bash=critical in `risk.ts`, it made unattended inert.)
+It never widens reach.
 
 ## Section 2 — Yolo hard-lockout
 
@@ -112,10 +116,11 @@ in TypeBox. Fail-safe. The committed file can tighten/describe gates but never r
   `narrowPolicyForAgent` does. `requirePolicy()` returns `base ⊕ policyOverlay`. No new
   evaluation logic — overlay is just more rules. `local-only` overlay denies `git push` /
   remote-mutating exec.
-- **Autonomy half:** one new branch in `before-tool.ts`, after the deny check and before
-  the interactive prompt: if decision is `ask` AND `autonomy === "unattended"` AND risk
-  tier ≠ `high` ⇒ auto-approve + `recordAudit("allow", "autonomy:unattended")`. Lock and
-  global-yolo short-circuits sit above this, untouched.
+- **Autonomy half:** one new branch in `before-tool.ts`, placed *after* the policy `deny`
+  check and *before* the interactive-prompt branch (`decision === "ask" || tier high/
+  critical`): if `autonomy === "unattended"` ⇒ auto-approve + `recordAudit("allow",
+  "autonomy:unattended")` and return. `deny` (policy or permission) is checked first and
+  still blocks. Lock and global-yolo short-circuits sit above this, untouched.
 - **Ship half** is not a tool-gate — surfaced to parent + `build` via existing
   system-prompt injection region (`index.ts:1210`).
 - Status: `harness-delivery` segment, e.g. `mode:no-mistakes ⚙ unattended`.
@@ -142,8 +147,9 @@ in TypeBox. Fail-safe. The committed file can tighten/describe gates but never r
   committed file cannot raise mode/autonomy (core security assertion).
 - `tests/policy/` — mode→preset mapping; `local-only` denies push; overlay composition
   preserves deny precedence.
-- `tests/hooks/` — autonomy branch: unattended flips ask→allow for low/med, high-risk
-  still prompts, deny still denies, ordering vs yolo/lock preserved.
+- `tests/hooks/` — autonomy branch: unattended auto-approves edit/write/bash that the
+  ceiling permits (no prompt), policy `deny` still blocks, ordering vs yolo/lock preserved;
+  attended is unchanged from today.
 - `tests/permissions/` — lockout: `setYolo(true)` no-op + `isYolo` false when locked; env
   override wins; existing default tests still pass.
 - `tests/security/` — adversarial: repo-committed autonomy/yolo ignored; `/yolo` refuses
