@@ -38,6 +38,10 @@ export const RegistrySchema = Type.Object({
 
 // ── Ship file (untrusted: repo-committed .thanos/delivery.json) ───────────────
 
+// Lenient by design: the ship file is repo-committed and untrusted. Unknown keys
+// are allowed (forward-compat); the trust-split is enforced by the ShipFile type
+// (which omits mode/autonomy/yolo) and the resolver, which only ever reads gates/
+// defaultBranch/merge — never trust-bearing fields, even if a repo smuggles them.
 export const ShipSchema = Type.Object({
   version: Type.Literal(1),
   gates: Type.Record(Type.String(), Type.Union([Type.String(), Type.Null()])),
@@ -51,8 +55,8 @@ export type Registry = Static<typeof RegistrySchema>;
 export type ShipFile = Static<typeof ShipSchema>;
 
 // ── Parsers ───────────────────────────────────────────────────────────────────
-// Validate against the schema and throw on invalid (mirrors src/policy/schema.ts's
-// throw-on-invalid contract), returning the typed value on success.
+// Throw-on-invalid contract (same convention as parsePolicy in
+// src/policy/schema.ts), implemented here via TypeBox Value.Check.
 
 function firstError(schema: TSchema, input: unknown): string {
   const [error] = Value.Errors(schema, input);
