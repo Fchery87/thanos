@@ -14,6 +14,8 @@ import { makeAfterToolHandler } from "./hooks/after-tool";
 import { TaskParamsSchema, executeTask, needsClarification, parseSubagentResult, type TaskParams } from "./agents/task-tool";
 import { AGENT_TYPES } from "./agents/registry";
 import { loadPolicyState } from "./policy/state";
+import { resolveDeliveryState } from "./governance/delivery";
+import { deliveryPolicyOverlay } from "./governance/delivery-overlay";
 import type { FormalSpec } from "./spec/types";
 import { chooseTaskType } from "./agents/selector";
 import { registerSlashCommands } from "./commands/slash";
@@ -132,6 +134,10 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   if (yoloDisabledByEnv()) permissions.lockYolo();
   const spec = new SpecEngine();
   const policyStatePromise = loadPolicyState(process.cwd(), process.env.HARNESS_POLICY_FILE);
+  // Delivery mode is resolved once per session, parent only. Subagents run under
+  // the parent's already-narrowed policy, so they neither resolve delivery nor
+  // overlay its ceiling. resolveDeliveryState is fail-safe (never throws).
+  const deliveryStatePromise = isSubagent ? null : resolveDeliveryState(process.cwd());
 
   async function requirePolicy(ctx: ExtensionContext) {
     const policyState = await policyStatePromise;
@@ -154,11 +160,22 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
 
     const theme = ctx.ui.theme;
 
+    // Resolve delivery once (parent only). If the registry locks yolo, enforce
+    // it here too — idempotent with the env-based lock applied at construction.
+    const delivery = deliveryStatePromise ? await deliveryStatePromise : null;
+    if (delivery?.yoloLocked) permissions.lockYolo();
+
     // Show yolo/lens status if default-on
     if (permissions.isYolo) {
       ctx.ui.setStatus("harness-yolo", theme.fg("error", "⚡ yolo"));
     }
     lens.setStatus(ctx);
+
+    // Delivery mode status segment (autonomy shown only when unattended).
+    if (delivery) {
+      const label = `mode:${delivery.mode}${delivery.autonomy === "unattended" ? " ⚙ unattended" : ""}`;
+      ctx.ui.setStatus("harness-delivery", ctx.ui.theme.fg("accent", label));
+    }
 
     let mcpSummary: WelcomeMcpSummary = { configured: 0, connected: 0, failed: 0, initFailed: false };
 
@@ -1242,7 +1259,15 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     if (policyState.kind === "error") {
       return { block: true, reason: `Policy configuration error: ${policyState.error}` };
     }
-    const policy = policyState.policy;
+    // Overlay the delivery mode's policy ceiling onto the base policy. Overlay
+    // rules are PREPENDED so they take precedence (mirrors narrowPolicyForAgent).
+    // Parent only — deliveryStatePromise is null for subagents, so the gate uses
+    // the base policy unchanged. resolveDeliveryState is fail-safe.
+    const delivery = deliveryStatePromise ? await deliveryStatePromise : null;
+    const overlay = delivery ? deliveryPolicyOverlay(delivery.mode) : [];
+    const policy = overlay.length
+      ? { ...policyState.policy, rules: [...overlay, ...policyState.policy.rules] }
+      : policyState.policy;
     const promptUser = (msg: string) => ctx.ui.confirm("Permission Required", msg);
     const approveSpec = (s: FormalSpec) =>
       ctx.ui.confirm("Spec Approval Required", formatSpecForApproval(s, ctx.ui.theme ?? noopTheme));
