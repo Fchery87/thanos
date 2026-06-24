@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { resolveDelivery } from "../../src/governance/delivery";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import * as path from "node:path";
+import { resolveDelivery, resolveDeliveryState } from "../../src/governance/delivery";
 
 const SAFE = { mode: "local-only", autonomy: "attended" } as const;
 
@@ -68,5 +71,67 @@ describe("resolveDelivery", () => {
     expect(resolveDelivery({ registry, shipFile: null, repoId: { remote: "r", path: "/x" }}).merge).toBe("pr");
     // local-only -> default merge "fast-forward"
     expect(resolveDelivery({ registry: null, shipFile: null, repoId: { remote: null, path: "/x" }}).merge).toBe("fast-forward");
+  });
+});
+
+describe("resolveDeliveryState (fail-safe IO layer)", () => {
+  // The registry is read from `${HOME}/.pi/agent/projects.json`, and os.homedir()
+  // honors $HOME on POSIX — so pointing HOME at a throwaway dir isolates each test
+  // from any real registry on the machine. cwd is also a throwaway, non-git dir.
+  let tmpHome: string;
+  let tmpCwd: string;
+  let oldHome: string | undefined;
+
+  beforeEach(async () => {
+    oldHome = process.env.HOME;
+    tmpHome = await mkdtemp(path.join(tmpdir(), "delivery-home-"));
+    tmpCwd = await mkdtemp(path.join(tmpdir(), "delivery-cwd-"));
+    process.env.HOME = tmpHome;
+  });
+
+  afterEach(async () => {
+    if (oldHome === undefined) delete process.env.HOME;
+    else process.env.HOME = oldHome;
+    await rm(tmpHome, { recursive: true, force: true });
+    await rm(tmpCwd, { recursive: true, force: true });
+  });
+
+  it("missing registry + ship file → safe defaults, no throw", async () => {
+    const r = await resolveDeliveryState(tmpCwd);
+    expect(r.mode).toBe("local-only");
+    expect(r.autonomy).toBe("attended");
+    expect(r.gates).toEqual({});
+    expect(r.yoloLocked).toBe(false);
+  });
+
+  it("malformed ship file is ignored → safe defaults, gates empty", async () => {
+    await mkdir(path.join(tmpCwd, ".thanos"), { recursive: true });
+    await writeFile(path.join(tmpCwd, ".thanos", "delivery.json"), "{ not valid json", "utf-8");
+    const r = await resolveDeliveryState(tmpCwd);
+    expect(r.mode).toBe("local-only");
+    expect(r.autonomy).toBe("attended");
+    expect(r.gates).toEqual({});
+  });
+
+  it("malformed registry is ignored → safe defaults, never throws", async () => {
+    await mkdir(path.join(tmpHome, ".pi", "agent"), { recursive: true });
+    await writeFile(path.join(tmpHome, ".pi", "agent", "projects.json"), "}{ broken", "utf-8");
+    const r = await resolveDeliveryState(tmpCwd);
+    expect(r.mode).toBe("local-only");
+    expect(r.autonomy).toBe("attended");
+  });
+
+  it("reads a valid registry and matches by path with no git remote", async () => {
+    await mkdir(path.join(tmpHome, ".pi", "agent"), { recursive: true });
+    const registry = {
+      version: 1,
+      default: SAFE,
+      projects: [{ path: path.resolve(tmpCwd), mode: "no-mistakes", autonomy: "unattended" }],
+    };
+    await writeFile(path.join(tmpHome, ".pi", "agent", "projects.json"), JSON.stringify(registry), "utf-8");
+    // tmpCwd is not a git repo, so readRemote returns null; path match must still apply.
+    const r = await resolveDeliveryState(tmpCwd);
+    expect(r.mode).toBe("no-mistakes");
+    expect(r.autonomy).toBe("unattended");
   });
 });
