@@ -55,21 +55,63 @@ describe("local-only overlay denies git push end-to-end through the evaluator", 
     expect(result.policyDecision?.decision).toBe("deny");
   });
 
-  it("denies `git push` with intervening flags (git -C dir push)", () => {
+  it("denies `git push -u origin HEAD`", () => {
     const policy = policyWithOverlay("local-only");
-    const result = evaluateGovernedToolCall("bash", { command: "git -C /repo push origin HEAD" }, policy);
+    const result = evaluateGovernedToolCall("bash", { command: "git push -u origin HEAD" }, policy);
     expect(result.policyDecision?.decision).toBe("deny");
+  });
+
+  // Clause-split deny: a chained command must not slip past the push deny.
+  it("denies a chained `cd repo && git push` via clause splitting", () => {
+    const policy = policyWithOverlay("local-only");
+    const result = evaluateGovernedToolCall("bash", { command: "cd repo && git push" }, policy);
+    expect(result.policyDecision?.decision).toBe("deny");
+  });
+
+  it("denies a chained `git status && git push origin main` via clause splitting", () => {
+    const policy = policyWithOverlay("local-only");
+    const result = evaluateGovernedToolCall(
+      "bash",
+      { command: "git status && git push origin main" },
+      policy,
+    );
+    expect(result.policyDecision?.decision).toBe("deny");
+  });
+
+  // Anchored patterns fix the prior false positive: a commit message that
+  // merely mentions "push" must NOT be denied.
+  it('does NOT deny `git commit -m "add push support"`', () => {
+    const policy = policyWithOverlay("local-only");
+    const result = evaluateGovernedToolCall(
+      "bash",
+      { command: 'git commit -m "add push support"' },
+      policy,
+    );
+    expect(result.policyDecision).toBeNull();
   });
 
   it("does NOT deny benign commands under the overlay", () => {
     const policy = policyWithOverlay("local-only");
     expect(evaluateGovernedToolCall("bash", { command: "git status" }, policy).policyDecision).toBeNull();
     expect(evaluateGovernedToolCall("bash", { command: "ls -la" }, policy).policyDecision).toBeNull();
+    expect(evaluateGovernedToolCall("bash", { command: "cat src/push.ts" }, policy).policyDecision).toBeNull();
+    expect(evaluateGovernedToolCall("bash", { command: "npm run build" }, policy).policyDecision).toBeNull();
+    expect(evaluateGovernedToolCall("bash", { command: "bun run test" }, policy).policyDecision).toBeNull();
   });
 
   it("does NOT deny a similarly-named non-push command (git pushy)", () => {
     const policy = policyWithOverlay("local-only");
     const result = evaluateGovernedToolCall("bash", { command: "git pushy origin" }, policy);
+    expect(result.policyDecision).toBeNull();
+  });
+
+  // Known limitation: `git -C <absolute path> push` is a single clause whose
+  // path contains `/`, which a single `*` cannot cross. Documented in
+  // delivery-overlay.ts; catching it would re-introduce the commit-message
+  // false positive. This test pins the current (accepted) behavior.
+  it("does NOT deny `git -C /abs/path push` (documented limitation)", () => {
+    const policy = policyWithOverlay("local-only");
+    const result = evaluateGovernedToolCall("bash", { command: "git -C /repo push origin HEAD" }, policy);
     expect(result.policyDecision).toBeNull();
   });
 

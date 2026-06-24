@@ -36,9 +36,22 @@ function classifyClause(clause: string): string | undefined {
   return COMMAND_FAMILIES[cmd];
 }
 
+/**
+ * Split a shell command into its independent sub-commands ("clauses") on the
+ * shell operators that sequence/combine commands (`&&`, `||`, `;`, `|`).
+ *
+ * Shared by the audit classifier and the policy evaluator so that deny rules
+ * can be matched per-clause: this is what prevents a chained command such as
+ * `cd repo && git push` from slipping past a rule that only matches the
+ * `git push` clause.
+ */
+export function splitShellClauses(command: string): string[] {
+  return command.split(/&&|\|\||[;|]/);
+}
+
 export function commandAuditTarget(command: string): AuditTarget {
   // Split on shell operators that separate independent sub-commands.
-  const clauses = command.split(/&&|\|\||[;|]/);
+  const clauses = splitShellClauses(command);
 
   let topFamily: string | undefined;
   for (const clause of clauses) {
