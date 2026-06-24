@@ -36,7 +36,7 @@ export class PermissionManager {
   }
 
   evaluate(capability: Capability, target: string): Decision {
-    if (this._yolo) return "allow";
+    if (this.isYolo) return "allow";
     return evaluateRules(this.rules, capability, target);
   }
 

@@ -16,4 +16,13 @@ describe("PermissionManager yolo lock", () => {
     pm.lockYolo();
     expect(pm.evaluate("edit", "src/x.ts")).toBe("ask"); // default edit rule
   });
+
+  it("lock overrides a previously-enabled yolo in evaluate()", () => {
+    const pm = new PermissionManager();
+    pm.setYolo(true);
+    expect(pm.evaluate("edit", "x")).toBe("allow"); // yolo on
+    pm.lockYolo();
+    expect(pm.isYolo).toBe(false);
+    expect(pm.evaluate("edit", "x")).toBe("ask");   // lock wins
+  });
 });
