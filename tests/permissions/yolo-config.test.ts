@@ -11,4 +11,12 @@ describe("yoloDisabledByEnv", () => {
   it("is false when unset", () => {
     expect(yoloDisabledByEnv()).toBe(false);
   });
+  it("trims surrounding whitespace", () => {
+    process.env.THANOS_YOLO_DISABLED = " 1 ";
+    expect(yoloDisabledByEnv()).toBe(true);
+  });
+  it("treats non-\"1\" values as not disabled", () => {
+    process.env.THANOS_YOLO_DISABLED = "0";
+    expect(yoloDisabledByEnv()).toBe(false);
+  });
 });
