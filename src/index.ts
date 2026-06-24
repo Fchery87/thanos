@@ -1279,6 +1279,10 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       ? new AuditLogger(policy.audit.path ?? join(process.cwd(), ".harness", "audit.jsonl"))
       : undefined;
 
+    // Autonomy: unattended trusts the policy ceiling (auto-approves prompts that
+    // the ceiling already permits). Parent only — deliveryStatePromise is null
+    // for subagents, so autonomy defaults to "attended" (today's behavior).
+    const delivery = deliveryStatePromise ? await deliveryStatePromise : null;
     const handler = makeBeforeToolHandler(
       permissions,
       spec,
@@ -1288,6 +1292,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       policy,
       auditLogger,
       { sessionId, agentType },
+      delivery?.autonomy ?? "attended",
     );
     const result = await handler(event);
     if (result?.block) return { block: true, reason: result.reason };

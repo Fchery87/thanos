@@ -25,6 +25,7 @@ export function makeBeforeToolHandler(
   policy?: HarnessPolicy,
   auditLogger?: AuditLogger,
   auditContext?: AuditContext,
+  autonomy: "attended" | "unattended" = "attended",
 ) {
   return async (event: { toolName: string; input: Record<string, unknown> }): Promise<BlockResult | undefined> => {
     const { toolName, input } = event;
@@ -98,6 +99,16 @@ export function makeBeforeToolHandler(
     if (decision === "deny") {
       await recordAudit("deny");
       return { block: true, reason: `${toolName} denied (capability: ${capability})` };
+    }
+
+    // Unattended autonomy: trust the policy ceiling — skip the interactive
+    // confirmation for actions already permitted. All deny paths (policy deny,
+    // permission deny, explicit-spec scope) were enforced above and still block;
+    // this only replaces the human prompt with an automatic allow.
+    if (autonomy === "unattended") {
+      permissions.remember(capability, target, "allow");
+      await recordAudit("allow", "autonomy:unattended");
+      return;
     }
 
     if (decision === "ask" || tier === "high" || tier === "critical") {
