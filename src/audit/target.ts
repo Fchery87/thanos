@@ -44,6 +44,10 @@ function classifyClause(clause: string): string | undefined {
  * can be matched per-clause: this is what prevents a chained command such as
  * `cd repo && git push` from slipping past a rule that only matches the
  * `git push` clause.
+ *
+ * NOTE: this is a naive lexical split that does NOT respect shell quoting or
+ * escaping — e.g. `echo "a && b"` is split into `echo "a ` and ` b"`. Treat the
+ * clauses as best-effort hints, not a faithful shell parse.
  */
 export function splitShellClauses(command: string): string[] {
   return command.split(/&&|\|\||[;|]/);

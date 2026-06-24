@@ -26,14 +26,16 @@ import type { DeliveryMode } from "./delivery";
  * These deliberately do NOT match `git commit -m "add push support"`,
  * `cat src/push.ts`, etc. — fixing the prior false positives from `*push *`.
  *
- * KNOWN LIMITATION: `git -C /some/repo push origin` is a single clause whose
- * path argument contains `/`, which a single `*` cannot cross (verified
- * empirically: neither `git*push*` nor `git ** push*` match it under the
- * evaluator's minimatch opts). Catching it would require reintroducing a broad
- * pattern that also re-creates the commit-message false positives, so it is
- * left uncovered rather than over-matching. `git -C dir push` (relative path,
- * no `/`) IS still covered via `git push`-style clause matching only if written
- * as a separate clause; the `-C` form with an absolute path is the gap.
+ * KNOWN LIMITATION: these patterns anchor on `git push` at the START of a
+ * (clause-split) command, so ANY `git <flags> push` form — e.g.
+ * `git -C <dir> push` (relative OR absolute path), `git --no-pager push` — is
+ * NOT denied, because the interposed flags push the `push` token away from the
+ * clause start. Broadening to catch interposed flags (e.g. `git * push*`) would
+ * re-introduce false positives on commit messages containing " push " (such as
+ * `git commit -m "add push support"`), so we accept this gap. In local-only's
+ * default attended mode every bash command is prompted anyway; the robust fix
+ * is argv-level program+subcommand classification rather than whole-string
+ * globs (future work).
  */
 export function deliveryPolicyOverlay(mode: DeliveryMode): PolicyRule[] {
   if (mode !== "local-only") return [];

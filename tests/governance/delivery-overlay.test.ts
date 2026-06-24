@@ -105,13 +105,21 @@ describe("local-only overlay denies git push end-to-end through the evaluator", 
     expect(result.policyDecision).toBeNull();
   });
 
-  // Known limitation: `git -C <absolute path> push` is a single clause whose
-  // path contains `/`, which a single `*` cannot cross. Documented in
-  // delivery-overlay.ts; catching it would re-introduce the commit-message
-  // false positive. This test pins the current (accepted) behavior.
-  it("does NOT deny `git -C /abs/path push` (documented limitation)", () => {
+  // ACCEPTED LIMITATION (NOT desired behavior): the patterns anchor on
+  // `git push` at the clause start, so ANY `git <flags> push` form bypasses the
+  // deny — regardless of whether the flag value contains a slash. Catching it
+  // would require a broad pattern that re-introduces the commit-message false
+  // positive. Documented in delivery-overlay.ts. These tests pin the true blast
+  // radius so a future change to the deny patterns surfaces it.
+  it("does NOT deny `git -C /abs/path push` — absolute path (accepted limitation, not desired)", () => {
     const policy = policyWithOverlay("local-only");
     const result = evaluateGovernedToolCall("bash", { command: "git -C /repo push origin HEAD" }, policy);
+    expect(result.policyDecision).toBeNull();
+  });
+
+  it("does NOT deny `git -C subdir push` — relative path, no slash (accepted limitation, not desired)", () => {
+    const policy = policyWithOverlay("local-only");
+    const result = evaluateGovernedToolCall("bash", { command: "git -C subdir push origin" }, policy);
     expect(result.policyDecision).toBeNull();
   });
 
