@@ -138,6 +138,11 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   // the parent's already-narrowed policy, so they neither resolve delivery nor
   // overlay its ceiling. resolveDeliveryState is fail-safe (never throws).
   const deliveryStatePromise = isSubagent ? null : resolveDeliveryState(process.cwd());
+  // The overlay is a session constant (mode never changes mid-session), so derive
+  // it once here instead of recomputing it on every tool call at the gate.
+  const deliveryOverlayPromise = deliveryStatePromise
+    ? deliveryStatePromise.then((d) => deliveryPolicyOverlay(d.mode))
+    : null;
 
   async function requirePolicy(ctx: ExtensionContext) {
     const policyState = await policyStatePromise;
@@ -174,7 +179,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     // Delivery mode status segment (autonomy shown only when unattended).
     if (delivery) {
       const label = `mode:${delivery.mode}${delivery.autonomy === "unattended" ? " ⚙ unattended" : ""}`;
-      ctx.ui.setStatus("harness-delivery", ctx.ui.theme.fg("accent", label));
+      ctx.ui.setStatus("harness-delivery", theme.fg("accent", label));
     }
 
     let mcpSummary: WelcomeMcpSummary = { configured: 0, connected: 0, failed: 0, initFailed: false };
@@ -1263,8 +1268,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     // rules are PREPENDED so they take precedence (mirrors narrowPolicyForAgent).
     // Parent only — deliveryStatePromise is null for subagents, so the gate uses
     // the base policy unchanged. resolveDeliveryState is fail-safe.
-    const delivery = deliveryStatePromise ? await deliveryStatePromise : null;
-    const overlay = delivery ? deliveryPolicyOverlay(delivery.mode) : [];
+    const overlay = deliveryOverlayPromise ? await deliveryOverlayPromise : [];
     const policy = overlay.length
       ? { ...policyState.policy, rules: [...overlay, ...policyState.policy.rules] }
       : policyState.policy;
