@@ -55,6 +55,39 @@ describe("unattended autonomy gate", () => {
     );
   });
 
+  it("does not persist allow rules — no ceiling mutation across calls", async () => {
+    const permissions = makePermissions();
+    const rememberSpy = vi.spyOn(permissions, "remember");
+    const handler = makeBeforeToolHandler(
+      permissions,
+      makeSpec(),
+      promptThatThrows,
+      true,
+      undefined,
+      basePolicy,
+      undefined,
+      { sessionId: "s1", agentType: "parent" },
+      "unattended",
+    );
+
+    // Two DIFFERENT bash commands. bash is critical-tier → would prompt under
+    // attended. Under unattended both must be auto-allowed WITHOUT writing any
+    // session rule (which, for bash, would persist the command as a glob).
+    const first = await handler({ toolName: "bash", input: { command: "rm -rf build/*" } });
+    const second = await handler({ toolName: "bash", input: { command: "grep 'a|b' ." } });
+
+    expect(first).toBeUndefined();
+    expect(second).toBeUndefined();
+
+    // No session rule was ever persisted — the ceiling is never mutated.
+    expect(rememberSpy).not.toHaveBeenCalled();
+
+    // The second command was evaluated independently, not matched against a glob
+    // persisted by the first. With no session rules, exec stays "ask" (the
+    // unattended branch, not a leaked "allow", is what permitted it).
+    expect(permissions.evaluate("exec", "any-other-command")).toBe("ask");
+  });
+
   it("attended (default) still prompts — unchanged behavior", async () => {
     const promptUser = vi.fn(async () => true);
     const handler = makeBeforeToolHandler(

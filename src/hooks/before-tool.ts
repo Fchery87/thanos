@@ -106,7 +106,6 @@ export function makeBeforeToolHandler(
     // permission deny, explicit-spec scope) were enforced above and still block;
     // this only replaces the human prompt with an automatic allow.
     if (autonomy === "unattended") {
-      permissions.remember(capability, target, "allow");
       await recordAudit("allow", "autonomy:unattended");
       return;
     }
