@@ -141,15 +141,17 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   if (yoloDisabledByEnv()) permissions.lockYolo();
   const spec = new SpecEngine();
   const policyStatePromise = loadPolicyState(process.cwd(), process.env.HARNESS_POLICY_FILE);
-  // Delivery mode is resolved once per session, parent only. Subagents run under
-  // the parent's already-narrowed policy, so they neither resolve delivery nor
-  // overlay its ceiling. resolveDeliveryState is fail-safe (never throws).
-  const deliveryStatePromise = isSubagent ? null : resolveDeliveryState(process.cwd());
+  // Resolved in BOTH parent and child processes. A subagent's cwd is a worktree
+  // of the same repo (shared git remote), so it matches the same registry entry —
+  // giving children the same delivery overlay (e.g. local-only push-deny) AND the
+  // repo's autonomy. This is what lets unattended repos run headless subagents
+  // while attended/unregistered repos correctly fail closed (writer subagents
+  // stall with no UI rather than auto-acting). resolveDeliveryState is fail-safe
+  // (never throws).
+  const deliveryStatePromise = resolveDeliveryState(process.cwd());
   // The overlay is a session constant (mode never changes mid-session), so derive
   // it once here instead of recomputing it on every tool call at the gate.
-  const deliveryOverlayPromise = deliveryStatePromise
-    ? deliveryStatePromise.then((d) => deliveryPolicyOverlay(d.mode))
-    : null;
+  const deliveryOverlayPromise = deliveryStatePromise.then((d) => deliveryPolicyOverlay(d.mode));
 
   async function requirePolicy(ctx: ExtensionContext) {
     const policyState = await policyStatePromise;
@@ -172,9 +174,10 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
 
     const theme = ctx.ui.theme;
 
-    // Resolve delivery once (parent only). If the registry locks yolo, enforce
-    // it here too — idempotent with the env-based lock applied at construction.
-    const delivery = deliveryStatePromise ? await deliveryStatePromise : null;
+    // session_start is parent-only (the `if (!mcpManager) return` guard above).
+    // If the registry locks yolo, enforce it here too — idempotent with the
+    // env-based lock applied at construction.
+    const delivery = await deliveryStatePromise;
     if (delivery?.yoloLocked) permissions.lockYolo();
 
     // Show yolo/lens status if default-on
@@ -1380,9 +1383,9 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     }
     // Overlay the delivery mode's policy ceiling onto the base policy. Overlay
     // rules are PREPENDED so they take precedence (mirrors narrowPolicyForAgent).
-    // Parent only — deliveryStatePromise is null for subagents, so the gate uses
-    // the base policy unchanged. resolveDeliveryState is fail-safe.
-    const overlay = deliveryOverlayPromise ? await deliveryOverlayPromise : [];
+    // Resolved in both parent and subagents, so the overlay (e.g. local-only
+    // push-deny) applies to child processes too. resolveDeliveryState is fail-safe.
+    const overlay = await deliveryOverlayPromise;
     const policy = overlay.length
       ? { ...policyState.policy, rules: [...overlay, ...policyState.policy.rules] }
       : policyState.policy;
@@ -1394,9 +1397,10 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       : undefined;
 
     // Autonomy: unattended trusts the policy ceiling (auto-approves prompts that
-    // the ceiling already permits). Parent only — deliveryStatePromise is null
-    // for subagents, so autonomy defaults to "attended" (today's behavior).
-    const delivery = deliveryStatePromise ? await deliveryStatePromise : null;
+    // the ceiling already permits). Resolved in both parent and subagents: a child
+    // of an unattended repo runs headless, while an attended/unregistered repo
+    // falls back to "attended" so writer subagents fail closed (stall, no UI).
+    const delivery = await deliveryStatePromise;
     const handler = makeBeforeToolHandler(
       permissions,
       spec,
