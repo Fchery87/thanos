@@ -123,6 +123,61 @@ describe("local-only overlay denies git push end-to-end through the evaluator", 
     expect(result.policyDecision).toBeNull();
   });
 
+  // gh publish family: local-only must also block publishing to a remote via
+  // the GitHub CLI (pr/release/repo create), anchored at clause start.
+  it("denies `gh pr create --fill`", () => {
+    const policy = policyWithOverlay("local-only");
+    const result = evaluateGovernedToolCall("bash", { command: "gh pr create --fill" }, policy);
+    expect(result.policyDecision?.decision).toBe("deny");
+  });
+
+  it("denies `gh release create v1.0`", () => {
+    const policy = policyWithOverlay("local-only");
+    const result = evaluateGovernedToolCall("bash", { command: "gh release create v1.0" }, policy);
+    expect(result.policyDecision?.decision).toBe("deny");
+  });
+
+  it("denies `gh repo create foo --public`", () => {
+    const policy = policyWithOverlay("local-only");
+    const result = evaluateGovernedToolCall(
+      "bash",
+      { command: "gh repo create foo --public" },
+      policy,
+    );
+    expect(result.policyDecision?.decision).toBe("deny");
+  });
+
+  it("denies a chained `cd repo && gh pr create --fill` via clause splitting", () => {
+    const policy = policyWithOverlay("local-only");
+    const result = evaluateGovernedToolCall(
+      "bash",
+      { command: "cd repo && gh pr create --fill" },
+      policy,
+    );
+    expect(result.policyDecision?.decision).toBe("deny");
+  });
+
+  // Anchoring keeps benign gh reads allowed — these must NOT be denied.
+  it("does NOT deny benign gh read commands (pr view/list, repo view, release list)", () => {
+    const policy = policyWithOverlay("local-only");
+    expect(
+      evaluateGovernedToolCall("bash", { command: "gh pr view 12" }, policy).policyDecision,
+    ).toBeNull();
+    expect(
+      evaluateGovernedToolCall("bash", { command: "gh pr list" }, policy).policyDecision,
+    ).toBeNull();
+    expect(
+      evaluateGovernedToolCall("bash", { command: "gh repo view" }, policy).policyDecision,
+    ).toBeNull();
+    expect(
+      evaluateGovernedToolCall("bash", { command: "gh release list" }, policy).policyDecision,
+    ).toBeNull();
+    // repo clone is read-ish (fetching, not publishing) — must stay allowed.
+    expect(
+      evaluateGovernedToolCall("bash", { command: "gh repo clone owner/x" }, policy).policyDecision,
+    ).toBeNull();
+  });
+
   it("direct-PR overlay does NOT deny git push", () => {
     const policy = policyWithOverlay("direct-PR");
     const result = evaluateGovernedToolCall("bash", { command: "git push origin main" }, policy);
