@@ -148,6 +148,11 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   // while attended/unregistered repos correctly fail closed (writer subagents
   // stall with no UI rather than auto-acting). resolveDeliveryState is fail-safe
   // (never throws).
+  // CAVEAT: the registry match is by git REMOTE. A registry entry keyed only by
+  // `path` (no `match`/remote), or a repo with no `origin`, won't match for a
+  // subagent (its cwd is the worktree path), so it falls back to the safe default
+  // (local-only/attended) — fail-safe, but path-only entries don't propagate to
+  // subagents.
   const deliveryStatePromise = resolveDeliveryState(process.cwd());
   // The overlay is a session constant (mode never changes mid-session), so derive
   // it once here instead of recomputing it on every tool call at the gate.
@@ -433,11 +438,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         return;
       }
 
-      const delivery = deliveryStatePromise ? await deliveryStatePromise : null;
-      if (!delivery) {
-        ctx.ui.notify("/ship is only available in the main session.", "warning");
-        return;
-      }
+      const delivery = await deliveryStatePromise;
 
       const currentBranch = await getCurrentBranch(process.cwd());
       if (!currentBranch) {
