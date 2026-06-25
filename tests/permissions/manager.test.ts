@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import { PermissionManager } from "../../src/permissions/manager";
 
 describe("PermissionManager.remember() pattern validation", () => {
-  it("defaults to yolo mode for low-friction local operation", () => {
+  it("defaults to yolo OFF so the delivery ceiling is effective by default", () => {
     const pm = new PermissionManager();
-    expect(pm.isYolo).toBe(true);
+    expect(pm.isYolo).toBe(false);
+    // With yolo off, evaluate falls through to the default rules rather than allow-all.
+    expect(pm.evaluate("read", "src/x.ts")).toBe("allow");
+    expect(pm.evaluate("edit", "src/x.ts")).toBe("ask");
   });
 
   it("throws when pattern is an empty string", () => {
