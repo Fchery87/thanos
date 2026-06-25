@@ -37,6 +37,22 @@ export async function fastForwardMerge(
   }
 }
 
+/**
+ * Best-effort current branch name (`git rev-parse --abbrev-ref HEAD`).
+ * Returns null on any failure (detached HEAD, not a repo, …); never throws.
+ */
+export async function getCurrentBranch(repoDir: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync("git", [
+      "-C", repoDir, "rev-parse", "--abbrev-ref", "HEAD",
+    ]);
+    const branch = stdout.trim();
+    return branch.length > 0 ? branch : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Extract a useful message from an execFile error (prefer git's stderr). */
 function gitError(err: unknown, fallback: string): string {
   if (typeof err === "object" && err !== null) {

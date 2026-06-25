@@ -16,9 +16,7 @@ import { AGENT_TYPES } from "./agents/registry";
 import { loadPolicyState } from "./policy/state";
 import { resolveDeliveryState } from "./governance/delivery";
 import { deliveryPolicyOverlay } from "./governance/delivery-overlay";
-import { fastForwardMerge } from "./governance/ff-merge";
-import { execFile as execFileCb } from "node:child_process";
-import { promisify as promisifyFn } from "node:util";
+import { fastForwardMerge, getCurrentBranch } from "./governance/ff-merge";
 import type { FormalSpec } from "./spec/types";
 import { chooseTaskType } from "./agents/selector";
 import { registerSlashCommands } from "./commands/slash";
@@ -438,16 +436,10 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         return;
       }
 
-      const execFileShip = promisifyFn(execFileCb);
-      let currentBranch: string;
-      try {
-        const { stdout } = await execFileShip("git", [
-          "-C", process.cwd(), "rev-parse", "--abbrev-ref", "HEAD",
-        ]);
-        currentBranch = stdout.trim();
-      } catch (err) {
+      const currentBranch = await getCurrentBranch(process.cwd());
+      if (!currentBranch) {
         ctx.ui.notify(
-          formatPanel(theme, "Ship Failed", `Could not determine the current branch: ${err instanceof Error ? err.message : String(err)}`, "error"),
+          formatPanel(theme, "Ship Failed", "Could not determine the current branch (detached HEAD or not a git repo?).", "error"),
           "warning",
         );
         return;
@@ -464,6 +456,20 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
             theme.fg("dim", `Gates: ${formatGateNames(delivery.gates)}`),
           ], "accent"),
           "info",
+        );
+        return;
+      }
+
+      // Defensive: the ship file may request a non-fast-forward merge. Thanos
+      // only ever fast-forwards in v1, so make that explicit instead of silently
+      // fast-forwarding against the file's intent.
+      if (delivery.merge !== "fast-forward") {
+        ctx.ui.notify(
+          formatPanel(theme, "Ship Not Performed", [
+            theme.fg("dim", `The ship file requests a "${delivery.merge}" merge, which Thanos does not perform in v1.`),
+            `Merge ${theme.fg("accent", currentBranch)} into ${theme.fg("accent", target)} yourself.`,
+          ], "warning"),
+          "warning",
         );
         return;
       }
