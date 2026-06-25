@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "yolo": "disabled",
+  "default": {
+    "mode": "local-only",
+    "autonomy": "attended"
+  },
+  "projects": [
+    {
+      "match": "git@github.com:acme/payments.git",
+      "mode": "no-mistakes",
+      "autonomy": "unattended",
+      "yolo": "locked"
+    },
+    {
+      "path": "/home/you/code/website",
+      "mode": "direct-PR",
+      "autonomy": "attended"
+    }
+  ]
+}

@@ -397,6 +397,75 @@ Audit events are written to `.harness/audit.jsonl` (gitignored). View entries wi
 
 ---
 
+## Delivery modes
+
+A **delivery mode** decides how far a repo's work is allowed to travel and how autonomously Thanos may act in it. Each mode pins a base policy preset and shapes what `/ship` does.
+
+| Mode | Preset | What it means |
+|------|--------|---------------|
+| `local-only` | `personal` | Work never leaves the machine. `git push` is denied; `/ship` performs a fast-forward-only local merge into the default branch. |
+| `direct-PR` | `team` | Team flow; lands via PR. `/ship` is informational (Thanos does not push in v1). |
+| `no-mistakes` | `ci` | Strictest preset for high-stakes repos. `/ship` is informational in v1. |
+
+An unknown repo falls back to the safe default `local-only` / `attended` — Thanos never defaults to something more permissive.
+
+Resolution reads two files:
+
+- **Captain registry** — `~/.pi/agent/projects.json` (gitignored; trusted). Owns `mode`, `autonomy`, and the yolo lock. Matched per project by git remote URL (`match`) or absolute path (`path`), falling back to the top-level `default`.
+- **Ship file** — `<repo>/.thanos/delivery.json` (committed; untrusted). Describes only how the repo builds: `gates`, `defaultBranch`, and `merge`.
+
+A starter registry ships as [`agent/projects.example.json`](agent/projects.example.json). Copy it to `~/.pi/agent/projects.json` and edit:
+
+```json
+{
+  "version": 1,
+  "default": { "mode": "local-only", "autonomy": "attended" },
+  "projects": [
+    { "match": "git@github.com:acme/payments.git", "mode": "no-mistakes", "autonomy": "unattended", "yolo": "locked" },
+    { "path": "/home/you/code/website", "mode": "direct-PR", "autonomy": "attended" }
+  ]
+}
+```
+
+A repo's ship file only describes its build mechanics:
+
+```json
+{
+  "version": 1,
+  "gates": { "test": "bun run test", "typecheck": "bun run typecheck" },
+  "defaultBranch": "main",
+  "merge": "fast-forward"
+}
+```
+
+### Trust-split
+
+Mode, autonomy, and the yolo lock are **captain-owned**: they come only from the registry, never from the repo. The committed ship file is untrusted and only ever supplies `gates` / `defaultBranch` / `merge` — even if it smuggles in `mode`/`autonomy`/`yolo`, the resolver ignores those keys. A repo therefore cannot escalate its own autonomy or unlock yolo.
+
+### Autonomy
+
+- `attended` (default) — Thanos prompts as usual within the policy ceiling.
+- `unattended` — auto-approves within the ceiling, so no prompts for allowed actions; **deny rules still block**. It is registry-only and can never be granted by a repo.
+
+### Yolo lockout
+
+Yolo can be hard-disabled for a session, which makes `/yolo` and `Ctrl+Shift+Y` refuse with "Yolo is disabled by configuration." Any of these locks it:
+
+- env `THANOS_YOLO_DISABLED=1`
+- registry top-level `"yolo": "disabled"`
+- a matched project entry's `"yolo": "locked"`
+
+### /ship
+
+`/ship` delivers the current branch per the resolved mode, after you confirm required gates are green:
+
+- **local-only** — fast-forward-only merge of the current branch into the local `defaultBranch`. It **never pushes**; it only advances your local default branch pointer. If the branches have diverged (no fast-forward possible) it reports the failure instead of force-merging.
+- **direct-PR / no-mistakes** — informational only. Thanos does not push or open PRs in v1; confirm your gates and push / open the PR yourself.
+
+> **Known limitation (local-only):** the push deny anchors on `git push` at the start of a command clause, so `git <flags> push` forms (e.g. `git -C <dir> push`, `git --no-pager push`) are **not** caught. Broadening the pattern would false-positive on commit messages mentioning "push"; in local-only's default attended mode every bash command is prompted anyway. An argv-level fix is future work.
+
+---
+
 ## Provider and model configuration
 
 Thanos ships the provider/model catalog but leaves credentials to each user. The catalog template
