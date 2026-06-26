@@ -2,7 +2,7 @@
 
 Personal [Pi coding agent](https://earendil.works) configuration — includes the **Thanos Harness** governance extension plus a curated set of npm packages, MCP servers, and skills.
 
-> **Pi version:** 0.75.3+ · **Theme:** Brogrammer · **Provider/model:** user-configured
+> **Pi version:** 0.79.10+ · **Theme:** Brogrammer · **Provider/model:** user-configured
 
 ---
 
@@ -99,6 +99,107 @@ credentials). Web search keys go in `~/.pi/web-search.json` (created from `web-s
 
 ---
 
+## Using Thanos — step by step
+
+This walkthrough takes you from a fresh install to a governed, productive session. Each step is independent — skip ahead if you already have it set up.
+
+### Step 1 — Install and launch
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Fchery87/thanos/master/scripts/install.sh | sh
+thanos
+```
+
+The first launch creates your user-owned config files (`models.json`, `settings.json`, `mcp.json`, …) from the committed `*.example.json` templates. Nothing is overwritten if it already exists.
+
+### Step 2 — Add a provider key and pick a model
+
+No API keys ship with Thanos — you bring your own.
+
+```text
+/login        # pick a provider → "Use an API key" → paste; stored in agent/auth.json
+/models       # browse the catalog and select the active model
+```
+
+Providers without credentials still appear in `/models`, marked as needing a key. See [Adding keys](#adding-keys) for env-var and shell-command alternatives.
+
+### Step 3 — Understand the permission model (important)
+
+Thanos is **secure by default**. Yolo mode is **off**, so the harness asks before it edits a file or runs a shell command. You will see a permission prompt for each `edit`/`write` (high risk) and each `bash` call (critical risk). This is intentional — it's what keeps an agent from acting without your sign-off.
+
+You have three ways to reduce prompting, in increasing order of trust:
+
+1. **Approve per action** — answer each prompt as it comes. Maximum control.
+2. **Mark a repo `unattended`** in your captain registry (Step 4) — auto-approves actions *within* that repo's policy ceiling, so no prompts for allowed work. Deny rules still block (e.g. `local-only` still can't push).
+3. **Yolo** (`/yolo` or `Ctrl+Shift+Y`) — bypasses the whole permission layer for the session. The Lens Lite secret scan still runs. You can hard-disable yolo entirely (see [Yolo lockout](#yolo-lockout)).
+
+> Prefer option 2 over option 3. `unattended` keeps the policy ceiling (and the push/PR denies) intact; yolo removes everything.
+
+### Step 4 — Register your projects (delivery modes)
+
+Tell Thanos how far each repo's work may travel and how autonomously it may act there. This is the file that makes a yolo-off setup frictionless: list the repos you trust as `unattended` and they stop prompting, while everything else stays safely `attended`.
+
+```bash
+cp ~/.pi/agent/projects.example.json ~/.pi/agent/projects.json
+# then edit ~/.pi/agent/projects.json
+```
+
+```jsonc
+{
+  "version": 1,
+  "yolo": "disabled",                                  // hard-disable yolo everywhere (optional)
+  "default": { "mode": "local-only", "autonomy": "attended" },   // safe fallback for unlisted repos
+  "projects": [
+    {
+      "match": "https://github.com/you/your-repo.git", // matched against `git remote get-url origin`
+      "path": "/home/you/code/your-repo",              // fallback match when there's no remote
+      "mode": "local-only",
+      "autonomy": "unattended"                          // frictionless within the local-only ceiling
+    }
+  ]
+}
+```
+
+This file is **gitignored and trusted** — only you edit it, and a repo can never grant itself more autonomy (see [Trust-split](#trust-split)). The full reference is in [Delivery modes](#delivery-modes).
+
+### Step 5 — Do the work, delegating to subagents
+
+Drive the session in natural language. For bounded, parallelizable, or adversarial work, delegate to a **specialist subagent** instead of doing it inline:
+
+```text
+/modes              # choose the default specialist for the `task` tool
+/designer <goal>    # spawn the Designer for UI/UX work
+Ctrl+Shift+R        # spawn a Reviewer for a structured P0–P3 review
+Ctrl+Shift+D        # spawn the Designer
+```
+
+Subagents run under your policy as a ceiling, return a typed result contract, and cannot escalate or nest. See [Governed subagents](#governed-subagents).
+
+### Step 6 — Track and verify
+
+```text
+/todo               # phased checklist for the current branch (survives reload)
+/spec               # acceptance criteria derived from your prompt + verification state
+/lens diagnose      # bounded lint/diff checks on changed files only
+/policy             # show the active governance policy ceiling
+/audit              # review what was allowed/denied this session
+```
+
+### Step 7 — Ship it
+
+When your gates are green, deliver the branch per its resolved mode:
+
+```text
+/ship
+```
+
+- **local-only** → a fast-forward-only merge of the current branch into your local default branch. It **never pushes**; if the branches diverged, it reports the failure rather than force-merging.
+- **direct-PR / no-mistakes** → informational in v1: confirm gates, then push / open the PR yourself.
+
+See [/ship](#ship) for details.
+
+---
+
 ## What's in here
 
 ```
@@ -110,6 +211,8 @@ credentials). Web search keys go in `~/.pi/web-search.json` (created from `web-s
 │   ├── models.json             # User-owned catalog created by installer (gitignored)
 │   ├── settings.example.json   # Thanos default Pi package/settings template
 │   ├── settings.json           # User-owned local copy created by installer (gitignored)
+│   ├── projects.example.json   # Captain delivery-mode registry template
+│   ├── projects.json           # User-owned trusted registry: per-repo mode/autonomy/yolo (gitignored)
 │   └── auth.json               # Credentials saved by /login (gitignored)
 ├── src/                        # Thanos Harness extension source
 ├── scripts/
@@ -259,7 +362,10 @@ Manual commands:
 | `/lens` | Thanos Lens Lite: changed files, read-before-modify guard, secret scan, manual diagnostics |
 | `/todo` | Show the current todo checklist for this branch (Escape to close); `/todo export` prints the markdown |
 | `/modes` | Select the default specialist mode used by `task` when `type` is omitted (`explore`, `plan`, `build`, `reviewer`, `designer`, `oracle`, `researcher`) |
-| `/yolo` | Toggle yolo mode (bypasses thanos permission checks; Lens Lite secret scan still runs) |
+| `/yolo` | Toggle yolo mode for this session (bypasses thanos permission checks; Lens Lite secret scan still runs). Refuses when yolo is locked by config — see [Yolo lockout](#yolo-lockout) |
+| `/ship` | Deliver the current branch per the resolved [delivery mode](#delivery-modes) (local-only: fast-forward merge into the default branch; main session only) |
+| `/remember` | Save a durable project preference, injected into future sessions on this branch/project |
+| `/memory` | List remembered project preferences; `/memory forget <n>` removes one |
 | `/mcp` | Manage MCP server connections |
 | `/thinking` | Select thinking level |
 | `/skills` | List available skills |
@@ -339,7 +445,7 @@ Copy `mcp.example.json` to `mcp.json` and fill in your API keys.
 
 ### Permission gate
 
-Every tool call is classified by risk tier:
+Every tool call is classified by risk tier and a capability:
 
 | Tool | Risk | Capability |
 |------|------|-----------|
@@ -348,7 +454,9 @@ Every tool call is classified by risk tier:
 | `bash` | critical | `exec` |
 | `ask`, `todo`, `report_finding` | medium | `interaction` |
 
-Yolo mode is **default on** — the thanos governance layer returns "allow" immediately, letting rytswd `permission-gate` and `slow-mode` run independently.
+Each call is evaluated against the active policy ceiling (preset + any delivery overlay). The order of checks is: **yolo (if on) → policy/permission deny → autonomy → interactive prompt.** Deny always wins; autonomy can only auto-approve what the ceiling already allows.
+
+Yolo mode is **default off** — the harness asks before high/critical actions. When yolo *is* turned on for a session it short-circuits to "allow" immediately (the Lens Lite secret scan still runs), letting rytswd `permission-gate` and `slow-mode` run independently. Yolo can be hard-disabled so it cannot be turned on at all — see [Yolo lockout](#yolo-lockout). To make a yolo-off setup frictionless on trusted repos, mark them `unattended` in the [captain registry](#delivery-modes).
 
 ### Context-mode execution guard
 
@@ -493,7 +601,7 @@ tarballs (built via `git archive`, which exports tracked files only) can never l
 
 ## Prerequisites
 
-- [Pi coding agent](https://earendil.works) v0.75.3+
+- [Pi coding agent](https://earendil.works) v0.79.10+
 - Node.js v24+ or [Bun](https://bun.sh) v1.3+
 - `xclip` (for clipboard support with pi-web-access)
 - `ffmpeg` + `yt-dlp` (optional, for video frame extraction)
