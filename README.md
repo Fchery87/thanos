@@ -130,35 +130,43 @@ Thanos is **secure by default**. Yolo mode is **off**, so the harness asks befor
 You have three ways to reduce prompting, in increasing order of trust:
 
 1. **Approve per action** — answer each prompt as it comes. Maximum control.
-2. **Mark a repo `unattended`** in your captain registry (Step 4) — auto-approves actions *within* that repo's policy ceiling, so no prompts for allowed work. Deny rules still block (e.g. `local-only` still can't push).
+2. **Mark a repo `unattended`** in your captain registry (Step 4) — auto-approves actions *within* that repo's policy ceiling, so no prompts for allowed work. Pair it with `mode: "direct-PR"` if you also want commit **and** push with no prompts; `local-only` keeps the same no-prompt feel but blocks push. Deny rules always still block.
 3. **Yolo** (`/yolo` or `Ctrl+Shift+Y`) — bypasses the whole permission layer for the session. The Lens Lite secret scan still runs. You can hard-disable yolo entirely (see [Yolo lockout](#yolo-lockout)).
 
-> Prefer option 2 over option 3. `unattended` keeps the policy ceiling (and the push/PR denies) intact; yolo removes everything.
+> Prefer option 2 over option 3. `unattended` gives you the same prompt-free experience while keeping the policy ceiling and secret protections intact; yolo removes everything.
 
 ### Step 4 — Register your projects (delivery modes)
 
-Tell Thanos how far each repo's work may travel and how autonomously it may act there. This is the file that makes a yolo-off setup frictionless: list the repos you trust as `unattended` and they stop prompting, while everything else stays safely `attended`.
+Tell Thanos how far each repo's work may travel and how autonomously it may act there. This is the file that makes coding frictionless: list the repos you trust as `unattended` so they stop prompting, and pick a `mode` that allows what you need (e.g. pushing).
 
 ```bash
 cp ~/.pi/agent/projects.example.json ~/.pi/agent/projects.json
 # then edit ~/.pi/agent/projects.json
 ```
 
+**Recommended frictionless setup — code, commit, *and* push with no approval prompts:**
+
 ```jsonc
 {
   "version": 1,
-  "yolo": "disabled",                                  // hard-disable yolo everywhere (optional)
-  "default": { "mode": "local-only", "autonomy": "attended" },   // safe fallback for unlisted repos
+  "default": { "mode": "local-only", "autonomy": "unattended" }, // no prompts anywhere; push only on listed repos
   "projects": [
     {
       "match": "https://github.com/you/your-repo.git", // matched against `git remote get-url origin`
       "path": "/home/you/code/your-repo",              // fallback match when there's no remote
-      "mode": "local-only",
-      "autonomy": "unattended"                          // frictionless within the local-only ceiling
+      "mode": "direct-PR",                              // allows commit AND push (local-only would block push)
+      "autonomy": "unattended"                          // auto-approve all allowed actions — zero prompts
     }
   ]
 }
 ```
+
+The `mode` is what gates pushing, and `autonomy` is what gates prompting:
+
+- `mode: "direct-PR"` (or `no-mistakes`) → `git push` / PRs are allowed. `mode: "local-only"` → push is denied.
+- `autonomy: "unattended"` → no approval prompts for anything the mode allows. `autonomy: "attended"` → prompts as usual.
+
+So `direct-PR` + `unattended` = the frictionless "just let me work" experience, while still keeping the free guardrails (Pi can't read your `.env`/keys, and the secret-scan blocks committing a leaked key). For maximum security on a sensitive repo, use `local-only` + `attended` instead; to hard-disable yolo, add top-level `"yolo": "disabled"`.
 
 This file is **gitignored and trusted** — only you edit it, and a repo can never grant itself more autonomy (see [Trust-split](#trust-split)). The full reference is in [Delivery modes](#delivery-modes).
 
