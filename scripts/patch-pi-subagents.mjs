@@ -13,10 +13,12 @@
 //   upstream's WeakSet only dedupes per ExtensionAPI instance, so the second load
 //   crashed the child with a tool-name conflict (exit 1 on every reviewer run).
 //
-// Patch 3 (tui/render.ts): render multi-line "management" tool output (doctor / list /
-//   get / status) line-by-line. Upstream shoves the entire report into a single
-//   `new Text(truncLine(text, width))`, truncating the whole blob to one line's width
-//   — which is why `/subagents-doctor` cut off mid-line in the Runtime section.
+// (Retired) Patch 3 (tui/render.ts): formerly rendered multi-line "management"
+//   tool output (doctor / list / get / status) line-by-line because upstream
+//   truncated the whole blob to one line's width. Obsolete as of pi-subagents
+//   0.31.0 (2026-06-26): renderToolResult now splits on "\n" and wrapPlainText's
+//   each line natively (src/tui/render.ts ~L1401-1405) — strictly better than the
+//   old truncate-per-line patch, so it has been removed rather than re-derived.
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -54,21 +56,6 @@ const patches = [
       '\tconst __thanosToolKey = "__piSubagentFanoutChildToolRegistered";\n' +
       "\tif (globalStore[__thanosToolKey] === true) return;\n" +
       "\tglobalStore[__thanosToolKey] = true;",
-  },
-  {
-    file: join(ROOT, "tui", "render.ts"),
-    marker: "thanos-patch: multi-line management output",
-    needle:
-      "\t\treturn new Text(truncLine(`${contextPrefix}${text}`, getTermWidth() - 4), 0, 0);",
-    replacement:
-      "\t\t// thanos-patch: multi-line management output (doctor/list/get/status)\n" +
-      "\t\tconst __thanosFull = `${contextPrefix}${text}`;\n" +
-      "\t\tif (__thanosFull.includes(\"\\n\")) {\n" +
-      "\t\t\tconst __thanosBox = new Container();\n" +
-      "\t\t\tfor (const __thanosLine of __thanosFull.split(\"\\n\")) __thanosBox.addChild(new Text(truncLine(__thanosLine, getTermWidth() - 4), 0, 0));\n" +
-      "\t\t\treturn __thanosBox;\n" +
-      "\t\t}\n" +
-      "\t\treturn new Text(truncLine(__thanosFull, getTermWidth() - 4), 0, 0);",
   },
 ];
 
