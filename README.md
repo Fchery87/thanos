@@ -2,7 +2,7 @@
 
 Personal [Pi coding agent](https://earendil.works) configuration — includes the **Thanos Harness** governance extension plus a curated set of npm packages, MCP servers, and skills.
 
-> **Pi version:** 0.79.10+ · **Theme:** Brogrammer · **Provider/model:** user-configured
+> **Pi version:** 0.80.2+ · **Theme:** Brogrammer · **Provider/model:** user-configured
 
 ---
 
@@ -609,7 +609,7 @@ tarballs (built via `git archive`, which exports tracked files only) can never l
 
 ## Prerequisites
 
-- [Pi coding agent](https://earendil.works) v0.79.10+
+- [Pi coding agent](https://earendil.works) v0.80.2+
 - Node.js v24+ or [Bun](https://bun.sh) v1.3+
 - `xclip` (for clipboard support with pi-web-access)
 - `ffmpeg` + `yt-dlp` (optional, for video frame extraction)
