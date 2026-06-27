@@ -116,3 +116,42 @@ capability first (`/models` — image badge), since the loop forks on it.
 
 Record results inline here or in the PR description so Phase 2 can build on a
 verified Phase 1.
+
+---
+
+## Results — 2026-06-27: PASS (live-validated)
+
+Run model: `theclawbay/gpt-5.5:high` (a **non-Anthropic** model — model-agnostic
+claim validated). Sandbox: a scratch project dir; ~10 turns, ~13m40s, ~$0.75.
+
+**First run (looser prompt) — inconclusive.** The MAIN Pi agent orchestrated
+`designer` + `build` + `reviewer` + `oracle` itself, so `designer.md` was only
+used for direction advice. Tell: the responder said it *could* run shell, and the
+critique used an improvised rubric, not the forced 9. Lesson: to exercise the
+designer itself, dispatch it verbatim with "do not orchestrate, build, screenshot,
+or critique yourself; invoke `designer` once and return its raw contract."
+
+**Second run (verbatim designer-only dispatch) — PASS on every criterion**, with
+on-disk evidence verified independently (not taken from the agent's report):
+
+| Criterion | Result |
+|---|---|
+| Real designer ran (not orchestrator) | ✅ "I cannot run shell commands myself in this session" |
+| `designer.md` drove it | ✅ Emitted the exact forced 9-dimension rubric |
+| Depth-1 designer spawned depth-2 `build` child | ✅ `subagent {"agent":"build"}` fired; soft "don't spawn" boundary did NOT block it |
+| Vision readback | ✅ `read` of desktop/mobile PNGs, then real-render critique |
+| Delegated screenshot loop | ✅ Validation log PASS: console/page errors 0; annual toggle 149/349/950→125/291/792; FAQ expand; 4 focus stops with visible rings |
+| Token discipline | ✅ Raw hex only in `:root` token block; body uses `var(--…)` |
+| Structured contract | ✅ summary + findings + rubric + fixes-by-severity + quick wins |
+
+Renders were genuine (desktop 1440×4495, mobile 390×8665). The `build` child even
+authored and ran a `pricing-verify.py` against headless Chrome.
+
+**Caveats:** transient OpenAI 502s mid-run (API hiccups, not the designer — it
+completed anyway); the full loop is thorough but not cheap (~$0.75/page).
+
+**Conclusion:** Phase 1 is verified end-to-end and model-agnostic. The nested-spawn
+mechanism Phase 2 depends on works. Phase 2 (design-ux/design-ui/design-critic
+split) remains deferred per YAGNI — its build trigger (a single designer dispatch
+exhausting turns/context on large multi-screen work) has not been hit; one page ran
+comfortably in ~10 turns.
