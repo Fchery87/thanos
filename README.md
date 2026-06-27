@@ -181,7 +181,7 @@ Ctrl+Shift+R        # spawn a Reviewer for a structured P0–P3 review
 Ctrl+Shift+D        # spawn the Designer
 ```
 
-Subagents run under your policy as a ceiling, return a typed result contract, and cannot escalate or nest. See [Governed subagents](#governed-subagents).
+Subagents run under your policy as a ceiling, return a typed result contract, and nest at most one level deeper (capped). Driving from the main session and letting it orchestrate specialists is the recommended pattern — see [Main-agent-as-orchestrator workflow](#main-agent-as-orchestrator-workflow) and [Governed subagents](#governed-subagents).
 
 ### Step 6 — Track and verify
 
@@ -288,8 +288,19 @@ See [/ship](#ship) for details.
 
 The `task` tool delegates work to a bounded **specialist subagent** — a separate `pi` subprocess spawned in JSON mode under the parent's policy as a ceiling. Subagents are a deliberate governance surface, not just parallelism:
 
-- **Depth-1 only.** A subagent runs with `HARNESS_SUBAGENT` set, which suppresses the `task` (and `ask`) tools inside it. Children are leaves and cannot spawn further subagents or talk to the user directly — deep nesting is a recognized anti-pattern.
+- **Bounded nesting (depth ≤ 2).** The legacy `task` tool is suppressed inside subagents (`HARNESS_SUBAGENT` set), so that path is depth-1. The live pi-subagents `subagent` tool permits **one** further level — capped by `maxSubagentDepth` (engine default 2) — so a specialist can delegate a capability it deliberately lacks (e.g. the exec-denied `designer` delegating a render + screenshot to `build` for self-validation). A depth-2 child cannot spawn further, and subagents never talk to the user directly. Deeper nesting stays a recognized anti-pattern.
 - **Policy ceiling inheritance.** Each subagent's capabilities are narrowed from the parent policy; read-only roles get hard `edit`/`exec` denies regardless of what the parent allows.
+
+### Main-agent-as-orchestrator workflow
+
+The recommended way to do non-trivial work: **drive the main session in natural language and let it orchestrate specialists**, rather than doing everything inline. The main agent (depth 0) holds the goal and context, dispatches bounded specialists for the parts they do best, and synthesizes their typed results. A goal with distinct phases (design → build → verify → critique) maps cleanly onto this.
+
+Orchestration works at two altitudes that compose:
+
+1. **Main agent → specialist (depth 0 → 1).** The default: call `designer`, `build`, `reviewer`, `oracle`, etc.
+2. **Specialist → sub-specialist (depth 1 → 2).** A specialist delegates one level down to gain a capability it deliberately lacks — canonically, the exec-denied `designer` delegating a render + screenshot to `build` for its self-validation loop. You don't orchestrate this; it happens inside the specialist's run, capped at depth 2.
+
+Both altitudes were validated live (2026-06-27) on a non-Anthropic model, so the pattern is model-agnostic. To exercise a specialist's *own* loop instead of having the main agent do the work for it, dispatch it verbatim: "invoke `<agent>` once and return its raw contract; do not orchestrate, build, screenshot, or critique yourself." Full guide: [docs/main-agent-orchestrator-workflow.md](docs/main-agent-orchestrator-workflow.md).
 
 ### Specialists
 
@@ -299,7 +310,7 @@ The `task` tool delegates work to a bounded **specialist subagent** — a separa
 | `plan` | read-only | fresh | Design an approach without touching files |
 | `build` | **writer** | fresh (may fork) | Implement changes in an isolated worktree |
 | `reviewer` | read-only | fresh | Structured P0–P3 review; may spawn `explore` at depth 1 |
-| `designer` | **writer** | fresh (may fork) | UI/UX implementation, review, design-system audit |
+| `designer` | **writer** (exec-denied) | fresh (may fork) | UI/UX implementation, review, design-system audit; delegates render/screenshot to `build` for its self-validation loop |
 | `oracle` | read-only | fresh-only | Unbiased second opinion; challenges plans and diffs |
 | `researcher` | read-only | fresh | Network-gated external research |
 
