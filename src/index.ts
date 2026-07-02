@@ -1468,6 +1468,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       attempts: spec.gateAttempts,
       isSubagent,
       enabled: !gateDisabledByEnv(),
+      goalActive: false, // TODO(Task 16): replace with goalController.isActive()
     })) {
       const prompt = buildContinuationPrompt(results, spec.gateAttempts);
       const failedCriteria = results.filter((result) => !result.passed).map((result) => result.criterion.statement);

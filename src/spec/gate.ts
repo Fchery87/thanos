@@ -8,10 +8,13 @@ export interface ReinjectInputs {
   attempts: number;
   isSubagent: boolean;
   enabled: boolean;
+  /** While a /goal is active, the goal evaluator is the sole continuation driver. */
+  goalActive: boolean;
 }
 
 export function shouldReinject(input: ReinjectInputs): boolean {
   if (!input.enabled) return false;
+  if (input.goalActive) return false;
   if (input.isSubagent) return false;
   if (input.results.length === 0) return false;
   if (input.attempts >= GATE_MAX_ATTEMPTS) return false;
