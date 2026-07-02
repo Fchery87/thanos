@@ -42,6 +42,10 @@ describe("extractLastTurn", () => {
   it("handles an empty/absent turn safely", () => {
     expect(extractLastTurn([] as never[])).toEqual({ lastAssistantText: "", toolResultsText: "" });
   });
+
+  it("does not throw on non-array (undefined) input", () => {
+    expect(extractLastTurn(undefined as never)).toEqual({ lastAssistantText: "", toolResultsText: "" });
+  });
 });
 
 describe("readWillRetry", () => {

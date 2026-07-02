@@ -10,6 +10,14 @@ import { PermissionManager } from "./permissions/manager";
 import { gateDisabledByEnv, yoloDisabledByEnv } from "./permissions/yolo-config";
 import { SpecEngine } from "./spec/engine";
 import { buildContinuationPrompt, GATE_CONTINUE_SENTINEL, shouldReinject } from "./spec/gate";
+import { completeSimple } from "@earendil-works/pi-ai/compat";
+import { GoalController } from "./goal/controller";
+import { registerGoalCommand } from "./goal/command";
+import { handleAgentEnd as handleGoalAgentEnd } from "./goal/loop";
+import { extractLastTurn, readWillRetry } from "./goal/extract";
+import { runEvaluatorWith } from "./goal/evaluator";
+import { GOAL_DIRECTIVE_SENTINEL } from "./goal/prompts";
+import { loadGoalSettings } from "./goal/load-settings";
 import { makeBeforeToolHandler } from "./hooks/before-tool";
 import { makeAfterToolHandler } from "./hooks/after-tool";
 import { TaskParamsSchema, executeTask, needsClarification, parseSubagentResult, type TaskParams } from "./agents/task-tool";
@@ -143,6 +151,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   }
   if (yoloDisabledByEnv()) permissions.lockYolo();
   const spec = new SpecEngine();
+  const goalController = new GoalController(loadGoalSettings());
   const policyStatePromise = loadPolicyState(process.cwd(), process.env.HARNESS_POLICY_FILE);
   // Resolved in BOTH parent and child processes. A subagent's cwd is a worktree
   // of the same repo (shared git remote), so it matches the same registry entry —
@@ -1092,6 +1101,18 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     },
   });
 
+  // ── /goal command (self-checking autonomous loop) ──────────────────
+  const recordGoalEvent = (event: { type: "goal_set" | "goal_achieved" | "goal_paused"; summary: string; outcome: string }) =>
+    appendHarnessEvent({ ...event, taskId: sessionId, createdAt: new Date().toISOString() }).catch((err) => {
+      console.error("[harness][goal]", err instanceof Error ? err.message : String(err));
+    });
+  registerGoalCommand(pi, {
+    controller: goalController,
+    isSubagent,
+    sendFollowUp: async (text) => { pi.sendUserMessage(text, { deliverAs: "followUp" }); },
+    recordEvent: recordGoalEvent,
+  });
+
   // ── Slash commands ─────────────────────────────────────────────────
   registerSlashCommands(pi, {
     permissions,
@@ -1325,7 +1346,10 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   pi.on("before_agent_start", async (event, ctx) => {
     ctx.ui.setHeader(undefined);
     permissions.clearSessionRules();  // clear deny rules from any prior rejection
-    if (!event.prompt.includes(GATE_CONTINUE_SENTINEL)) {
+    const isHarnessContinuation =
+      event.prompt.includes(GATE_CONTINUE_SENTINEL) ||
+      event.prompt.includes(GOAL_DIRECTIVE_SENTINEL);
+    if (!isHarnessContinuation) {
       spec.startTurn(event.prompt, pi.getFlag("spec") === true);
     }
     lens.beginTurn();
@@ -1444,48 +1468,79 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
 
   pi.on("agent_end", async (event, ctx: ExtensionContext) => {
     const results = spec.finishTurn(event.messages);
-    if (results.length === 0) return;
-    const theme = ctx.ui.theme ?? noopTheme;
-    const passed = results.filter((r) => r.passed).length;
-    const lines = results.map((r) => `  ${r.passed ? theme.fg("success", "✓") : theme.fg("error", "✗")}  ${r.criterion.statement}`);
-    const approvalNote =
-      spec.activeSpec?.approvalStatus === "rejected"
-        ? `\n${theme.fg("dim", "(spec was rejected)")}`
-        : "";
-    const hasFailures = passed !== results.length;
-    const summaryHeader = !ctx.hasUI && hasFailures
-      ? `${theme.bold(theme.fg("error", "Spec failed:"))}${approvalNote}`
-      : `${theme.bold("Spec:")} ${theme.fg(hasFailures ? "warning" : "success", `${passed}/${results.length}`)} passed${approvalNote}`;
-    
-    const panel = formatPanel(theme, hasFailures ? "Spec Verification Failed" : "Spec Verification", lines, hasFailures ? "error" : "success");
-    ctx.ui.notify(
-      `${summaryHeader}\n${panel}`,
-      hasFailures ? "warning" : "info",
-    );
+    if (results.length > 0) {
+      const theme = ctx.ui.theme ?? noopTheme;
+      const passed = results.filter((r) => r.passed).length;
+      const lines = results.map((r) => `  ${r.passed ? theme.fg("success", "✓") : theme.fg("error", "✗")}  ${r.criterion.statement}`);
+      const approvalNote =
+        spec.activeSpec?.approvalStatus === "rejected"
+          ? `\n${theme.fg("dim", "(spec was rejected)")}`
+          : "";
+      const hasFailures = passed !== results.length;
+      const summaryHeader = !ctx.hasUI && hasFailures
+        ? `${theme.bold(theme.fg("error", "Spec failed:"))}${approvalNote}`
+        : `${theme.bold("Spec:")} ${theme.fg(hasFailures ? "warning" : "success", `${passed}/${results.length}`)} passed${approvalNote}`;
 
-    if (shouldReinject({
-      results,
-      attempts: spec.gateAttempts,
-      isSubagent,
-      enabled: !gateDisabledByEnv(),
-      goalActive: false, // TODO(Task 16): replace with goalController.isActive()
-    })) {
-      const prompt = buildContinuationPrompt(results, spec.gateAttempts);
-      const failedCriteria = results.filter((result) => !result.passed).map((result) => result.criterion.statement);
-      await appendHarnessEvent({
-        type: "gate_failure",
-        taskId: sessionId,
-        model: ctx.model?.id,
-        summary: `verification gate re-injected ${failedCriteria.length} unmet criteria`,
-        evidence: failedCriteria,
-        outcome: "needs_work",
-        createdAt: new Date().toISOString(),
-      }).catch((err) => {
-        console.error("[harness][evolution]", err instanceof Error ? err.message : String(err));
-      });
-      spec.recordGateAttempt();
-      await pi.sendUserMessage(prompt, { deliverAs: "followUp" });
+      const panel = formatPanel(theme, hasFailures ? "Spec Verification Failed" : "Spec Verification", lines, hasFailures ? "error" : "success");
+      ctx.ui.notify(
+        `${summaryHeader}\n${panel}`,
+        hasFailures ? "warning" : "info",
+      );
+
+      // The gate defers to an active /goal (goalActive) so the two loops never
+      // both queue a follow-up in the same turn — the goal evaluator is the
+      // sole continuation driver while a goal is active.
+      if (shouldReinject({
+        results,
+        attempts: spec.gateAttempts,
+        isSubagent,
+        enabled: !gateDisabledByEnv(),
+        goalActive: goalController.isActive(),
+      })) {
+        const prompt = buildContinuationPrompt(results, spec.gateAttempts);
+        const failedCriteria = results.filter((result) => !result.passed).map((result) => result.criterion.statement);
+        await appendHarnessEvent({
+          type: "gate_failure",
+          taskId: sessionId,
+          model: ctx.model?.id,
+          summary: `verification gate re-injected ${failedCriteria.length} unmet criteria`,
+          evidence: failedCriteria,
+          outcome: "needs_work",
+          createdAt: new Date().toISOString(),
+        }).catch((err) => {
+          console.error("[harness][evolution]", err instanceof Error ? err.message : String(err));
+        });
+        spec.recordGateAttempt();
+        await pi.sendUserMessage(prompt, { deliverAs: "followUp" });
+      }
     }
+
+    // ── /goal loop ─────────────────────────────────────────────────────
+    // Runs regardless of spec state. It is a no-op unless a goal is active,
+    // and the gate above already deferred to it, so at most one follow-up is
+    // queued per turn.
+    const { lastAssistantText, toolResultsText } = extractLastTurn(event.messages ?? []);
+    await handleGoalAgentEnd({
+      controller: goalController,
+      runEvaluator: (assistantText, toolResults, previousReason) => {
+        const model = ctx.model;
+        if (!model) return Promise.resolve({ met: false, reason: "no model available to evaluate the goal" });
+        const condition = goalController.snapshot()?.condition ?? "";
+        return runEvaluatorWith(
+          (context) => completeSimple(model, context, { reasoning: "low" }),
+          { condition, lastAssistantText: assistantText, toolResultsText: toolResults, previousReason },
+        );
+      },
+      sendDirective: async (directive) => { pi.sendUserMessage(directive, { deliverAs: "followUp" }); },
+      notify: (message, level) => ctx.ui.notify(message, level ?? "info"),
+      recordEvent: recordGoalEvent,
+      getTokens: () => ctx.getContextUsage()?.tokens ?? 0,
+      isSubagent,
+    }, {
+      willRetry: readWillRetry(event),
+      lastAssistantText,
+      toolResultsText,
+    });
   });
 
   // ── Web search tool ────────────────────────────────────────────────

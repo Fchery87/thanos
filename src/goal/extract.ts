@@ -21,6 +21,7 @@ function textOf(content: unknown): string {
  * is clipped from the head (test summaries/exit codes live at the tail).
  */
 export function extractLastTurn(messages: readonly unknown[]): ExtractedTurn {
+  if (!Array.isArray(messages)) return { lastAssistantText: "", toolResultsText: "" };
   let start = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
     if ((messages[i] as { role?: string }).role === "user") { start = i + 1; break; }
