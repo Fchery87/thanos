@@ -47,3 +47,17 @@ export function commandContainsGitPush(command: string): boolean {
   }
   return false;
 }
+
+/**
+ * tool_call wiring decision: block a `git push` bash command in local-only mode
+ * even when interposed flags evade the anchored globs in delivery-overlay.ts.
+ * Returns true regardless of autonomy — this closes the local-only + unattended
+ * residual exposure documented in that overlay.
+ */
+export function shouldBlockLocalOnlyPush(mode: string | undefined, toolName: string, input: unknown): boolean {
+  if (mode !== "local-only") return false;
+  if (toolName !== "bash") return false;
+  const command = (input as { command?: unknown })?.command;
+  if (typeof command !== "string") return false;
+  return commandContainsGitPush(command);
+}

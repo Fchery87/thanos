@@ -33,22 +33,27 @@ import type { DeliveryMode } from "./delivery";
  *
  *   1. Interposed flags bypass the anchor. ANY `git <flags> push` form — e.g.
  *      `git -C <dir> push` (relative OR absolute path), `git --no-pager push` —
- *      is NOT denied, because the flags push the `push` token away from the
- *      clause start. Broadening to catch interposed flags (e.g. `git * push*`)
- *      would re-introduce false positives on commit messages containing
- *      " push " (such as `git commit -m "add push support"`), so we accept it.
- *      Anchoring also keeps benign reads allowed (`gh pr view/list`,
+ *      evades these globs, because the flags push the `push` token away from the
+ *      clause start. This is now caught SEPARATELY by an argv-level classifier
+ *      (`shouldBlockLocalOnlyPush` in push-guard.ts), wired into the tool_call
+ *      handler for local-only mode regardless of autonomy. These anchored globs
+ *      are retained for audit/policy parity and for the plain `git push` form;
+ *      they still deliberately do NOT match commit messages containing " push "
+ *      (e.g. `git commit -m "add push support"`), which the argv classifier also
+ *      leaves alone. Anchoring keeps benign reads allowed (`gh pr view/list`,
  *      `gh repo view/clone`, `gh release list`).
  *
  *   2. Other remote-mutating commands are NOT caught by these globs at all:
- *      `scp`, `rsync`, `curl`/`wget` uploads, arbitrary publish tools, etc.
- *      Enumerating every such program/flag combination with whole-string globs
- *      is not achievable without unacceptable false positives.
+ *      `scp`, `rsync`, `curl`/`wget` uploads, arbitrary publish tools, and the
+ *      `gh` family under interposed flags. Enumerating every such program/flag
+ *      combination with whole-string globs is not achievable without
+ *      unacceptable false positives; extending the argv classifier to `gh` and
+ *      other uploaders is future work.
  *
- * The robust fix for both is argv-level program+subcommand classification
- * rather than whole-string globs (future work). In local-only's default
- * ATTENDED mode the parent prompts on every bash command anyway, so the
- * residual exposure is specifically local-only + UNATTENDED execution.
+ * With the argv-level `git push` classifier in place, the residual exposure is
+ * now non-git uploaders (`scp`/`rsync`/`curl`) rather than interposed-flag
+ * `git push`. In local-only's default ATTENDED mode the parent also prompts on
+ * every bash command.
  */
 export function deliveryPolicyOverlay(mode: DeliveryMode): PolicyRule[] {
   if (mode !== "local-only") return [];

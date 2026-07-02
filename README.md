@@ -676,7 +676,7 @@ Yolo can be hard-disabled for a session, which makes `/yolo` and `Ctrl+Shift+Y` 
 - **local-only** — fast-forward-only merge of the current branch into the local `defaultBranch`. It **never pushes**; it only advances your local default branch pointer. If the branches have diverged (no fast-forward possible) it reports the failure instead of force-merging.
 - **direct-PR / no-mistakes** — informational only. Thanos does not push or open PRs in v1; confirm your gates and push / open the PR yourself.
 
-> **Known limitation (local-only):** the push deny anchors on `git push` at the start of a command clause, so `git <flags> push` forms (e.g. `git -C <dir> push`, `git --no-pager push`) are **not** caught. Broadening the pattern would false-positive on commit messages mentioning "push"; in local-only's default attended mode every bash command is prompted anyway. An argv-level fix is future work.
+> **Known limitation (local-only):** interposed-flag `git push` forms (e.g. `git -C <dir> push`, `git --no-pager push`) are now caught by an **argv-level classifier** (`shouldBlockLocalOnlyPush`), wired into the tool_call handler for local-only mode regardless of autonomy — closing the previous local-only + unattended gap. It leaves commit messages mentioning "push" alone (no false positives). The remaining uncaught surface is non-git uploaders (`scp`, `rsync`, `curl`/`wget`) and the `gh` publish family under interposed flags; extending the classifier to those is future work.
 
 ---
 

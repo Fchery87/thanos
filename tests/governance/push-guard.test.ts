@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { commandContainsGitPush } from "../../src/governance/push-guard";
+import { commandContainsGitPush, shouldBlockLocalOnlyPush } from "../../src/governance/push-guard";
+
+describe("shouldBlockLocalOnlyPush", () => {
+  it("blocks an interposed-flag push in local-only mode", () => {
+    expect(shouldBlockLocalOnlyPush("local-only", "bash", { command: "git -C /tmp/repo push origin main" })).toBe(true);
+  });
+  it("does not block in non-local-only modes", () => {
+    expect(shouldBlockLocalOnlyPush("direct-PR", "bash", { command: "git push" })).toBe(false);
+    expect(shouldBlockLocalOnlyPush(undefined, "bash", { command: "git push" })).toBe(false);
+  });
+  it("only applies to bash with a string command", () => {
+    expect(shouldBlockLocalOnlyPush("local-only", "read", { command: "git push" })).toBe(false);
+    expect(shouldBlockLocalOnlyPush("local-only", "bash", {})).toBe(false);
+    expect(shouldBlockLocalOnlyPush("local-only", "bash", undefined)).toBe(false);
+  });
+  it("does not block benign bash commands in local-only", () => {
+    expect(shouldBlockLocalOnlyPush("local-only", "bash", { command: 'git commit -m "add push support"' })).toBe(false);
+  });
+});
 
 describe("commandContainsGitPush", () => {
   it("catches plain and flagged push forms", () => {

@@ -25,6 +25,7 @@ import { AGENT_TYPES } from "./agents/registry";
 import { loadPolicyState } from "./policy/state";
 import { resolveDeliveryState } from "./governance/delivery";
 import { deliveryPolicyOverlay } from "./governance/delivery-overlay";
+import { shouldBlockLocalOnlyPush } from "./governance/push-guard";
 import { fastForwardMerge, getCurrentBranch } from "./governance/ff-merge";
 import type { FormalSpec } from "./spec/types";
 import { chooseTaskType } from "./agents/selector";
@@ -1422,6 +1423,14 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     // of an unattended repo runs headless, while an attended/unregistered repo
     // falls back to "attended" so writer subagents fail closed (stall, no UI).
     const delivery = await deliveryStatePromise;
+
+    // Argv-level push guard: catches `git <flags> push` forms (e.g.
+    // `git -C dir push`) that the anchored globs in delivery-overlay.ts miss.
+    // Applies regardless of autonomy, closing the local-only + unattended gap.
+    if (shouldBlockLocalOnlyPush(delivery?.mode, event.toolName, event.input)) {
+      return { block: true, reason: "local-only delivery mode forbids pushing to a remote (argv-level guard)" };
+    }
+
     const handler = makeBeforeToolHandler(
       permissions,
       spec,
