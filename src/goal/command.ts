@@ -1,7 +1,16 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { GoalController } from "./controller";
 import type { GoalEventRecord } from "./loop";
+import type { GoalSnapshot } from "./types";
 import { parseGoalCommand } from "./command-parse";
+
+/** Compact statusline segment for the active/paused goal, or undefined when
+ *  there is no live goal (mirrors the `lens:<changed>` indicator pattern). */
+export function renderGoalStatusSegment(snapshot: GoalSnapshot | undefined): string | undefined {
+  if (!snapshot || snapshot.status === "achieved") return undefined;
+  if (snapshot.status === "paused") return "◎ goal:paused";
+  return `◎ goal:${snapshot.turnsEvaluated}t·${Math.round(snapshot.tokensUsed / 1000)}k`;
+}
 
 export interface GoalCommandDeps {
   controller: GoalController;
@@ -97,6 +106,7 @@ export function registerGoalCommand(pi: ExtensionAPI, deps: RegisterGoalDeps): v
         sendFollowUp: deps.sendFollowUp,
         recordEvent: deps.recordEvent,
       });
+      ctx.ui.setStatus("harness-goal", renderGoalStatusSegment(deps.controller.snapshot()));
     },
   });
 }

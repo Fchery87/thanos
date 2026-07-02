@@ -1,6 +1,25 @@
 import { describe, expect, it, vi } from "vitest";
 import { GoalController } from "../../src/goal/controller";
-import { runGoalCommand, type GoalCommandDeps } from "../../src/goal/command";
+import { runGoalCommand, renderGoalStatusSegment, type GoalCommandDeps } from "../../src/goal/command";
+
+describe("renderGoalStatusSegment", () => {
+  it("undefined when there is no active/paused goal", () => {
+    expect(renderGoalStatusSegment(undefined)).toBeUndefined();
+    const achieved = new GoalController();
+    achieved.set("a", 0);
+    achieved.onTurnResult({ met: true, reason: "done" }, 0);
+    expect(renderGoalStatusSegment(achieved.snapshot())).toBeUndefined();
+  });
+  it("shows turns and growth while active", () => {
+    const c = new GoalController(); c.set("x", 0);
+    c.onTurnResult({ met: false, reason: "nope" }, 3000);
+    expect(renderGoalStatusSegment(c.snapshot())).toBe("◎ goal:1t·3k");
+  });
+  it("shows paused", () => {
+    const c = new GoalController(); c.set("x", 0); c.pause();
+    expect(renderGoalStatusSegment(c.snapshot())).toBe("◎ goal:paused");
+  });
+});
 
 function deps(overrides: Partial<GoalCommandDeps> = {}): GoalCommandDeps {
   return {

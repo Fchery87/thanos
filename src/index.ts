@@ -12,7 +12,7 @@ import { SpecEngine } from "./spec/engine";
 import { buildContinuationPrompt, GATE_CONTINUE_SENTINEL, shouldReinject } from "./spec/gate";
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { GoalController } from "./goal/controller";
-import { registerGoalCommand } from "./goal/command";
+import { registerGoalCommand, renderGoalStatusSegment } from "./goal/command";
 import { handleAgentEnd as handleGoalAgentEnd } from "./goal/loop";
 import { extractLastTurn, readWillRetry } from "./goal/extract";
 import { runEvaluatorWith } from "./goal/evaluator";
@@ -1541,6 +1541,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       lastAssistantText,
       toolResultsText,
     });
+    ctx.ui.setStatus("harness-goal", renderGoalStatusSegment(goalController.snapshot()));
   });
 
   // ── Web search tool ────────────────────────────────────────────────
