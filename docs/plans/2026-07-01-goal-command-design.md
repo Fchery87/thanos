@@ -1,7 +1,7 @@
 # Design: `/goal` command for pi (self-checking autonomous loop)
 
 Date: 2026-07-01
-Status: APPROVED — all open questions resolved (grilling session, 2026-07-01)
+Status: SUPERSEDED by docs/plans/2026-07-02-harness-fixes-and-goal-command.md (implemented 2026-07-02, with four review fixes: gate coordination, mandatory tool-result extraction, paused-state persistence, clamped token accounting). Retained for design history.
 
 ## 1. What we're replicating
 

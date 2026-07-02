@@ -1,5 +1,7 @@
 # `/goal` Command Implementation Plan
 
+> **Status: SUPERSEDED** by `docs/plans/2026-07-02-harness-fixes-and-goal-command.md` (implemented 2026-07-02). Retained for history.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Add a session-scoped `/goal` command that sets a completion condition, then auto-continues agent turns until a fresh side-channel evaluator confirms the condition is met (guarded by a turn/token ceiling that pauses).

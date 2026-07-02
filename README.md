@@ -222,6 +222,33 @@ THANOS_VERIFY_GATE=off thanos
 
 This disables only the completion verification reinjection gate. It does not disable policy, yolo lockout, Lens Lite, or delivery-mode restrictions.
 
+#### `/goal` — self-checking autonomous loop
+
+`/goal <condition>` turns a prompt into a durable objective. Thanos immediately starts a turn toward the condition, and after **each** turn a fresh, tool-less **side-channel evaluator** (a one-shot `completeSimple` call, not a subagent — so no extra agent turn and no re-entrancy) reads the last turn's evidence and returns `MET` / `NOT_MET`. `NOT_MET` auto-continues another turn with the reason as guidance; `MET` clears the goal and records the achievement. Unparseable evaluator output is treated as `NOT_MET` (fail-safe: it never declares a false "done").
+
+```text
+/goal <condition>   # set a goal and start working toward it
+/goal               # status (condition, turns, context growth, last check)
+/goal pause         # stop auto-continuing (resumable)
+/goal resume        # resume a paused goal
+/goal clear         # cancel (aliases: stop off reset none cancel)
+```
+
+The loop is **guarded**: it pauses (never clears) on a turn ceiling (`maxTurns`, default 25), an optional context-growth ceiling (`maxTokens`), or an optional `checkpointEvery`. A statusline segment shows `◎ goal:<turns>t·<growth>k` while active. It is main-session only and refuses on untrusted projects. Permission prompts are orthogonal — a tool needing approval pauses the loop until you answer.
+
+`/goal` and the completion verification gate never fight: while a goal is active, the goal evaluator is the **sole** continuation driver (the gate defers), so at most one follow-up is queued per turn. Configure defaults under `goal` in `~/.pi/agent/settings.json`:
+
+```jsonc
+"goal": {
+  "maxTurns": 25,        // pause on hit (0 = unlimited / full-auto)
+  "maxTokens": 0,        // cumulative context-growth ceiling, NOT a spend cap; 0 = off
+  "checkpointEvery": 0,  // 0 = off; N = pause-to-confirm every N turns
+  "evaluatorRole": "evaluator"
+}
+```
+
+> `maxTokens` is a context-**growth** guard, not a spend meter: it accumulates clamped per-turn context growth (compaction can never make it go backwards). `maxTurns` remains the real budget.
+
 ### Step 7 — Ship it
 
 When your gates are green, deliver the branch per its resolved mode:
@@ -438,6 +465,7 @@ Manual commands:
 | `/designer [goal]` | Spawn the Designer subagent for UI/UX implementation, review, or design-system audit |
 | `/run designer <task>` | Run Designer through `pi-subagents` directly; also appears in `/run` completions after reload |
 | `/lens` | Thanos Lens Lite: changed files, read-before-modify guard, secret scan, manual diagnostics |
+| `/goal [condition\|pause\|resume\|clear]` | Set a self-checking goal; the agent auto-continues until a fresh evaluator confirms it. No arg shows status. Main session only; pauses on ceilings. See [`/goal`](#goal--self-checking-autonomous-loop) |
 | `/todo` | Show the current todo checklist for this branch (Escape to close); `/todo export` prints the markdown |
 | `/modes` | Select the default specialist mode used by `task` when `type` is omitted (`explore`, `plan`, `build`, `reviewer`, `designer`, `oracle`, `researcher`, `evaluator`) |
 | `/yolo` | Toggle yolo mode for this session (bypasses thanos permission checks; Lens Lite secret scan still runs). Refuses when yolo is locked by config — see [Yolo lockout](#yolo-lockout) |
