@@ -1,5 +1,5 @@
-import { buildFirstDirective } from "./prompts";
-import { resolveGoalSettings, type GoalSettings, type GoalSnapshot } from "./types";
+import { buildDirective, buildFirstDirective } from "./prompts";
+import { resolveGoalSettings, type GoalSettings, type GoalSnapshot, type LoopAction, type Verdict } from "./types";
 
 const MAX_CONDITION = 4000;
 
@@ -63,5 +63,42 @@ export class GoalController {
     if (this.g?.status !== "paused") return false;
     this.g.status = "active";
     return true;
+  }
+
+  onTurnResult(verdict: Verdict, tokensNow: number): LoopAction {
+    if (!this.g || this.g.status !== "active") return { kind: "noop" };
+    // Context size can shrink after compaction; clamp so the ceiling counter
+    // is monotone (this is a growth guard, not a spend meter — see types.ts).
+    this.g.tokensUsed += Math.max(0, tokensNow - this.g.lastTokens);
+    this.g.lastTokens = tokensNow;
+    this.g.turnsEvaluated += 1;
+    this.g.lastReason = verdict.reason;
+
+    if (verdict.met) {
+      this.g.status = "achieved";
+      this.g.achieved = { at: this.now(), reason: verdict.reason, turns: this.g.turnsEvaluated };
+      return { kind: "achieved", reason: verdict.reason, turns: this.g.turnsEvaluated };
+    }
+
+    const { maxTurns, maxTokens, checkpointEvery } = this.settings;
+    if (maxTurns > 0 && this.g.turnsEvaluated >= maxTurns) {
+      this.g.status = "paused";
+      return { kind: "paused", why: "ceiling-turns", detail: `Reached ${maxTurns}-turn ceiling.` };
+    }
+    if (maxTokens > 0 && this.g.tokensUsed >= maxTokens) {
+      this.g.status = "paused";
+      return { kind: "paused", why: "ceiling-tokens", detail: `Reached ${maxTokens}-token growth ceiling.` };
+    }
+    if (checkpointEvery > 0 && this.g.turnsEvaluated % checkpointEvery === 0) {
+      this.g.status = "paused";
+      return { kind: "paused", why: "checkpoint", detail: `Checkpoint after ${this.g.turnsEvaluated} turns.` };
+    }
+    return { kind: "continue", directive: buildDirective(this.g.condition, verdict.reason) };
+  }
+
+  onError(kind: "work-error" | "eval-error", detail: string): LoopAction {
+    if (!this.g || this.g.status !== "active") return { kind: "noop" };
+    this.g.status = "paused";
+    return { kind: "paused", why: kind, detail };
   }
 }
