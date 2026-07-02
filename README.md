@@ -183,6 +183,23 @@ Ctrl+Shift+D        # spawn the Designer
 
 Subagents run under your policy as a ceiling, return a typed result contract, and nest at most one level deeper (capped). Driving from the main session and letting it orchestrate specialists is the recommended pattern — see [Main-agent-as-orchestrator workflow](#main-agent-as-orchestrator-workflow) and [Governed subagents](#governed-subagents).
 
+#### Optional per-subagent model routing
+
+By default, Thanos can route each specialist role to its own model from your active `~/.pi/agent/models.json` catalog. This is the "reasoning sandwich": deep reasoning roles such as `oracle`, `plan`, and reviewers can use stronger/high-thinking models, while mechanical roles can use faster or cheaper models.
+
+Use the visible slash commands:
+
+```text
+/subagents-models          # show current routing and usage
+/subagents-models-set      # pick a role, then pick one of your active models
+/subagents-models-set reviewer
+/subagents-models-toggle   # pick on/off
+/subagents-models-toggle on
+/subagents-models-toggle off
+```
+
+When routing is **on**, `subagents.agentOverrides` is active and each assigned role uses its configured model. When routing is **off**, Thanos saves the assignments under `subagents.savedAgentOverrides` and removes active `agentOverrides`, so the model selected with `/models` controls all subagents as it did before per-role routing existed. Editing routes while disabled updates the saved assignments without activating them.
+
 ### Step 6 — Track and verify
 
 ```text
@@ -192,6 +209,18 @@ Subagents run under your policy as a ceiling, return a typed result contract, an
 /policy             # show the active governance policy ceiling
 /audit              # review what was allowed/denied this session
 ```
+
+#### Completion verification gate
+
+For non-instant implementation tasks, Thanos treats the active spec as the definition of done. When the agent tries to stop while acceptance criteria are still missing evidence, the harness sends a bounded follow-up turn with the unmet criteria instead of letting the model self-certify completion. The loop is parent-session only, keeps the original spec active across continuation turns, and stops after three reinjections.
+
+Evidence comes from the normal harness channels: diffs, passing test or command output, and explicit manual evidence. If you need to debug the harness itself or temporarily bypass this loop, start Thanos with:
+
+```bash
+THANOS_VERIFY_GATE=off thanos
+```
+
+This disables only the completion verification reinjection gate. It does not disable policy, yolo lockout, Lens Lite, or delivery-mode restrictions.
 
 ### Step 7 — Ship it
 
@@ -213,7 +242,7 @@ See [/ship](#ship) for details.
 ```
 ~/.pi/
 ├── agent/
-│   ├── agents/                 # Specialist subagent definitions (explore, plan, build, reviewer, designer, oracle, researcher)
+│   ├── agents/                 # Specialist subagent definitions (explore, plan, build, reviewer, designer, oracle, researcher, evaluator)
 │   ├── skills/                 # Installed Pi skills
 │   ├── models.example.json     # Curated provider/model catalog template (no keys)
 │   ├── models.json             # User-owned catalog created by installer (gitignored)
@@ -313,8 +342,35 @@ Both altitudes were validated live (2026-06-27) on a non-Anthropic model, so the
 | `designer` | **writer** (exec-denied) | fresh (may fork) | UI/UX implementation, review, design-system audit; delegates render/screenshot to `build` for its self-validation loop |
 | `oracle` | read-only | fresh-only | Unbiased second opinion; challenges plans and diffs |
 | `researcher` | read-only | fresh | Network-gated external research |
+| `evaluator` | read-only | fresh | Grade implementation evidence against the active contract from a fresh context |
 
 Each role maps to a markdown file in `agent/agents/` defining its system prompt, optional `tools` allowlist, `model`, and `context` mode.
+
+### Per-role model routing
+
+Subagent model routing is controlled in `~/.pi/agent/settings.json` under `subagents`:
+
+```jsonc
+{
+  "subagents": {
+    "disableBuiltins": true,
+    "modelOverridesEnabled": true,
+    "agentOverrides": {
+      "reviewer": { "model": "theclawbay-claude/claude-opus-4-8:high" },
+      "worker": { "model": "theclawbay-claude/claude-sonnet-4-6:high" }
+    },
+    "savedAgentOverrides": {
+      "reviewer": { "model": "theclawbay-claude/claude-opus-4-8:high" },
+      "worker": { "model": "theclawbay-claude/claude-sonnet-4-6:high" }
+    }
+  }
+}
+```
+
+- `modelOverridesEnabled: true` means `agentOverrides` is active.
+- `modelOverridesEnabled: false` means `agentOverrides` is removed and `/models` controls every subagent.
+- `savedAgentOverrides` preserves the per-role assignments while routing is disabled.
+- `/subagents-models-set` validates selections against `~/.pi/agent/models.json`; `designer` must stay on a vision-capable model because its screenshot self-validation loop needs image input.
 
 ### Subagent Result Contract
 
@@ -332,7 +388,7 @@ Large outputs are written to disk and returned as **artifact references** instea
 
 ### Context mode (fresh vs forked)
 
-Fresh, isolated context (`--no-session`) is the default and the **only** mode for adversarial/read-only roles (`explore`, `plan`, `reviewer`, `oracle`, `researcher`) — their value depends on being unbiased by the parent's prior reasoning. Continuity roles (`build`, `designer`) may opt into `forked` context, inheriting the parent session's history and prompt cache. See [ADR 0004](docs/adr/0004-opt-in-forked-context-for-continuity-roles.md).
+Fresh, isolated context (`--no-session`) is the default and the **only** mode for adversarial/read-only roles (`explore`, `plan`, `reviewer`, `oracle`, `researcher`, `evaluator`) — their value depends on being unbiased by the parent's prior reasoning. Continuity roles (`build`, `designer`) may opt into `forked` context, inheriting the parent session's history and prompt cache. See [ADR 0004](docs/adr/0004-opt-in-forked-context-for-continuity-roles.md).
 
 ### Governed clarification
 
@@ -376,11 +432,14 @@ Manual commands:
 | Command | Description |
 |---------|-------------|
 | `/models` | Two-step provider → model selector with reasoning/image badges |
+| `/subagents-models` | Show per-subagent model routing, saved assignments, and usage |
+| `/subagents-models-set [role]` | Select a role, then choose one of your active catalog models for that subagent |
+| `/subagents-models-toggle [on\|off]` | Enable per-subagent routing or disable it so `/models` controls all subagents |
 | `/designer [goal]` | Spawn the Designer subagent for UI/UX implementation, review, or design-system audit |
 | `/run designer <task>` | Run Designer through `pi-subagents` directly; also appears in `/run` completions after reload |
 | `/lens` | Thanos Lens Lite: changed files, read-before-modify guard, secret scan, manual diagnostics |
 | `/todo` | Show the current todo checklist for this branch (Escape to close); `/todo export` prints the markdown |
-| `/modes` | Select the default specialist mode used by `task` when `type` is omitted (`explore`, `plan`, `build`, `reviewer`, `designer`, `oracle`, `researcher`) |
+| `/modes` | Select the default specialist mode used by `task` when `type` is omitted (`explore`, `plan`, `build`, `reviewer`, `designer`, `oracle`, `researcher`, `evaluator`) |
 | `/yolo` | Toggle yolo mode for this session (bypasses thanos permission checks; Lens Lite secret scan still runs). Refuses when yolo is locked by config — see [Yolo lockout](#yolo-lockout) |
 | `/ship` | Deliver the current branch per the resolved [delivery mode](#delivery-modes) (local-only: fast-forward merge into the default branch; main session only) |
 | `/remember` | Save a durable project preference, injected into future sessions on this branch/project |

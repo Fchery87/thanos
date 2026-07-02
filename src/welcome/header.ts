@@ -75,9 +75,17 @@ function renderWelcomeLines(theme: TUITheme, args: WelcomeHeaderArgs, width: num
   for (let i = 0; i < rows; i++) {
     const l = left[i] ?? "";
     const r = right[i] ?? "";
-    lines.push(`${l}${" ".repeat(Math.max(0, leftWidth - stripAnsi(l).length + gap))}${r}`);
+    const joined = `${l}${" ".repeat(Math.max(0, leftWidth - stripAnsi(l).length + gap))}${r}`;
+    // Right column is ragged (shorter than the left stack), and blank spacer
+    // rows pad out to full width — trim the trailing gutter so the screen
+    // doesn't ship lines full of invisible whitespace.
+    lines.push(trimTrailing(joined));
   }
   return lines;
+}
+
+function trimTrailing(line: string): string {
+  return line.replace(/[ \t]+$/, "");
 }
 
 const THANOS_LOGO = [
@@ -96,8 +104,8 @@ function renderBrand(theme: TUITheme, width: number): string[] {
     return [fitAnsi(title, width), subtitle];
   }
   return [
-    ...THANOS_LOGO.map((line) => theme.fg("accent", truncate(line, width))),
-    theme.fg("dim", truncate("Agent Distribution for Pi", width)),
+    ...THANOS_LOGO.map((line) => theme.bold(theme.fg("accent", truncate(line, width)))),
+    theme.bold(truncate("Agent Distribution for Pi", width)),
     subtitle,
   ];
 }
@@ -132,11 +140,14 @@ function renderCommandRows(theme: TUITheme, width: number): string[] {
 }
 
 function renderHotkeyRows(theme: TUITheme, width: number): string[] {
+  // Leading space matches the inner padding of the Session/Commands rows so
+  // every box lines its content up against the same left edge.
+  const inner = Math.max(0, width - 1);
   return [
-    truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+T")} thinking  ${theme.fg("dim", "Ctrl+Shift+Y")} yolo`, width),
-    truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+F")} snapshot   ${theme.fg("dim", "Ctrl+Shift+G")} policy`, width),
-    truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+R")} review     ${theme.fg("dim", "Ctrl+Shift+D")} designer`, width),
-    truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+E")} spec       ${theme.fg("dim", "Ctrl+Shift+A")} audit`, width),
+    ` ${truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+T")} thinking  ${theme.fg("dim", "Ctrl+Shift+Y")} yolo`, inner)}`,
+    ` ${truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+F")} snapshot   ${theme.fg("dim", "Ctrl+Shift+G")} policy`, inner)}`,
+    ` ${truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+R")} review     ${theme.fg("dim", "Ctrl+Shift+D")} designer`, inner)}`,
+    ` ${truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+E")} spec       ${theme.fg("dim", "Ctrl+Shift+A")} audit`, inner)}`,
   ];
 }
 
@@ -179,7 +190,8 @@ function renderBox(theme: TUITheme, title: string, lines: string[], width: numbe
   const safeTitle = truncate(title, Math.max(1, inner - 4));
   const border = (s: string) => theme.fg(borderColor, s);
   const topPrefix = `─ ${safeTitle} `;
-  const top = `${border("╭")}${border(topPrefix)}${border("─".repeat(Math.max(0, inner - topPrefix.length)))}${border("╮")}`;
+  const titleCell = `${border("─ ")}${theme.bold(theme.fg(borderColor, safeTitle))}${border(" ")}`;
+  const top = `${border("╭")}${titleCell}${border("─".repeat(Math.max(0, inner - topPrefix.length)))}${border("╮")}`;
   const body = lines.map((line) => {
     const safe = fitAnsi(line, inner);
     return `${border("│")}${safe}${" ".repeat(Math.max(0, inner - stripAnsi(safe).length))}${border("│")}`;

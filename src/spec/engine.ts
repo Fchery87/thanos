@@ -27,6 +27,7 @@ function assistantTexts(messages: unknown): string[] {
 
 export class SpecEngine {
   activeSpec: FormalSpec | undefined;
+  gateAttempts = 0;
   private evidence: EvidenceRecord[] = [];
 
   classify(prompt: string, explicitFlag: boolean): SpecTier {
@@ -53,6 +54,11 @@ export class SpecEngine {
   reset(): void {
     this.activeSpec = undefined;
     this.evidence = [];
+    this.gateAttempts = 0;
+  }
+
+  recordGateAttempt(): void {
+    this.gateAttempts += 1;
   }
 
   collectOutput(text: string): void {

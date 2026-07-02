@@ -55,6 +55,77 @@ model-agnostic.
   the depth-2 cap exists so a specialist can self-validate (designer → build)
   without spawning uncontrolled trees.
 
+## Model routing
+
+Specialists can be routed to different models without changing the orchestration
+pattern. Use `/subagents-models-set` to pick a role and then select one of the
+active models from `~/.pi/agent/models.json`. Use `/subagents-models-toggle` to
+enable or disable those per-role routes.
+
+When routing is enabled, `subagents.agentOverrides` in
+`~/.pi/agent/settings.json` is active and each specialist uses its assigned
+model. When routing is disabled, Thanos saves the assignments under
+`subagents.savedAgentOverrides` and removes active `agentOverrides`, so the
+global `/models` selection controls every subagent. This makes the reasoning
+sandwich reversible: turn it on for heterogeneous specialist performance, turn
+it off when you want one model to cover the entire system.
+
+Keep vision-dependent roles such as `designer` on models that accept image input;
+its self-validation loop depends on screenshot review.
+
+## Durable progress ledger
+
+For long jobs, the source of truth must live in files plus git, not in one
+growing chat context. Use three small handoff files:
+
+- `context.md` is compressed discovery context: retrieved files, key code,
+  architecture notes, and where the next agent should start.
+- `plan.md` is the intended execution sequence: ordered slices, dependencies,
+  and verification expectations.
+- `progress.md` is the durable ledger: what is done, what remains, evidence
+  links, open decisions, and the last verified state.
+
+`progress.md` should stay compact, about 1-2k tokens. Use this shape:
+
+```md
+# Progress
+
+## Goal
+One sentence.
+
+## Completed
+- Slice name — evidence: command/artifact/commit reference
+
+## Remaining
+- Next slice
+
+## Open Questions
+- Decision needed, or `None`
+
+## Last Verified
+Commit or command evidence.
+```
+
+The main agent should rotate context proactively around 60-70% usage and keep
+each specialist's inner loop under half the window when possible. Before
+dispatching a worker on a resumed long job, have it read `context.md`,
+`plan.md`, and `progress.md`; after each verified slice, have it update
+`progress.md` before returning.
+
+## Bounded waves
+
+Use `/waves <goal>` when the work naturally splits into independent research,
+analysis, audit, or carefully isolated implementation slices. A waves run is
+not unbounded agent spawning. The main agent must first discover the problem
+shape, draft a bounded wave plan, verify independence and path ownership, then
+fan out approved slices in parallel.
+
+Read-only slices may overlap. Write slices must own disjoint paths and use
+worktree-isolated writer roles (`build` or `worker`). Every worker returns a
+structured handoff with status, evidence, open questions, follow-ups, and a
+confidence tag. The main agent verifies those handoffs before synthesis and
+drops unsupported claims under the cite-or-drop rule.
+
 ## Worked example: designer self-validation
 
 1. You: `/designer build a pricing page for <product>` (main agent → `designer`).

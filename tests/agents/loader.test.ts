@@ -67,6 +67,18 @@ describe("loadAgent", () => {
     expect(def.tools).not.toContain("bash");
   });
 
+  it("loads the evaluator definition as a read-only fresh-context grader", async () => {
+    process.env.HOME = await repoHomeWithRealAgents();
+    const def = await loadAgent("evaluator");
+
+    expect(def.tools).toBeDefined();
+    expect(def.tools).toEqual(expect.arrayContaining(["read", "ls", "find", "grep", "bash", "report_finding"]));
+    expect(def.tools).not.toContain("edit");
+    expect(def.tools).not.toContain("write");
+    expect(def.body).toContain("fresh-context evaluator");
+    expect(def.body).toMatch(/PASS|NEEDS_WORK/);
+  });
+
   it("parses an explicit context mode from frontmatter", async () => {
     const home = await mkdtemp(join(tmpdir(), "thanos-agent-"));
     process.env.HOME = home;
@@ -97,7 +109,7 @@ describe("loadAgent", () => {
 
   it("every agent type has a definition file with a tools allowlist", async () => {
     process.env.HOME = await repoHomeWithRealAgents();
-    const types = ["explore", "plan", "build", "reviewer", "designer", "oracle", "researcher"] as const;
+    const types = ["explore", "plan", "build", "reviewer", "designer", "oracle", "researcher", "evaluator"] as const;
     for (const type of types) {
       const def = await loadAgent(type);
       expect(def.tools, `${type} should have tools defined`).toBeDefined();

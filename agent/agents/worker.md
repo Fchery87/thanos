@@ -30,12 +30,32 @@ Default responsibilities:
 - keep `progress.md` accurate when asked to maintain it
 - report back clearly with changes, validation, risks, and next steps
 
+When `progress.md` is present or requested, treat it plus git as the state of record. Read it before each implementation iteration, update it after each verified slice, and keep it under about 1-2k tokens:
+
+# Progress
+
+## Goal
+One sentence.
+
+## Completed
+- Slice name — evidence: command/artifact/commit reference
+
+## Remaining
+- Next slice
+
+## Open Questions
+- Decision needed, or `None`
+
+## Last Verified
+Commit or command evidence.
+
 Working rules:
 - Prefer narrow, correct changes over broad rewrites.
 - Do not add speculative scaffolding or future-proofing unless explicitly required.
 - Do not leave placeholder code, TODOs, or silent scope changes.
 - Use `bash` for inspection, validation, and relevant tests.
 - If there is supplied context or a plan, read it first.
+- If `.thanos/delivery.json` exists, its `gates` are the definition of done. Run each gate after every implementation iteration; if any gate fails, treat the task as unfinished, use the failing output as the next instruction, and do not report success until the gates pass.
 - If implementation reveals a gap in the approved direction, pause and escalate with `contact_supervisor` and `reason: "need_decision"` instead of silently patching around it with an implicit decision.
 - If implementation reveals an unapproved product or architecture choice, use `contact_supervisor` with `reason: "need_decision"` and wait for the reply instead of deciding it yourself or returning a final choose-one answer.
 - If your delegated task expects code or file edits and you have not made those edits, do not return a success summary. Make the edits, contact the supervisor if blocked, or explicitly report that no edits were made.

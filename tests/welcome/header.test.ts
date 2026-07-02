@@ -58,6 +58,35 @@ describe("renderWelcomeHeader", () => {
     expect(lines.join("\n")).toContain("No MCP servers");
   });
 
+  it("does not ship trailing whitespace in the two-column layout", () => {
+    const lines = renderWelcomeHeader(noopTheme, {
+      modelStr: "claude-opus-4-8",
+      thinkingStr: "high",
+      modeStr: "explore (default)",
+      mcp: { configured: 6, connected: 5, failed: 1, initFailed: false },
+      policy: { kind: "loaded", preset: "team", rules: 12, auditEnabled: true },
+      recentRows: [{ label: "Fable-class harness roadmap", age: "2h ago" }],
+    }).render(120);
+
+    for (const line of lines) {
+      expect(stripAnsi(line)).toBe(stripAnsi(line).replace(/[ \t]+$/, ""));
+    }
+  });
+
+  it("pads the Shortcuts rows to match the other boxes' left edge", () => {
+    const output = renderWelcomeHeader(noopTheme, {
+      modelStr: "model",
+      thinkingStr: "high",
+      modeStr: "explore (default)",
+      mcp: { configured: 0, connected: 0, failed: 0, initFailed: false },
+      policy: { kind: "loaded", preset: "team", rules: 1, auditEnabled: false },
+      recentRows: [],
+    }).render(80).join("\n");
+    // Content sits one space in from the border, exactly like " /models" rows.
+    expect(output).toContain("│ Ctrl+Shift+T thinking");
+    expect(output).not.toContain("│Ctrl+Shift+T");
+  });
+
   it("distinguishes missing MCP config from failed MCP startup", () => {
     const failed = renderWelcomeHeader(noopTheme, {
       modelStr: "model",

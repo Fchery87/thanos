@@ -18,7 +18,7 @@ describe("makeAfterToolHandler", () => {
       details: undefined,
     });
 
-    const testResult = spec.verify().find((result) => result.criterion.statement === "Tests written");
+    const testResult = spec.verify().find((result) => /tests|verification/i.test(result.criterion.statement));
 
     expect(testResult?.passed).toBe(true);
     expect(testResult?.evidence).toContain("bun test tests/index.test.ts passed");
@@ -74,7 +74,7 @@ describe("makeAfterToolHandler", () => {
       details: { diff: "--- a/src/pagination.ts\n+++ b/src/pagination.ts" },
     });
 
-    const addResult = spec.verify().find((result) => result.criterion.statement === "Feature added as described");
+    const addResult = spec.verify().find((result) => /code change/i.test(result.criterion.statement));
 
     expect(addResult?.passed).toBe(true);
     expect(addResult?.evidence).toContain("edit changed src/pagination.ts");

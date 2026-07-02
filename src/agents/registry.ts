@@ -8,6 +8,6 @@
 // contact_supervisor/intercom wiring that the legacy executeTask path does not
 // provide, so they are intentionally absent here. Do not "fix" this drift by
 // adding them — they would run incorrectly through the legacy tool.
-export type AgentType = "explore" | "plan" | "build" | "reviewer" | "designer" | "oracle" | "researcher";
+export type AgentType = "explore" | "plan" | "build" | "reviewer" | "designer" | "oracle" | "researcher" | "evaluator";
 
-export const AGENT_TYPES: AgentType[] = ["explore", "plan", "build", "reviewer", "designer", "oracle", "researcher"];
+export const AGENT_TYPES: AgentType[] = ["explore", "plan", "build", "reviewer", "designer", "oracle", "researcher", "evaluator"];

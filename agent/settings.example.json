@@ -22,10 +22,56 @@
     "npm:@npm-ken/pi-bar"
   ],
   "subagents": {
-    "disableBuiltins": true
+    "disableBuiltins": true,
+    "modelOverridesEnabled": true,
+    "agentOverrides": {
+      "oracle": {
+        "model": "theclawbay-claude/claude-opus-4-8:xhigh",
+        "fallbackModels": ["theclawbay/gpt-5.5"]
+      },
+      "plan": {
+        "model": "theclawbay-claude/claude-opus-4-8:xhigh",
+        "fallbackModels": ["theclawbay/gpt-5.4"]
+      },
+      "reviewer": {
+        "model": "theclawbay-claude/claude-opus-4-8:high",
+        "fallbackModels": ["theclawbay/gpt-5.5"]
+      },
+      "reviewer-correctness": {
+        "model": "theclawbay-claude/claude-opus-4-8:high"
+      },
+      "reviewer-security": {
+        "model": "theclawbay/gemini-2.5-pro:high"
+      },
+      "reviewer-tests": {
+        "model": "zai/glm-5.2:high"
+      },
+      "designer": {
+        "model": "theclawbay-claude/claude-opus-4-8:high"
+      },
+      "build": {
+        "model": "theclawbay-claude/claude-sonnet-4-6:high"
+      },
+      "worker": {
+        "model": "theclawbay-claude/claude-sonnet-4-6:high"
+      },
+      "researcher": {
+        "model": "theclawbay-claude/claude-sonnet-4-6"
+      },
+      "scout": {
+        "model": "theclawbay-claude/claude-haiku-4-5:low",
+        "fallbackModels": ["theclawbay/gemini-2.5-flash"]
+      },
+      "explore": {
+        "model": "theclawbay-claude/claude-haiku-4-5:low",
+        "fallbackModels": ["theclawbay/gemini-2.5-flash"]
+      }
+    }
   },
   "theme": "brogrammer",
   "defaultThinkingLevel": "high",
   "treeFilterMode": "default",
-  "quietStartup": true
+  "quietStartup": true,
+  "defaultProvider": "theclawbay-claude",
+  "defaultModel": "claude-opus-4-8"
 }

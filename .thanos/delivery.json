@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "gates": {
+    "typecheck": "bun run typecheck",
+    "lint": "bun run lint",
+    "test": "bun run test",
+    "scan": "bun audit --audit-level critical"
+  },
+  "defaultBranch": "master"
+}

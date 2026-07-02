@@ -48,7 +48,7 @@ describe("register /modes command", () => {
       },
     });
 
-    expect(select).toHaveBeenCalledWith("Choose a default subagent mode", ["explore", "plan", "build", "reviewer", "designer", "oracle", "researcher"]);
+    expect(select).toHaveBeenCalledWith("Choose a default subagent mode", ["explore", "plan", "build", "reviewer", "designer", "oracle", "researcher", "evaluator"]);
     expect(notify).toHaveBeenCalledWith(expect.stringContaining("Default subagent mode: plan"), "info");
   });
 

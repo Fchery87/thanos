@@ -2,46 +2,13 @@
 import type {
   FormalSpec,
   SpecTier,
-  AcceptanceCriterion,
   ApprovalStatus,
 } from "./types";
 import type { Capability } from "../permissions/rules";
+import { buildDefaultFailContract } from "./contract";
 
 let counter = 0;
 const newId = () => `spec-${Date.now()}-${++counter}`;
-const newCriterionId = () => `criterion-${Date.now()}-${++counter}`;
-
-function buildCriteria(message: string): AcceptanceCriterion[] {
-  const lower = message.toLowerCase();
-  const criteria: AcceptanceCriterion[] = [];
-
-  if (/\badd\b/.test(lower))
-    criteria.push({
-      id: newCriterionId(),
-      statement: "Feature added as described",
-      evidenceRequired: ["diff"],
-    });
-  if (/\btest/.test(lower))
-    criteria.push({
-      id: newCriterionId(),
-      statement: "Tests written",
-      evidenceRequired: ["test"],
-    });
-  if (/\brefactor/.test(lower))
-    criteria.push({
-      id: newCriterionId(),
-      statement: "Code refactored",
-      evidenceRequired: ["diff", "command"],
-    });
-  if (criteria.length === 0)
-    criteria.push({
-      id: newCriterionId(),
-      statement: "Task completed",
-      evidenceRequired: ["manual"],
-    });
-
-  return criteria;
-}
 
 function inferAllowedCapabilities(message: string): Capability[] {
   const lower = message.toLowerCase();
@@ -62,6 +29,8 @@ function approvalFor(tier: SpecTier): ApprovalStatus {
 }
 
 export function generateSpec(message: string, tier: SpecTier): FormalSpec {
+  const contract = buildDefaultFailContract(message);
+
   return {
     id: newId(),
     tier,
@@ -70,7 +39,7 @@ export function generateSpec(message: string, tier: SpecTier): FormalSpec {
     goal: message,
     allowedCapabilities: inferAllowedCapabilities(message),
     constraints: [],
-    acceptanceCriteria: buildCriteria(message),
+    acceptanceCriteria: contract.acceptanceCriteria,
     targetFiles: [],
     risks: [],
     createdAt: Date.now(),

@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -25,6 +25,7 @@ function createFakePi(overrides?: Partial<RegisterApi>) {
     registerTool: vi.fn(),
     registerCommand: vi.fn(),
     registerShortcut: vi.fn(),
+    sendUserMessage: vi.fn(async () => undefined),
     getThinkingLevel: vi.fn(() => "off"),
     ...overrides,
   };
@@ -167,6 +168,85 @@ describe("register", () => {
     );
   });
 
+  it("does not reset the active spec for a verification continuation turn", async () => {
+    const notify = vi.fn();
+    const { api, handlers } = createFakePi();
+    register(api);
+
+    await handlers.get("before_agent_start")?.({ prompt: "Add pagination with tests" }, {
+      model: undefined,
+      ui: { setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() },
+    });
+    await handlers.get("before_agent_start")?.({ prompt: "[harness:verify-continue] keep going" }, {
+      model: undefined,
+      ui: { setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() },
+    });
+    await handlers.get("agent_end")?.(
+      { messages: [] },
+      {
+        hasUI: true,
+        ui: { notify, setStatus: vi.fn(), theme: noopTheme },
+      },
+    );
+
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining("Relevant tests or verification commands pass"), "warning");
+  });
+
+  it("re-injects a follow-up when verification fails and the gate is enabled", async () => {
+    const sendUserMessage = vi.fn(async () => undefined);
+    const { api, handlers } = createFakePi({ sendUserMessage } as Partial<RegisterApi>);
+    register(api);
+
+    await handlers.get("before_agent_start")?.({ prompt: "Add pagination with tests" }, {
+      model: undefined,
+      ui: { setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() },
+    });
+    await handlers.get("agent_end")?.(
+      { messages: [] },
+      {
+        hasUI: true,
+        ui: { notify: vi.fn(), setStatus: vi.fn(), theme: noopTheme },
+      },
+    );
+
+    expect(sendUserMessage).toHaveBeenCalledWith(
+      expect.stringContaining("[harness:verify-continue]"),
+      { deliverAs: "followUp" },
+    );
+  });
+
+  it("records a harness ledger event when the verification gate re-injects", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "harness-ledger-"));
+    process.chdir(cwd);
+    const sendUserMessage = vi.fn(async () => undefined);
+    const { api, handlers } = createFakePi({ sendUserMessage } as Partial<RegisterApi>);
+    register(api);
+
+    await handlers.get("before_agent_start")?.({ prompt: "Add pagination with tests" }, {
+      model: { id: "model-id", name: "Model Name" },
+      ui: { setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() },
+    });
+    await handlers.get("agent_end")?.(
+      { messages: [] },
+      {
+        hasUI: true,
+        model: { id: "model-id", name: "Model Name" },
+        ui: { notify: vi.fn(), setStatus: vi.fn(), theme: noopTheme },
+      },
+    );
+
+    const raw = await readFile(join(cwd, ".harness", "evolution", "events.jsonl"), "utf-8");
+    const event = JSON.parse(raw.trim());
+
+    expect(event).toMatchObject({
+      type: "gate_failure",
+      model: "model-id",
+      outcome: "needs_work",
+    });
+    expect(event.summary).toContain("verification gate re-injected");
+    expect(raw).not.toContain("Add pagination with tests");
+  });
+
   it("uses the final assistant message as manual completion evidence", async () => {
     const notify = vi.fn();
     const { api, handlers } = createFakePi();
@@ -195,6 +275,60 @@ describe("register", () => {
       expect.stringContaining("Spec: 1/1 passed"),
       "info",
     );
+  });
+
+  it("review shortcut dispatches the heterogeneous jury prompt", async () => {
+    const sendUserMessage = vi.fn(async () => undefined);
+    const notify = vi.fn();
+    const { api } = createFakePi({ sendUserMessage } as Partial<RegisterApi>);
+    register(api);
+
+    const registerShortcut = api.registerShortcut as ReturnType<typeof vi.fn>;
+    const reviewShortcut = registerShortcut.mock.calls.find(
+      ([shortcut]: [string]) => shortcut === "ctrl+shift+r",
+    )?.[1];
+
+    expect(reviewShortcut?.handler).toBeTypeOf("function");
+    await reviewShortcut?.handler({
+      hasUI: true,
+      ui: { notify, setStatus: vi.fn(), theme: noopTheme },
+    });
+
+    expect(sendUserMessage).toHaveBeenCalledWith(
+      expect.stringContaining("reviewer-correctness"),
+      { deliverAs: "followUp" },
+    );
+    expect(sendUserMessage).toHaveBeenCalledWith(
+      expect.stringContaining("oracle"),
+      { deliverAs: "followUp" },
+    );
+  });
+
+  it("review shortcut is unavailable in subagent sessions", async () => {
+    const originalEnv = process.env.HARNESS_SUBAGENT;
+    process.env.HARNESS_SUBAGENT = "reviewer";
+    const sendUserMessage = vi.fn(async () => undefined);
+    const notify = vi.fn();
+    const { api } = createFakePi({ sendUserMessage } as Partial<RegisterApi>);
+    register(api);
+    if (originalEnv === undefined) {
+      delete process.env.HARNESS_SUBAGENT;
+    } else {
+      process.env.HARNESS_SUBAGENT = originalEnv;
+    }
+
+    const registerShortcut = api.registerShortcut as ReturnType<typeof vi.fn>;
+    const reviewShortcut = registerShortcut.mock.calls.find(
+      ([shortcut]: [string]) => shortcut === "ctrl+shift+r",
+    )?.[1];
+
+    await reviewShortcut?.handler({
+      hasUI: true,
+      ui: { notify, setStatus: vi.fn(), theme: noopTheme },
+    });
+
+    expect(sendUserMessage).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith("Code review is only available in the main session.", "warning");
   });
 
   it("installs the structured startup welcome header", async () => {

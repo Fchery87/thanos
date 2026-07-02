@@ -21,6 +21,33 @@ describe("SpecEngine lifecycle", () => {
     expect(spec.activeSpec?.id).toBe(active?.id);
   });
 
+  it("uses default-fail contract criteria for generated specs", () => {
+    const spec = new SpecEngine();
+
+    const active = spec.startTurn("Add pagination with tests and update docs", false);
+
+    expect(active?.acceptanceCriteria.map((c) => c.statement)).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/code change/i),
+        expect.stringMatching(/tests|verification/i),
+        expect.stringMatching(/documentation/i),
+      ]),
+    );
+  });
+
+  it("tracks gate attempts and resets them on a new turn", () => {
+    const spec = new SpecEngine();
+
+    spec.startTurn("Implement a new feature for the billing flow", false);
+    expect(spec.gateAttempts).toBe(0);
+    spec.recordGateAttempt();
+    spec.recordGateAttempt();
+    expect(spec.gateAttempts).toBe(2);
+
+    spec.startTurn("Implement a new feature for the billing flow", false);
+    expect(spec.gateAttempts).toBe(0);
+  });
+
   it("creates an explicit spec with pending approval", () => {
     const spec = new SpecEngine();
 

@@ -8,8 +8,10 @@ import type { PolicyLoadState } from "../policy/state";
 import type { SpecEngine } from "../spec/engine";
 import type { TaskParams } from "../agents/task-tool";
 import { runWorktreeGc } from "../agents/task-tool";
+import { handleSubagentModelsCommand } from "../agents/model-routing";
 import { formatBadge, formatLabel, formatValue, formatPanel } from "../ui-utils";
 import { renderAuditPanel, renderPolicyPanel, renderSessionSnapshotPanel, renderSpecVerificationPanel } from "../commands/presenters";
+import { buildWavesCommandPrompt } from "../waves/command";
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
@@ -136,6 +138,101 @@ export function registerSlashCommands(
       }
       const presentation = renderSpecVerificationPanel(theme, active, spec.verify());
       ctx.ui.notify(presentation.panel, presentation.notification);
+    },
+  });
+
+  // ── /waves ────────────────────────────────────────────────────────────────
+  // Explicit opt-in bounded parallel orchestration.
+  pi.registerCommand("waves", {
+    description: "Run a bounded WAVES orchestration: plan, parallel slices, verified handoffs, synthesis.",
+    handler: async (args, ctx) => {
+      const goal = args.trim();
+      if (!goal) {
+        ctx.ui.notify("Pass a goal: /waves <goal>", "warning");
+        return;
+      }
+      await pi.sendUserMessage(buildWavesCommandPrompt(goal), { deliverAs: "followUp" });
+    },
+  });
+
+  // ── /subagents-models ────────────────────────────────────────────────────
+  // Edit the role → model routing that pi-subagents reads from settings.
+  pi.registerCommand("subagents-models", {
+    description: "Show or update subagent model routing. Usage: /subagents-models set <role> <provider/model[:thinking]> [fallback=<model[,model...]>]",
+    handler: async (args, ctx) => {
+      try {
+        const result = await handleSubagentModelsCommand(args, {
+          selectRole: async (roles) => {
+            if (typeof ctx.ui.select !== "function") {
+              return undefined;
+            }
+            const selected = await ctx.ui.select("Choose subagent role", roles);
+            return typeof selected === "string" ? selected : undefined;
+          },
+          selectModel: async (role, models) => {
+            if (typeof ctx.ui.select !== "function") {
+              return undefined;
+            }
+            const selected = await ctx.ui.select(`Choose model for ${role}`, models);
+            return typeof selected === "string" ? selected : undefined;
+          },
+        });
+        ctx.ui.notify(result.message, result.level);
+      } catch (err) {
+        ctx.ui.notify(String(err instanceof Error ? err.message : err), "warning");
+      }
+    },
+  });
+
+  pi.registerCommand("subagents-models-set", {
+    description: "Select a subagent role, then choose one of your active models for it.",
+    handler: async (args, ctx) => {
+      try {
+        const suffix = args.trim();
+        const result = await handleSubagentModelsCommand(suffix ? `set ${suffix}` : "set", {
+          selectRole: async (roles) => {
+            if (typeof ctx.ui.select !== "function") {
+              return undefined;
+            }
+            const selected = await ctx.ui.select("Choose subagent role", roles);
+            return typeof selected === "string" ? selected : undefined;
+          },
+          selectModel: async (role, models) => {
+            if (typeof ctx.ui.select !== "function") {
+              return undefined;
+            }
+            const selected = await ctx.ui.select(`Choose model for ${role}`, models);
+            return typeof selected === "string" ? selected : undefined;
+          },
+        });
+        ctx.ui.notify(result.message, result.level);
+      } catch (err) {
+        ctx.ui.notify(String(err instanceof Error ? err.message : err), "warning");
+      }
+    },
+  });
+
+  pi.registerCommand("subagents-models-toggle", {
+    description: "Enable or disable per-subagent model routing. Off means the current /models selection controls all subagents.",
+    handler: async (args, ctx) => {
+      try {
+        let choice = args.trim().toLowerCase();
+        if (!choice) {
+          if (typeof ctx.ui.select !== "function") {
+            ctx.ui.notify("Choose on or off: /subagents-models-toggle on|off", "warning");
+            return;
+          }
+          const selected = await ctx.ui.select("Per-subagent model routing", ["on", "off"]);
+          choice = typeof selected === "string" ? selected : "";
+        }
+
+        const result = await handleSubagentModelsCommand(
+          choice === "on" || choice === "enable" || choice === "enabled" ? "enable" : choice === "off" || choice === "disable" || choice === "disabled" ? "disable" : `toggle ${choice}`,
+        );
+        ctx.ui.notify(result.message, result.level);
+      } catch (err) {
+        ctx.ui.notify(String(err instanceof Error ? err.message : err), "warning");
+      }
     },
   });
 

@@ -10,6 +10,10 @@ describe("agent registry", () => {
     expect(AGENT_TYPES).toContain("researcher");
   });
 
+  it("includes the evaluator specialist", () => {
+    expect(AGENT_TYPES).toContain("evaluator");
+  });
+
   it("keeps the existing specialists", () => {
     for (const t of ["explore", "plan", "build", "reviewer", "designer"]) {
       expect(AGENT_TYPES).toContain(t);

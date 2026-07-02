@@ -7,8 +7,9 @@ import { join } from "node:path";
 import { AuditLogger } from "./audit/logger";
 import type { AuditEvent } from "./audit/types";
 import { PermissionManager } from "./permissions/manager";
-import { yoloDisabledByEnv } from "./permissions/yolo-config";
+import { gateDisabledByEnv, yoloDisabledByEnv } from "./permissions/yolo-config";
 import { SpecEngine } from "./spec/engine";
+import { buildContinuationPrompt, GATE_CONTINUE_SENTINEL, shouldReinject } from "./spec/gate";
 import { makeBeforeToolHandler } from "./hooks/before-tool";
 import { makeAfterToolHandler } from "./hooks/after-tool";
 import { TaskParamsSchema, executeTask, needsClarification, parseSubagentResult, type TaskParams } from "./agents/task-tool";
@@ -49,7 +50,9 @@ import {
 } from "./interaction/todo";
 import { renderTodoLines, todoSummary } from "./interaction/todo-render";
 import { FindingParamsSchema, addFinding, formatReviewSummary, type ReviewFinding } from "./review/findings";
+import { buildJuryPrompt } from "./review/jury";
 import { LensLite, registerLensLiteCommand } from "./lens/lite";
+import { appendHarnessEvent } from "./observability/harness-ledger";
 
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -1216,23 +1219,14 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   });
 
   pi.registerShortcut("ctrl+shift+r", {
-    description: "Run a code review — spawns reviewer, which delegates investigation to explore agents",
+    description: "Run a code review — spawns a heterogeneous critic jury",
     handler: async (ctx) => {
       if (isSubagent) {
         ctx.ui.notify("Code review is only available in the main session.", "warning");
         return;
       }
-      ctx.ui.notify("Delegating code review to the reviewer subagent…", "info");
-      // Route through the pi-subagents engine (unified delegation + rich render).
-      // The reviewer agent runs read-only under its tool ceiling; governance is
-      // inherited by the child process.
-      await pi.sendUserMessage(
-        "Use the `subagent` tool to run the `reviewer` agent on this task: Review the " +
-        "code changes in this session. Investigate any questions about the wider codebase " +
-        "by delegating to `explore` subagents. Report findings by severity (P0–P3) and give " +
-        "an overall decision.",
-        { deliverAs: "followUp" },
-      );
+      ctx.ui.notify("Delegating code review to the heterogeneous jury…", "info");
+      await pi.sendUserMessage(buildJuryPrompt(), { deliverAs: "followUp" });
     },
   });
 
@@ -1331,7 +1325,9 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   pi.on("before_agent_start", async (event, ctx) => {
     ctx.ui.setHeader(undefined);
     permissions.clearSessionRules();  // clear deny rules from any prior rejection
-    spec.startTurn(event.prompt, pi.getFlag("spec") === true);
+    if (!event.prompt.includes(GATE_CONTINUE_SENTINEL)) {
+      spec.startTurn(event.prompt, pi.getFlag("spec") === true);
+    }
     lens.beginTurn();
     lens.setStatus(ctx);
 
@@ -1466,6 +1462,29 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       `${summaryHeader}\n${panel}`,
       hasFailures ? "warning" : "info",
     );
+
+    if (shouldReinject({
+      results,
+      attempts: spec.gateAttempts,
+      isSubagent,
+      enabled: !gateDisabledByEnv(),
+    })) {
+      const prompt = buildContinuationPrompt(results, spec.gateAttempts);
+      const failedCriteria = results.filter((result) => !result.passed).map((result) => result.criterion.statement);
+      await appendHarnessEvent({
+        type: "gate_failure",
+        taskId: sessionId,
+        model: ctx.model?.id,
+        summary: `verification gate re-injected ${failedCriteria.length} unmet criteria`,
+        evidence: failedCriteria,
+        outcome: "needs_work",
+        createdAt: new Date().toISOString(),
+      }).catch((err) => {
+        console.error("[harness][evolution]", err instanceof Error ? err.message : String(err));
+      });
+      spec.recordGateAttempt();
+      await pi.sendUserMessage(prompt, { deliverAs: "followUp" });
+    }
   });
 
   // ── Web search tool ────────────────────────────────────────────────

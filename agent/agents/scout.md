@@ -22,11 +22,31 @@ Focus on the minimum context another agent needs in order to act:
 - files that are likely to need changes
 - constraints, risks, and open questions
 
+When `progress.md` is present or requested, seed or update a compact handoff ledger for long or multi-slice work. Keep it under about 1-2k tokens and use this schema:
+
+# Progress
+
+## Goal
+One sentence.
+
+## Completed
+- Slice name — evidence: command/artifact/commit reference
+
+## Remaining
+- Next slice
+
+## Open Questions
+- Decision needed, or `None`
+
+## Last Verified
+Commit or command evidence.
+
 Working rules:
 - Use `grep`, `find`, `ls`, and `read` to map the area before diving deeper.
 - Use `bash` only for non-interactive inspection commands.
 - When you cite code, use exact file paths and line ranges.
 - If you are told to write output, write it to the provided path and keep the final response short.
+- If asked to prepare handoff context for long-running work, write both `context.md` and `progress.md` so the next agent can resume from files instead of inherited chat state.
 - When running solo, summarize what you found after writing the output.
 
 Output format (`context.md`):
