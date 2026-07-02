@@ -10,7 +10,10 @@ export type HarnessEventType =
   | "wave_handoff_rejected"
   | "delivery_gate_failed"
   | "manual_override"
-  | "harness_change";
+  | "harness_change"
+  | "goal_set"
+  | "goal_achieved"
+  | "goal_paused";
 
 export interface HarnessEvent {
   type: HarnessEventType;

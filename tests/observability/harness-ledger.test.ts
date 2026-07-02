@@ -48,6 +48,16 @@ describe("serializeHarnessEvent", () => {
     }
   });
 
+  it("accepts goal lifecycle event types", () => {
+    for (const type of ["goal_set", "goal_achieved", "goal_paused"] as const) {
+      const line = serializeHarnessEvent({
+        type, taskId: "s1", summary: "x", outcome: "ok",
+        createdAt: "2026-07-02T00:00:00.000Z",
+      });
+      expect(JSON.parse(line).type).toBe(type);
+    }
+  });
+
   it("exposes the default JSONL path", () => {
     expect(HARNESS_LEDGER_DEFAULT_PATH).toBe(".harness/evolution/events.jsonl");
   });
