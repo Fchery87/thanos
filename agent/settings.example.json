@@ -68,6 +68,12 @@
       }
     }
   },
+  "goal": {
+    "maxTurns": 25,
+    "maxTokens": 0,
+    "checkpointEvery": 0,
+    "evaluatorRole": "evaluator"
+  },
   "theme": "brogrammer",
   "defaultThinkingLevel": "high",
   "treeFilterMode": "default",
