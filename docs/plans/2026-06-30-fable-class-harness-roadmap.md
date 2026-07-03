@@ -1,5 +1,7 @@
 # Fable-Class Harness Roadmap — Implementation Plan
 
+> **Status: IMPLEMENTED (2026-07-02).** All milestones M0–M7 landed: default-fail contracts + fresh-context `evaluator`, the non-bypassable completion verification gate (ADR 0006), the heterogeneous review jury (`Ctrl+Shift+R`), reasoning-sandwich model routing, per-iteration delivery gates incl. a `bun audit` scan, the stateless progress ledger, the bounded `/waves` orchestrator, and the trace-driven harness evolution ledger (`.harness/evolution/`). Retained for history. User-facing behavior is documented in `README.md`; concepts in `CONTEXT.md`; see also `docs/harness-evolution.md` and `docs/main-agent-orchestrator-workflow.md`.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use @superpowers:executing-plans to implement this plan task-by-task. Each milestone is independently shippable; do them in order (M0 → M7). Run in a dedicated worktree (`thanos/harness-roadmap`). Use @superpowers:test-driven-development for every code task.
 
 **Goal:** Strengthen the Thanos harness so that *any* configured model produces Fable-5-class output, by imposing the 2026 frontier loop — non-bypassable verification, heterogeneous critique, and a reasoning sandwich — on top of the existing spec/subagent architecture.

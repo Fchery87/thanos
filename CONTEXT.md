@@ -177,6 +177,34 @@ _Avoid_: Silent project-file writes, synthetic task IDs as the only identity, un
 A reviewer-only structured reporting primitive. Findings include priority `P0 | P1 | P2 | P3`, file/line evidence when applicable, summary, rationale, and suggested fix; the review verdict is derived from the collected findings.
 _Avoid_: Unstructured review prose that cannot be aggregated or audited
 
+**Evaluator**
+A read-only, fresh-context specialist that grades collected implementation evidence against the active contract's acceptance criteria and returns PASS/NEEDS_WORK. It did not do the work, so it is unbiased; it treats every criterion as failing until evidence proves it. Distinct from **Oracle** (which challenges plans/diffs) — Evaluator judges *done-ness* against criteria.
+_Avoid_: Letting the builder grade its own work; PASS without evidence
+
+**Default-Fail Contract**
+The acceptance-criteria contract the SpecEngine derives for non-instant prompts. Each criterion names the concrete evidence it requires (`diff`, `test`, `command`, or `manual`) and is false until that evidence is collected, so a model cannot self-certify by asserting completion. The loss function the **Completion Verification Gate** enforces.
+_Avoid_: Keyword-only criteria a model can satisfy by claiming success
+
+**Completion Verification Gate**
+A parent-session `agent_end` gate: when a non-instant spec still has unmet criteria, the harness re-injects the failing criteria as a follow-up turn (`[harness:verify-continue]` sentinel) instead of letting the agent stop. Bounded at three re-injections, preserves the original spec/evidence across continuation turns, disengageable via `THANOS_VERIFY_GATE=off`. See ADR 0006.
+_Avoid_: Advisory-only verification the model can ignore; infinite re-injection
+
+**Goal Loop**
+A session-scoped `/goal <condition>` self-checking loop. After each turn a fresh, tool-less side-channel `completeSimple` **evaluator** (not a subagent — no agent turn, no re-entrancy) judges the last turn's evidence and returns `MET`/`NOT_MET`; `NOT_MET` auto-continues, `MET` clears. Guarded by turn/token/checkpoint ceilings that PAUSE (never clear). Goal directives carry `[harness:goal-directive]` so they skip spec regeneration, and while a goal is active it is the **sole continuation driver** — the Completion Verification Gate defers (`goalActive`). See ADR 0007.
+_Avoid_: A second competing "am I done?" driver firing alongside the gate; false "achieved" on unparseable output
+
+**Review Jury**
+The `Ctrl+Shift+R` code review: parallel focused critics (`reviewer-correctness`, `reviewer-security`, `reviewer-tests`) ideally on different model families, plus an `oracle` devil's advocate that runs even when the critics find nothing, plus a synthesis pass that de-duplicates into one verdict. The main agent is the judge and writes no findings itself. Independent cross-family confirmation over a single reviewer.
+_Avoid_: A single reviewer's blind spots; the judge authoring its own findings
+
+**WAVES Orchestration**
+The `/waves <goal>` bounded parallel workflow: discover the problem shape, decompose into independent slices, fan out bounded parallel workers, verify each structured handoff, synthesize one deliverable. Width and depth are capped; read slices may overlap but write slices must own disjoint paths and run in worktree-isolated writers. Verification of handoffs is the stop function, not a fixed iteration count.
+_Avoid_: Unbounded agent spawning; overlapping write slices that corrupt shared state
+
+**Harness Evolution Ledger**
+A JSONL record at `.harness/evolution/events.jsonl` of high-signal harness events (gate re-injections, delivery-gate failures, review disagreements, wave-handoff rejections, `goal_*` transitions) plus evidence-backed change manifests. Treats agent failures as harness training data so changes carry a predicted improvement and a later falsification check. Summaries and artifact paths only — never prompts, secrets, or raw tool output. See docs/harness-evolution.md.
+_Avoid_: Logging prompts/secrets; harness changes with no failure evidence or follow-up check
+
 ## Approved direction
 
 - **Policy and audit**: Audit logs use safe representations by default; policy rules have stable **Rule ID** values; headless mode fails closed; session approvals never create durable policy; Harness ships `personal`, `team`, and `ci` policy presets.
