@@ -378,6 +378,16 @@ Both altitudes were validated live (2026-06-27) on a non-Anthropic model, so the
 
 Each role maps to a markdown file in `agent/agents/` defining its system prompt, optional `tools` allowlist, `model`, and `context` mode.
 
+In addition to the roles above, three **focused review critics** ship as agent files for the code-review jury: `reviewer-correctness`, `reviewer-security`, and `reviewer-tests`. They are read-only and each scoped to one concern.
+
+### Code review jury
+
+`Ctrl+Shift+R` no longer spawns a single reviewer. It dispatches a **heterogeneous critic jury**: `reviewer-correctness`, `reviewer-security`, and `reviewer-tests` run in **parallel** on the session diff (each pinnable to a different model family for independent blind spots — see [Per-role model routing](#per-role-model-routing)), an `oracle` runs as a **devil's advocate that challenges the findings even when the reviewers report nothing**, and a synthesis pass de-duplicates and ranks into one verdict (APPROVE / COMMENT / REQUEST_CHANGES). The main agent acts as judge and does not write findings itself. Independent confirmation across model families is the strongest review signal.
+
+### Bounded waves (`/waves`)
+
+`/waves <goal>` is an explicit opt-in orchestration for large research, analysis, audit, or carefully isolated implementation work. Rather than one linear pass, the main agent **discovers the problem shape, decomposes it into independent slices, fans out bounded parallel workers, verifies each structured handoff, and synthesizes one deliverable**. Waves are bounded — width and depth are capped, read slices may overlap but **write slices must own disjoint paths** and run in worktree-isolated writer agents (`build`/`worker`) — so parallelism never corrupts shared state. Verification of the handoffs is the stop function, not a fixed iteration count. See [docs/main-agent-orchestrator-workflow.md](docs/main-agent-orchestrator-workflow.md).
+
 ### Per-role model routing
 
 Subagent model routing is controlled in `~/.pi/agent/settings.json` under `subagents`:
@@ -471,6 +481,7 @@ Manual commands:
 | `/run designer <task>` | Run Designer through `pi-subagents` directly; also appears in `/run` completions after reload |
 | `/lens` | Thanos Lens Lite: changed files, read-before-modify guard, secret scan, manual diagnostics |
 | `/goal [condition\|pause\|resume\|clear]` | Set a self-checking goal; the agent auto-continues until a fresh evaluator confirms it. No arg shows status. Main session only; pauses on ceilings. See [`/goal`](#goal--self-checking-autonomous-loop) |
+| `/waves <goal>` | Run a bounded WAVES orchestration: discover the shape, plan independent slices, fan out parallel workers, verify handoffs, synthesize one deliverable. See [Bounded waves](#bounded-waves-waves) |
 | `/todo` | Show the current todo checklist for this branch (Escape to close); `/todo export` prints the markdown |
 | `/modes` | Select the default specialist mode used by `task` when `type` is omitted (`explore`, `plan`, `build`, `reviewer`, `designer`, `oracle`, `researcher`, `evaluator`) |
 | `/yolo` | Toggle yolo mode for this session (bypasses thanos permission checks; Lens Lite secret scan still runs). Refuses when yolo is locked by config — see [Yolo lockout](#yolo-lockout) |
@@ -507,7 +518,7 @@ All shortcuts use `Ctrl+Shift+<key>` for cross-platform consistency. On macOS, p
 | `Ctrl+Shift+E` | Show active spec and verification state | **E** = **e**xpand spec |
 | `Ctrl+Shift+G` | Show active policy rules | **G** = **g**overnance |
 | `Ctrl+Shift+A` | Show last 10 audit log entries | **A** = **a**udit |
-| `Ctrl+Shift+R` | Run code review (spawns reviewer subagent) | **R** = **r**eview |
+| `Ctrl+Shift+R` | Run code review (heterogeneous critic jury + devil's advocate) | **R** = **r**eview |
 | `Ctrl+Shift+D` | Spawn designer agent | **D** = **d**esigner |
 | `Ctrl+Shift+Y` | Toggle yolo mode | **Y** = **y**olo |
 
@@ -535,7 +546,7 @@ glm-5.1 ❯ D:45% ❯ 42%/200k ❯ think:med ❯ ↑15.2k ↓3.1k ❯ Alora ❯ 
 
 Segments: model · subscription usage · context · thinking · tokens · path · vcs · cost · extension statuses
 
-A custom `segTokens` segment shows per-turn input (↑) and output (↓) token counts. Thanos Lens Lite also exposes a compact `lens:<changed>` status indicator. When a todo list is active, a `todo:<done>/<total>` segment reflects checklist progress for the current branch (it reconstructs from the session branch, so it survives reload and is correct after a branch/fork).
+A custom `segTokens` segment shows per-turn input (↑) and output (↓) token counts. Thanos Lens Lite also exposes a compact `lens:<changed>` status indicator. When a todo list is active, a `todo:<done>/<total>` segment reflects checklist progress for the current branch (it reconstructs from the session branch, so it survives reload and is correct after a branch/fork). While a [`/goal`](#goal--self-checking-autonomous-loop) is active, a `◎ goal:<turns>t·<growth>k` segment shows the turn count and cumulative context growth (`◎ goal:paused` when paused).
 
 ---
 
@@ -599,7 +610,11 @@ Recommended timeouts:
 
 ### Spec lifecycle
 
-Thanos derives acceptance criteria from your prompt and verifies them after each run. Use `--spec` to require explicit approval before the first write.
+Thanos derives acceptance criteria from your prompt and verifies them after each run. Use `--spec` to require explicit approval before the first write. Criteria are **default-fail**: each one requires concrete evidence (a diff, a passing test/command, or explicit manual evidence) and stays false until that evidence is collected — so a model cannot self-certify completion by asserting it. A read-only `evaluator` specialist can grade the collected evidence against the criteria from a fresh context, and the [completion verification gate](#completion-verification-gate) re-injects unmet criteria instead of letting the agent stop.
+
+### Harness evolution ledger
+
+Thanos treats agent failures as harness training data. High-signal events — verification-gate re-injections, delivery-gate failures, review disagreements, wave-handoff rejections, and `/goal` lifecycle transitions (`goal_set` / `goal_achieved` / `goal_paused`) — are recorded as JSONL to `.harness/evolution/events.jsonl` (gitignored; summaries and artifact paths only, never prompts or secrets). Every deliberate harness change should carry a manifest entry answering: what failure evidence motivated it, the root cause, the exact component changed, the predicted improvement, the regression risk, and when to check whether it helped. See [docs/harness-evolution.md](docs/harness-evolution.md).
 
 ### Policy
 
