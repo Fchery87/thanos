@@ -64,12 +64,14 @@ Thanos ships a **curated provider/model catalog** but **no maintainer API keys**
 and model is present out of the box — you only add your own keys.
 
 The catalog is committed as `agent/models.example.json`. The installer copies it to
-`agent/models.json` on first install (it never overwrites an existing one). After install, browse
-the full catalog with `/models` — unauthenticated providers appear marked as needing a key.
+`agent/models.json` on first install (it never overwrites an existing one). After install, add at
+least one provider credential, then use `/models` to select from configured providers. Providers
+without a key or OAuth credential are hidden from `/models` so the selector only offers models that
+can actually switch successfully.
 
 ```bash
 thanos
-# then use /models to browse/select, or /login to add credentials
+# then use /login to add credentials and /models to select a configured model
 ```
 
 ### Adding keys
@@ -118,10 +120,11 @@ No API keys ship with Thanos — you bring your own.
 
 ```text
 /login        # pick a provider → "Use an API key" → paste; stored in agent/auth.json
-/models       # browse the catalog and select the active model
+/models       # choose the active model from configured providers
 ```
 
-Providers without credentials still appear in `/models`, marked as needing a key. See [Adding keys](#adding-keys) for env-var and shell-command alternatives.
+Providers without credentials do not appear in `/models`. Add a key with `/login`, an environment
+variable, or a shell-command credential first; see [Adding keys](#adding-keys) for the alternatives.
 
 ### Step 3 — Understand the permission model (important)
 
@@ -199,6 +202,8 @@ Use the visible slash commands:
 ```
 
 When routing is **on**, `subagents.agentOverrides` is active and each assigned role uses its configured model. When routing is **off**, Thanos saves the assignments under `subagents.savedAgentOverrides` and removes active `agentOverrides`, so the model selected with `/models` controls all subagents as it did before per-role routing existed. Editing routes while disabled updates the saved assignments without activating them.
+
+Long provider/model references are shortened in the picker so the terminal UI stays stable while scrolling, but Thanos still saves the full model reference in `settings.json`.
 
 ### Step 6 — Track and verify
 
@@ -458,7 +463,7 @@ Manual commands:
 
 | Command | Description |
 |---------|-------------|
-| `/models` | Two-step provider → model selector with reasoning/image badges |
+| `/models` | Two-step provider → model selector for providers with configured credentials; includes reasoning/image badges |
 | `/subagents-models` | Show per-subagent model routing, saved assignments, and usage |
 | `/subagents-models-set [role]` | Select a role, then choose one of your active catalog models for that subagent |
 | `/subagents-models-toggle [on\|off]` | Enable per-subagent routing or disable it so `/models` controls all subagents |
@@ -483,6 +488,11 @@ Manual commands:
 | `/rename` | Rename the current session |
 | `/status` | Show session status |
 | `/worktree` | Manage git worktrees |
+
+Slash command panels and interactive pickers are rendered with terminal-safe widths. Long paths,
+provider names, MCP server names, model references, policy rules, and diagnostics are shortened in
+the visible UI instead of wrapping across the terminal; underlying command behavior still uses the
+full original values.
 
 ---
 

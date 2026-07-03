@@ -1,7 +1,7 @@
 // src/index.ts
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { matchesKey, Text, truncateToWidth } from "@earendil-works/pi-tui";
+import { matchesKey, Text } from "@earendil-works/pi-tui";
 import { join } from "node:path";
 
 import { AuditLogger } from "./audit/logger";
@@ -42,7 +42,18 @@ import {
   initializeMcpSession,
   reloadMcpSession,
 } from "./mcp/lifecycle";
-import { formatLabel, formatValue, formatSpecForApproval, formatPanel, noopTheme } from "./ui-utils";
+import {
+  DEFAULT_PICKER_LABEL_WIDTH,
+  fitTerminalText,
+  fixedWidthTerminalText,
+  formatLabel,
+  formatValue,
+  formatSpecForApproval,
+  formatPanel,
+  makeTerminalSafeOptions,
+  noopTheme,
+  stripAnsi,
+} from "./ui-utils";
 import { renderAuditPanel, renderPolicyPanel, renderSessionSnapshotPanel, renderSpecVerificationPanel } from "./commands/presenters";
 import { renderWelcomeHeader, formatTimeAgo, type WelcomeMcpSummary, type WelcomePolicySummary } from "./welcome/header";
 import { MemoryStore, MAX_MEMORY_LENGTH } from "./memory/store";
@@ -324,9 +335,9 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         },
         render(width: number) {
           const lines = ["", ...renderTodoLines(todoState, theme), "", theme.fg("dim", "  Press Escape to close")];
-          // truncateToWidth is ANSI-aware; a plain slice would count escape codes
+          // fitTerminalText is ANSI-aware; a plain slice would count escape codes
           // against the width and could cut a sequence mid-byte, leaking color.
-          return lines.map((l) => truncateToWidth(l, width));
+          return lines.map((l) => fitTerminalText(l, width));
         },
         invalidate() {},
       }));
@@ -677,12 +688,12 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
           const existingKeys = sub === "reauth" && existing.env ? Object.keys(existing.env) : [];
           const hintStr = existingKeys.length > 0 ? existingKeys.map((k) => `${k}=***`).join(", ") : "";
           const key = await ctx.ui.input(
-            `Set env var for ${name} — KEY`,
+            fitTerminalText(`Set env var for ${name} — KEY`, DEFAULT_PICKER_LABEL_WIDTH),
             hintStr ? `Existing: ${hintStr}` : "e.g. OPENAI_API_KEY",
           );
           if (!key?.trim()) { ctx.ui.notify("Auth cancelled.", "info"); return; }
           const val = await ctx.ui.input(
-            `Set env var for ${name} — VALUE for ${key.trim()}`,
+            fitTerminalText(`Set env var for ${name} — VALUE for ${key.trim()}`, DEFAULT_PICKER_LABEL_WIDTH),
             "(hidden after saving)",
           );
           if (val === undefined) { ctx.ui.notify("Auth cancelled.", "info"); return; }
@@ -719,9 +730,9 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
           } else {
             const existingHdrs = sub === "reauth" && existing.headers ? Object.keys(existing.headers) : [];
             const hintStr = existingHdrs.length > 0 ? existingHdrs.map((k) => `${k}: ***`).join(", ") : "";
-            const header = await ctx.ui.input(`Set header for ${name} — Header name`, hintStr ? `Existing: ${hintStr}` : "e.g. Authorization");
+            const header = await ctx.ui.input(fitTerminalText(`Set header for ${name} — Header name`, DEFAULT_PICKER_LABEL_WIDTH), hintStr ? `Existing: ${hintStr}` : "e.g. Authorization");
             if (!header?.trim()) { ctx.ui.notify("Auth cancelled.", "info"); return; }
-            const val = await ctx.ui.input(`Set header for ${name} — Value for ${header.trim()}`, "e.g. Bearer sk-…");
+            const val = await ctx.ui.input(fitTerminalText(`Set header for ${name} — Value for ${header.trim()}`, DEFAULT_PICKER_LABEL_WIDTH), "e.g. Bearer sk-…");
             if (val === undefined) { ctx.ui.notify("Auth cancelled.", "info"); return; }
             await writeServerSecrets(name, { headers: { [header.trim()]: val.trim() } });
           }
@@ -772,12 +783,13 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       // ── Interactive mode: pick a server, then pick an action ─────────
       if (ctx.hasUI) {
         // Build labelled options showing server state inline
-        const options = statuses.map((s) => {
+        const optionDetails = statuses.map((s) => {
           if (s.disabled) return `○  ${s.name}  [${s.source}]  disabled`;
           const icon   = s.error ? "✗" : "✓";
           const detail = s.error ? `error` : `${s.toolCount} tools`;
           return `${icon}  ${s.name}  [${s.source}]  ${detail}`;
         });
+        const options = makeTerminalSafeOptions(optionDetails);
 
         const picked = await ctx.ui.select("Select an MCP server", options);
         if (!picked) return;
@@ -804,7 +816,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
           actions.push("reauth — edit existing credentials, then reconnect");
         }
 
-        const action = await ctx.ui.select(`Action for: ${sName}`, actions);
+        const action = await ctx.ui.select(fitTerminalText(`Action for: ${sName}`, DEFAULT_PICKER_LABEL_WIDTH), actions);
         if (!action) return;
         const verb = action.split(" ")[0]!;
 
@@ -872,9 +884,9 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
           if (config.type === "stdio") {
             const existingKeys = verb === "reauth" && existing.env ? Object.keys(existing.env) : [];
             const hintStr = existingKeys.length > 0 ? existingKeys.map((k) => `${k}=***`).join(", ") : "";
-            const key = await ctx.ui.input(`Env var KEY for ${sName}`, hintStr ? `Existing: ${hintStr}` : "e.g. OPENAI_API_KEY");
+            const key = await ctx.ui.input(fitTerminalText(`Env var KEY for ${sName}`, DEFAULT_PICKER_LABEL_WIDTH), hintStr ? `Existing: ${hintStr}` : "e.g. OPENAI_API_KEY");
             if (!key?.trim()) { ctx.ui.notify("Auth cancelled.", "info"); return; }
-            const val = await ctx.ui.input(`Value for ${key.trim()}`, "(hidden after saving)");
+            const val = await ctx.ui.input(fitTerminalText(`Value for ${key.trim()}`, DEFAULT_PICKER_LABEL_WIDTH), "(hidden after saving)");
             if (val === undefined) { ctx.ui.notify("Auth cancelled.", "info"); return; }
             await writeServerSecrets(sName, { env: { [key.trim()]: val } });
           } else {
@@ -909,9 +921,9 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
             } else {
               const existingHdrs = verb === "reauth" && existing.headers ? Object.keys(existing.headers) : [];
               const hintStr = existingHdrs.length > 0 ? existingHdrs.map((k) => `${k}: ***`).join(", ") : "";
-              const header = await ctx.ui.input(`Header name for ${sName}`, hintStr ? `Existing: ${hintStr}` : "e.g. Authorization");
+              const header = await ctx.ui.input(fitTerminalText(`Header name for ${sName}`, DEFAULT_PICKER_LABEL_WIDTH), hintStr ? `Existing: ${hintStr}` : "e.g. Authorization");
               if (!header?.trim()) { ctx.ui.notify("Auth cancelled.", "info"); return; }
-              const val = await ctx.ui.input(`Value for ${header.trim()}`, "e.g. Bearer sk-…");
+              const val = await ctx.ui.input(fitTerminalText(`Value for ${header.trim()}`, DEFAULT_PICKER_LABEL_WIDTH), "e.g. Bearer sk-…");
               if (val === undefined) { ctx.ui.notify("Auth cancelled.", "info"); return; }
               await writeServerSecrets(sName, { headers: { [header.trim()]: val.trim() } });
             }
@@ -1020,12 +1032,16 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         ctx.ui.notify("No models are registered. Add a provider catalog or update Pi.", "warning");
         return;
       }
+      const configuredModels = models.filter((m) => ctx.modelRegistry.hasConfiguredAuth(m));
+      if (configuredModels.length === 0) {
+        ctx.ui.notify("No configured model providers found. Add an API key or OAuth credentials, then reopen /models.", "warning");
+        return;
+      }
 
-      // Step 1: Group models by provider. Show all registered models, even when
-      // the provider is not authenticated yet, so new users can browse choices
-      // before adding their own API keys or OAuth credentials.
-      const providerMap = new Map<string, typeof models>();
-      for (const m of models) {
+      // Step 1: Group models by authenticated provider so /models only offers
+      // providers that can actually switch successfully.
+      const providerMap = new Map<string, typeof configuredModels>();
+      for (const m of configuredModels) {
         const list = providerMap.get(m.provider) ?? [];
         list.push(m);
         providerMap.set(m.provider, list);
@@ -1044,7 +1060,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         const tag = name === currentProvider ? theme.fg("accent", "●") : theme.fg("dim", "○");
         const authed = models.some((m) => ctx.modelRegistry.hasConfiguredAuth(m));
         const authLabel = authed ? "configured" : "needs key";
-        return `${tag} ${theme.bold(name.padEnd(24, " "))} ${theme.fg("dim", `${models.length} model${models.length !== 1 ? "s" : ""} · ${authLabel}`)}`;
+        return fitTerminalText(`${tag} ${theme.bold(fixedWidthTerminalText(name, 24))} ${theme.fg("dim", `${models.length} model${models.length !== 1 ? "s" : ""} · ${authLabel}`)}`, DEFAULT_PICKER_LABEL_WIDTH);
       });
 
       const selectedProvider = await ctx.ui.select("Select provider", providerLabels);
@@ -1070,12 +1086,14 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         const brain = m.reasoning ? "\u{1F9E0}" : "";
         const img = m.input?.includes("image") ? " \u{1F4F7}" : "";
         const tag = isCurrent ? theme.fg("success", " ✓") : "";
-        const id = theme.fg("accent", (m.name || m.id).padEnd(32, " "));
         const ctxK = m.contextWindow ? `${Math.round(m.contextWindow / 1000)}k` : "?";
         const outK = m.maxTokens ? `${Math.round(m.maxTokens / 1000)}k` : "?";
         const auth = ctx.modelRegistry.hasConfiguredAuth(m) ? "" : theme.fg("warning", " · needs key");
         const dims = theme.fg("dim", `${ctxK} ctx · ${outK} out`);
-        return `${id} ${dims}${brain}${img}${auth}${tag}`;
+        const suffix = ` ${dims}${brain}${img}${auth}${tag}`;
+        const nameWidth = Math.max(16, DEFAULT_PICKER_LABEL_WIDTH - stripAnsi(suffix).length);
+        const id = theme.fg("accent", fixedWidthTerminalText(m.name || m.id, nameWidth));
+        return fitTerminalText(`${id}${suffix}`, DEFAULT_PICKER_LABEL_WIDTH);
       });
 
       const selectedModel = await ctx.ui.select(

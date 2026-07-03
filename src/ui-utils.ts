@@ -1,4 +1,5 @@
 import type { FormalSpec } from "./spec/types";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 
 export interface TUITheme {
   fg(color: string, text: string): string;
@@ -19,6 +20,34 @@ export const noopTheme: TUITheme = {
   inverse: (text) => text,
   strikethrough: (text) => text,
 };
+
+export const DEFAULT_PICKER_LABEL_WIDTH = 72;
+const MAX_PANEL_VISUAL_WIDTH = 80;
+const MAX_PANEL_WIDTH = MAX_PANEL_VISUAL_WIDTH - 2;
+
+export function fitTerminalText(text: string, width: number): string {
+  return truncateToWidth(text, width);
+}
+
+export function fixedWidthTerminalText(text: string, width: number): string {
+  return fitTerminalText(text, width).padEnd(width, " ");
+}
+
+export function makeTerminalSafeOptions(options: string[], width = DEFAULT_PICKER_LABEL_WIDTH): string[] {
+  const used = new Set<string>();
+  return options.map((option) => {
+    let label = fitTerminalText(option, width);
+    let suffixIndex = 2;
+    while (used.has(label)) {
+      const suffix = ` #${suffixIndex}`;
+      const suffixWidth = stripAnsi(suffix).length;
+      label = `${fitTerminalText(option, Math.max(0, width - suffixWidth))}${suffix}`;
+      suffixIndex += 1;
+    }
+    used.add(label);
+    return label;
+  });
+}
 
 export function formatBadge(theme: TUITheme, decision: string): string {
   if (decision === "allow") {
@@ -74,7 +103,7 @@ export function stripAnsi(str: string): string {
 }
 
 export function formatPanel(theme: TUITheme, title: string, content: string | string[], borderColor: "dim" | "accent" | "success" | "warning" | "error" = "dim"): string {
-  const lines = Array.isArray(content) ? content : content.split("\n");
+  const rawLines = Array.isArray(content) ? content : content.split("\n");
   
   const topL = "╭";
   const topR = "╮";
@@ -84,20 +113,23 @@ export function formatPanel(theme: TUITheme, title: string, content: string | st
   const vt = "│";
 
   let maxLineWidth = stripAnsi(title).length + 4;
-  for (const line of lines) {
+  for (const line of rawLines) {
     const len = stripAnsi(line).length;
     if (len > maxLineWidth) maxLineWidth = len;
   }
   
-  const panelWidth = Math.max(60, maxLineWidth + 2);
+  const panelWidth = Math.min(MAX_PANEL_WIDTH, Math.max(60, maxLineWidth + 2));
+  const contentWidth = Math.max(1, panelWidth - 2);
+  const lines = rawLines.map((line) => fitTerminalText(line, contentWidth));
 
   const border = (char: string) => theme.fg(borderColor, char);
 
-  const titleStrip = stripAnsi(title);
+  const titleText = fitTerminalText(title, Math.max(1, panelWidth - 4));
+  const titleStrip = stripAnsi(titleText);
   const leftHzCount = 1;
   const rightHzCount = Math.max(0, panelWidth - titleStrip.length - leftHzCount - 2);
   
-  const topBorder = `${border(topL)}${border(hz)} ${theme.bold(title)} ${border(hz.repeat(rightHzCount))}${border(topR)}`;
+  const topBorder = `${border(topL)}${border(hz)} ${theme.bold(titleText)} ${border(hz.repeat(rightHzCount))}${border(topR)}`;
   
   const paddedLines = lines.map(line => {
     const visualLen = stripAnsi(line).length;

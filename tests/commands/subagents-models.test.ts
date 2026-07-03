@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import register from "../../src/index";
+import { stripAnsi } from "../../src/ui-utils";
 
 type Handler = (...args: unknown[]) => unknown;
 type RegisterApi = Parameters<typeof register>[0];
@@ -121,6 +122,51 @@ describe("/subagents-models command", () => {
       subagents: {
         agentOverrides: {
           reviewer: { model: "theclawbay/gemini-2.5-pro" },
+        },
+      },
+    });
+  });
+
+  it("shows terminal-safe model selector labels while saving the selected full model ref", async () => {
+    const home = await mkdtemp(join(tmpdir(), "thanos-slash-models-"));
+    const agentDir = join(home, ".pi", "agent");
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(join(agentDir, "settings.json"), JSON.stringify({
+      subagents: { disableBuiltins: true },
+    }, null, 2));
+    const longProvider = "provider-with-an-exceptionally-long-name-for-selector-rendering";
+    const longModel = "model-with-an-exceptionally-long-name-and-routing-suffix-for-terminal-rendering";
+    await writeFile(join(agentDir, "models.json"), JSON.stringify({
+      providers: {
+        [longProvider]: {
+          models: [
+            { id: longModel, input: ["text", "image"] },
+          ],
+        },
+      },
+    }, null, 2));
+    vi.stubEnv("HOME", home);
+
+    const notify = vi.fn();
+    const select = vi.fn(async (_title: string, options: string[]) => {
+      for (const option of options) {
+        expect(stripAnsi(option).length).toBeLessThanOrEqual(72);
+      }
+      return options[0];
+    });
+    const { api, handlers } = createFakePi();
+    register(api);
+
+    await handlers.get("subagents-models")?.("set reviewer", {
+      hasUI: true,
+      ui: { notify, select, setStatus: vi.fn(), theme: { fg: (_kind: string, text: string) => text } },
+    });
+
+    const selectedRef = `${longProvider}/${longModel}`;
+    expect(JSON.parse(await readFile(join(agentDir, "settings.json"), "utf-8"))).toMatchObject({
+      subagents: {
+        agentOverrides: {
+          reviewer: { model: selectedRef },
         },
       },
     });

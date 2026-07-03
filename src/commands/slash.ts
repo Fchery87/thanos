@@ -9,7 +9,7 @@ import type { SpecEngine } from "../spec/engine";
 import type { TaskParams } from "../agents/task-tool";
 import { runWorktreeGc } from "../agents/task-tool";
 import { handleSubagentModelsCommand } from "../agents/model-routing";
-import { formatBadge, formatLabel, formatValue, formatPanel } from "../ui-utils";
+import { formatBadge, formatLabel, formatValue, formatPanel, makeTerminalSafeOptions } from "../ui-utils";
 import { renderAuditPanel, renderPolicyPanel, renderSessionSnapshotPanel, renderSpecVerificationPanel } from "../commands/presenters";
 import { buildWavesCommandPrompt } from "../waves/command";
 
@@ -173,8 +173,11 @@ export function registerSlashCommands(
             if (typeof ctx.ui.select !== "function") {
               return undefined;
             }
-            const selected = await ctx.ui.select(`Choose model for ${role}`, models);
-            return typeof selected === "string" ? selected : undefined;
+            const labels = makeTerminalSafeOptions(models);
+            const selected = await ctx.ui.select(`Choose model for ${role}`, labels);
+            if (typeof selected !== "string") return undefined;
+            const index = labels.indexOf(selected);
+            return index >= 0 ? models[index] : undefined;
           },
         });
         ctx.ui.notify(result.message, result.level);
@@ -201,8 +204,11 @@ export function registerSlashCommands(
             if (typeof ctx.ui.select !== "function") {
               return undefined;
             }
-            const selected = await ctx.ui.select(`Choose model for ${role}`, models);
-            return typeof selected === "string" ? selected : undefined;
+            const labels = makeTerminalSafeOptions(models);
+            const selected = await ctx.ui.select(`Choose model for ${role}`, labels);
+            if (typeof selected !== "string") return undefined;
+            const index = labels.indexOf(selected);
+            return index >= 0 ? models[index] : undefined;
           },
         });
         ctx.ui.notify(result.message, result.level);
