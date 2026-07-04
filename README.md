@@ -317,7 +317,7 @@ See [/ship](#ship) for details.
 
 | Package | Status |
 |---------|--------|
-| `npm:pi-lens` | ❌ Disabled from always-on runtime. It caused 11–52s startup/edit latency from LSP, lint, `knip`, `jscpd`, and cascade-diagnostic hooks. Replaced by Thanos Lens Lite for low-cost safety and manual diagnostics. |
+| `npm:pi-lens` | ❌ Removed (not installed). It caused 11–52s startup/edit latency from LSP, lint, `knip`, `jscpd`, and cascade-diagnostic hooks. Replaced by Thanos Lens Lite for low-cost safety and manual diagnostics. |
 
 ### Rytswd extensions (active)
 

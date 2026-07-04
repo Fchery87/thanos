@@ -1410,7 +1410,21 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       "mid-flight, wasting all their work. If you must bound a run, use at least " +
       "600000 (10 minutes).";
 
-    const systemPrompt = [injected, delegationDirective].filter(Boolean).join("\n\n");
+    // ── Auto-invoke: nudge the top-level agent to reach for skills ──
+    // Pi core injects an <available_skills> block into the system prompt but
+    // only softly ("use the read tool when it matches"). Non-Claude models
+    // routinely ignore that hint, so restate it as a hard directive. Parent
+    // only — subagents receive their curated skill set via pi-subagents.
+    const skillsDirective = isSubagent ? "" :
+      "Specialized skills are listed in the <available_skills> block of this " +
+      "system prompt. Before doing non-trivial work, scan that block: if any " +
+      "skill's description matches the task, `read` its SKILL.md file FIRST and " +
+      "follow its instructions — do not improvise work a skill already covers. " +
+      "Skills and specialist subagents are complementary: a skill gives you the " +
+      "procedure to run inline; a subagent runs the work in fresh context. When " +
+      "both fit, load the skill and delegate under its guidance.";
+
+    const systemPrompt = [injected, delegationDirective, skillsDirective].filter(Boolean).join("\n\n");
 
     return systemPrompt ? { systemPrompt } : undefined;
   });

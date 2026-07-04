@@ -47,7 +47,7 @@ function renderWelcomeLines(theme: TUITheme, args: WelcomeHeaderArgs, width: num
 
   const brand = renderBrand(theme, w);
   const status = renderBox(theme, "Session", renderSessionRows(theme, args, Math.min(w, 64) - 2), Math.min(w, 64));
-  const commands = renderBox(theme, "Commands", renderCommandRows(theme, Math.min(w, 54) - 2), Math.min(w, 54), "accent");
+  const commands = renderBox(theme, "Commands", renderCommandRows(theme, Math.min(w, 54) - 2), Math.min(w, 54));
   const hotkeys = renderBox(theme, "Shortcuts", renderHotkeyRows(theme, Math.min(w, 54) - 2), Math.min(w, 54));
   const recent = renderBox(theme, "Recent work", renderRecentRows(theme, args.recentRows, Math.min(w, 64) - 2), Math.min(w, 64));
   if (w < 108) {
@@ -65,7 +65,7 @@ function renderWelcomeLines(theme: TUITheme, args: WelcomeHeaderArgs, width: num
     ...renderBox(theme, "Recent work", renderRecentRows(theme, args.recentRows, leftWidth - 2), leftWidth),
   ];
   const right = [
-    ...renderBox(theme, "Commands", renderCommandRows(theme, rightWidth - 2), rightWidth, "accent"),
+    ...renderBox(theme, "Commands", renderCommandRows(theme, rightWidth - 2), rightWidth),
     "",
     ...renderBox(theme, "Shortcuts", renderHotkeyRows(theme, rightWidth - 2), rightWidth),
   ];
@@ -97,16 +97,53 @@ const THANOS_LOGO = [
   "   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚══════╝",
 ] as const;
 
+// Vertical gradient for the wordmark. The thinking-level tokens are the one
+// guaranteed brightness ramp in every pi theme, so the fade tracks whatever
+// theme is active (in the thanos theme: pale lavender → deep amethyst).
+const LOGO_RAMP = [
+  "thinkingXhigh",
+  "thinkingHigh",
+  "thinkingHigh",
+  "thinkingMedium",
+  "thinkingMedium",
+  "thinkingLow",
+] as const;
+
+// The infinity stones: one gem per feature. The amethyst wordmark above is
+// the power stone; these five complete the gauntlet.
+const STONES = [
+  { color: "error", label: "governance" }, // reality
+  { color: "syntaxNumber", label: "subagents" }, // soul
+  { color: "mdLink", label: "web" }, // space
+  { color: "success", label: "quality" }, // time
+  { color: "warning", label: "86+ skills" }, // mind
+] as const;
+
+function renderStoneStrip(theme: TUITheme, width: number): string {
+  const parts: string[] = [];
+  let used = 0;
+  for (const stone of STONES) {
+    const plainWidth = 2 + stone.label.length;
+    const sep = parts.length > 0 ? 2 : 0;
+    if (used + sep + plainWidth > width) break;
+    parts.push(`${theme.fg(stone.color, "◆")} ${theme.fg("dim", stone.label)}`);
+    used += sep + plainWidth;
+  }
+  if (parts.length === 0) {
+    return theme.fg("dim", truncate("governance · subagents · web · quality · skills", width));
+  }
+  return parts.join("  ");
+}
+
 function renderBrand(theme: TUITheme, width: number): string[] {
-  const subtitle = theme.fg("dim", truncate("governance · subagents · web access · code quality · 86+ skills", width));
   if (width < 56) {
-    const title = `${theme.bold(theme.fg("accent", "THANOS"))} ${theme.fg("dim", "Agent Harness for Pi")}`;
-    return [fitAnsi(title, width), subtitle];
+    const title = `${theme.bold(theme.fg("accent", "THANOS"))} ${theme.fg("dim", "Agent Distribution for Pi")}`;
+    return [fitAnsi(title, width), renderStoneStrip(theme, width)];
   }
   return [
-    ...THANOS_LOGO.map((line) => theme.bold(theme.fg("accent", truncate(line, width)))),
+    ...THANOS_LOGO.map((line, i) => theme.bold(theme.fg(LOGO_RAMP[i], truncate(line, width)))),
     theme.bold(truncate("Agent Distribution for Pi", width)),
-    subtitle,
+    renderStoneStrip(theme, width),
   ];
 }
 
@@ -141,13 +178,16 @@ function renderCommandRows(theme: TUITheme, width: number): string[] {
 
 function renderHotkeyRows(theme: TUITheme, width: number): string[] {
   // Leading space matches the inner padding of the Session/Commands rows so
-  // every box lines its content up against the same left edge.
+  // every box lines its content up against the same left edge. Chords carry
+  // the gauntlet gold (mdCode) so the actionable part is what pops.
   const inner = Math.max(0, width - 1);
+  const chord = (keys: string) => theme.fg("mdCode", keys);
+  const label = (text: string) => theme.fg("dim", text);
   return [
-    ` ${truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+T")} thinking  ${theme.fg("dim", "Ctrl+Shift+Y")} yolo`, inner)}`,
-    ` ${truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+F")} snapshot   ${theme.fg("dim", "Ctrl+Shift+G")} policy`, inner)}`,
-    ` ${truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+R")} review     ${theme.fg("dim", "Ctrl+Shift+D")} designer`, inner)}`,
-    ` ${truncateAnsi(`${theme.fg("dim", "Ctrl+Shift+E")} spec       ${theme.fg("dim", "Ctrl+Shift+A")} audit`, inner)}`,
+    ` ${truncateAnsi(`${chord("Ctrl+Shift+T")} ${label("thinking")}  ${chord("Ctrl+Shift+Y")} ${label("yolo")}`, inner)}`,
+    ` ${truncateAnsi(`${chord("Ctrl+Shift+F")} ${label("snapshot")}   ${chord("Ctrl+Shift+G")} ${label("policy")}`, inner)}`,
+    ` ${truncateAnsi(`${chord("Ctrl+Shift+R")} ${label("review")}     ${chord("Ctrl+Shift+D")} ${label("designer")}`, inner)}`,
+    ` ${truncateAnsi(`${chord("Ctrl+Shift+E")} ${label("spec")}       ${chord("Ctrl+Shift+A")} ${label("audit")}`, inner)}`,
   ];
 }
 
@@ -181,16 +221,18 @@ function keyValue(theme: TUITheme, key: string, value: string, width: number, co
 function command(theme: TUITheme, name: string, description: string, width: number): string {
   const nameWidth = 10;
   const descriptionWidth = Math.max(0, width - nameWidth - 2);
-  return ` ${theme.fg("accent", name.padEnd(nameWidth, " "))}${theme.fg("dim", truncate(description, descriptionWidth))}`;
+  return ` ${theme.fg("mdCode", name.padEnd(nameWidth, " "))}${theme.fg("dim", truncate(description, descriptionWidth))}`;
 }
 
-function renderBox(theme: TUITheme, title: string, lines: string[], width: number, borderColor: "dim" | "accent" = "dim"): string[] {
+function renderBox(theme: TUITheme, title: string, lines: string[], width: number): string[] {
   const boxWidth = Math.max(12, width);
   const inner = boxWidth - 2;
   const safeTitle = truncate(title, Math.max(1, inner - 4));
-  const border = (s: string) => theme.fg(borderColor, s);
+  // Frames use `dim` (not borderMuted): brogrammer's borderMuted is #222222,
+  // which disappears against its #131313 background.
+  const border = (s: string) => theme.fg("dim", s);
   const topPrefix = `─ ${safeTitle} `;
-  const titleCell = `${border("─ ")}${theme.bold(theme.fg(borderColor, safeTitle))}${border(" ")}`;
+  const titleCell = `${border("─ ")}${theme.bold(theme.fg("accent", safeTitle))}${border(" ")}`;
   const top = `${border("╭")}${titleCell}${border("─".repeat(Math.max(0, inner - topPrefix.length)))}${border("╮")}`;
   const body = lines.map((line) => {
     const safe = fitAnsi(line, inner);
