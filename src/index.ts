@@ -17,7 +17,9 @@ import { handleAgentEnd as handleGoalAgentEnd } from "./goal/loop";
 import { extractLastTurn, readWillRetry } from "./goal/extract";
 import { runEvaluatorWith } from "./goal/evaluator";
 import { GOAL_DIRECTIVE_SENTINEL } from "./goal/prompts";
-import { loadGoalSettings } from "./goal/load-settings";
+import { loadEvaluatorOverride, loadGoalSettings } from "./goal/load-settings";
+import { pickEvaluatorModel } from "./goal/evaluator-model";
+import { resolveGoalSettings } from "./goal/types";
 import { makeBeforeToolHandler } from "./hooks/before-tool";
 import { makeAfterToolHandler } from "./hooks/after-tool";
 import { TaskParamsSchema, executeTask, needsClarification, parseSubagentResult, type TaskParams } from "./agents/task-tool";
@@ -163,7 +165,8 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   }
   if (yoloDisabledByEnv()) permissions.lockYolo();
   const spec = new SpecEngine();
-  const goalController = new GoalController(loadGoalSettings());
+  const goalSettings = resolveGoalSettings(loadGoalSettings());
+  const goalController = new GoalController(goalSettings);
   const policyStatePromise = loadPolicyState(process.cwd(), process.env.HARNESS_POLICY_FILE);
   // Resolved in BOTH parent and child processes. A subagent's cwd is a worktree
   // of the same repo (shared git remote), so it matches the same registry entry —
@@ -1564,11 +1567,18 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     await handleGoalAgentEnd({
       controller: goalController,
       runEvaluator: (assistantText, toolResults, previousReason) => {
-        const model = ctx.model;
+        // Route via the evaluator role's ACTIVE override (same toggle as all
+        // subagents); fall back to the session model while routing is off or
+        // the routed model is unregistered/unauthed.
+        const override = loadEvaluatorOverride(goalSettings.evaluatorRole);
+        const routed = override
+          ? pickEvaluatorModel(override, ctx.modelRegistry.getAll(), (m) => ctx.modelRegistry.hasConfiguredAuth(m))
+          : undefined;
+        const model = routed?.model ?? ctx.model;
         if (!model) return Promise.resolve({ met: false, reason: "no model available to evaluate the goal" });
         const condition = goalController.snapshot()?.condition ?? "";
         return runEvaluatorWith(
-          (context) => completeSimple(model, context, { reasoning: "low" }),
+          (context) => completeSimple(model, context, { reasoning: routed?.thinking ?? "low" }),
           { condition, lastAssistantText: assistantText, toolResultsText: toolResults, previousReason },
         );
       },
