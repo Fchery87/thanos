@@ -58,6 +58,23 @@ describe("onTurnResult", () => {
     expect(c.onTurnResult(notMet, 0)).toMatchObject({ kind: "paused", why: "checkpoint" });
   });
 
+  it("resume after a turn-ceiling pause grants a fresh window, not one turn", () => {
+    const c = new GoalController({ maxTurns: 2 }); c.set("cond", 0);
+    c.onTurnResult(notMet, 0);
+    expect(c.onTurnResult(notMet, 0)).toMatchObject({ kind: "paused", why: "ceiling-turns" });
+    expect(c.resume()).toBe(true);
+    expect(c.onTurnResult(notMet, 0).kind).toBe("continue");
+    expect(c.onTurnResult(notMet, 0)).toMatchObject({ kind: "paused", why: "ceiling-turns" });
+  });
+
+  it("resume after a token-ceiling pause grants a fresh growth window", () => {
+    const c = new GoalController({ maxTurns: 0, maxTokens: 100 }); c.set("cond", 0);
+    expect(c.onTurnResult(notMet, 120)).toMatchObject({ kind: "paused", why: "ceiling-tokens" });
+    expect(c.resume()).toBe(true);
+    expect(c.onTurnResult(notMet, 150).kind).toBe("continue"); // +30 since resume < 100
+    expect(c.onTurnResult(notMet, 260)).toMatchObject({ kind: "paused", why: "ceiling-tokens" }); // +140 since resume
+  });
+
   it("paused goal ignores turn results → noop", () => {
     const c = new GoalController(); c.set("a", 0); c.pause();
     expect(c.onTurnResult(notMet, 0)).toEqual({ kind: "noop" });

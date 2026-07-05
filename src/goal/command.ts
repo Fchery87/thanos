@@ -3,6 +3,7 @@ import type { GoalController } from "./controller";
 import type { GoalEventRecord } from "./loop";
 import type { GoalSnapshot } from "./types";
 import { parseGoalCommand } from "./command-parse";
+import { buildDirective, buildFirstDirective } from "./prompts";
 
 /** Compact statusline segment for the active/paused goal, or undefined when
  *  there is no live goal (mirrors the `lens:<changed>` indicator pattern). */
@@ -63,9 +64,20 @@ export async function runGoalCommand(args: string, deps: GoalCommandDeps): Promi
     case "pause":
       deps.notify(deps.controller.pause() ? "◎ /goal paused. Run `/goal resume` to continue." : "◎ /goal — no active goal to pause.", deps.controller.snapshot()?.status === "paused" ? "warning" : "info");
       return;
-    case "resume":
-      deps.notify(deps.controller.resume() ? "◎ /goal resumed." : "◎ /goal — no paused goal to resume.");
+    case "resume": {
+      if (!deps.controller.resume()) {
+        deps.notify("◎ /goal — no paused goal to resume.");
+        return;
+      }
+      deps.notify("◎ /goal resumed.");
+      // Re-kick the loop: it only advances on agent-end, so without a
+      // directive here nothing happens until the user types something.
+      const snap = deps.controller.snapshot()!;
+      await deps.sendFollowUp(
+        snap.lastReason ? buildDirective(snap.condition, snap.lastReason) : buildFirstDirective(snap.condition),
+      );
       return;
+    }
     case "set": {
       const result = deps.controller.set(command.condition, deps.getTokens());
       if (result.ok) {

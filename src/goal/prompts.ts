@@ -16,13 +16,25 @@ export const EVALUATOR_SYSTEM = [
   "REASON: <one short line>",
 ].join("\n");
 
+/**
+ * The worker must know how it is judged: a tool-less checker sees ONLY the
+ * final message + last tool outputs of each turn, so unsurfaced work reads as
+ * no progress and burns ceiling turns on NOT_MET verdicts.
+ */
+const EVIDENCE_CONTRACT = [
+  "How you are judged: after each of your turns, a separate checker that cannot run tools",
+  "reads ONLY your final message and the last tool outputs. Work it cannot see does not count.",
+  "End every reply with the concrete evidence so far (test output, exit codes, counts, git",
+  "status) — and when you believe the goal is met, paste the proof.",
+].join("\n");
+
 export function buildFirstDirective(condition: string): string {
   return [
     `${GOAL_DIRECTIVE_SENTINEL} Work toward this goal until it is met:`,
     "",
     condition,
     "",
-    "When you believe it is met, surface the evidence (test output, git status, counts) in your reply so it can be verified.",
+    EVIDENCE_CONTRACT,
   ].join("\n");
 }
 
@@ -33,7 +45,7 @@ export function buildDirective(condition: string, reason: string): string {
     condition,
     "",
     `Not yet met: ${reason}. Continue toward the condition.`,
-    "When you believe it is met, surface the evidence (test output, git status, counts) in your reply so it can be verified.",
+    EVIDENCE_CONTRACT,
   ].join("\n");
 }
 

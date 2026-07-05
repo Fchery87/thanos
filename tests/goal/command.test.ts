@@ -88,6 +88,26 @@ describe("runGoalCommand", () => {
     expect(d.controller.snapshot()?.status).toBe("active");
   });
 
+  it("resume sends a continuation directive so work restarts without a manual nudge", async () => {
+    const d = deps();
+    await runGoalCommand("a goal", d);
+    d.controller.onTurnResult({ met: false, reason: "2 tests failing" }, 0);
+    await runGoalCommand("pause", d);
+    vi.mocked(d.sendFollowUp).mockClear();
+    await runGoalCommand("resume", d);
+    expect(d.sendFollowUp).toHaveBeenCalledTimes(1);
+    const text = vi.mocked(d.sendFollowUp).mock.calls[0][0];
+    expect(text).toContain("[harness:goal-directive]");
+    expect(text).toContain("a goal");
+    expect(text).toContain("2 tests failing");
+  });
+
+  it("resume with no paused goal sends nothing", async () => {
+    const d = deps();
+    await runGoalCommand("resume", d);
+    expect(d.sendFollowUp).not.toHaveBeenCalled();
+  });
+
   it("replacing an active goal notes the replacement", async () => {
     const d = deps();
     await runGoalCommand("first", d);

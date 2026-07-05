@@ -10,6 +10,10 @@ interface Internal {
   turnsEvaluated: number;
   tokensUsed: number;
   lastTokens: number;
+  // Ceiling window bases: ceilings fire on growth SINCE the last resume, so
+  // resuming a ceiling pause grants a fresh window instead of a single turn.
+  turnsBase: number;
+  tokensBase: number;
   lastReason?: string;
   achieved?: { at: number; reason: string; turns: number };
 }
@@ -30,7 +34,7 @@ export class GoalController {
 
   snapshot(): GoalSnapshot | undefined {
     if (!this.g) return undefined;
-    const { lastTokens: _ignored, ...pub } = this.g;
+    const { lastTokens: _t, turnsBase: _tb, tokensBase: _kb, ...pub } = this.g;
     return { ...pub };
   }
 
@@ -47,6 +51,7 @@ export class GoalController {
     this.g = {
       condition: trimmed, status: "active", startedAt: this.now(),
       turnsEvaluated: 0, tokensUsed: 0, lastTokens: tokensNow,
+      turnsBase: 0, tokensBase: 0,
     };
     return { ok: true, replaced, firstDirective: buildFirstDirective(trimmed) };
   }
@@ -62,6 +67,8 @@ export class GoalController {
   resume(): boolean {
     if (this.g?.status !== "paused") return false;
     this.g.status = "active";
+    this.g.turnsBase = this.g.turnsEvaluated;
+    this.g.tokensBase = this.g.tokensUsed;
     return true;
   }
 
@@ -81,11 +88,11 @@ export class GoalController {
     }
 
     const { maxTurns, maxTokens, checkpointEvery } = this.settings;
-    if (maxTurns > 0 && this.g.turnsEvaluated >= maxTurns) {
+    if (maxTurns > 0 && this.g.turnsEvaluated - this.g.turnsBase >= maxTurns) {
       this.g.status = "paused";
       return { kind: "paused", why: "ceiling-turns", detail: `Reached ${maxTurns}-turn ceiling.` };
     }
-    if (maxTokens > 0 && this.g.tokensUsed >= maxTokens) {
+    if (maxTokens > 0 && this.g.tokensUsed - this.g.tokensBase >= maxTokens) {
       this.g.status = "paused";
       return { kind: "paused", why: "ceiling-tokens", detail: `Reached ${maxTokens}-token growth ceiling.` };
     }

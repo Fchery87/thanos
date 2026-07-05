@@ -16,6 +16,14 @@ describe("goal directives", () => {
     expect(d).toContain("2 failing in auth");
     expect(d).toMatch(/evidence/i);
   });
+
+  it("directives explain the checker's blindness so the worker surfaces evidence every turn", () => {
+    for (const d of [buildFirstDirective("cond"), buildDirective("cond", "reason")]) {
+      expect(d).toMatch(/cannot run tools/i);
+      expect(d).toMatch(/final (message|reply)/i);
+      expect(d).toMatch(/every (reply|turn)/i);
+    }
+  });
 });
 
 describe("buildEvaluatorContext", () => {
