@@ -16,7 +16,7 @@ import { registerGoalCommand, renderGoalStatusSegment } from "./goal/command";
 import { handleAgentEnd as handleGoalAgentEnd } from "./goal/loop";
 import { extractLastTurn, readWillRetry } from "./goal/extract";
 import { runEvaluatorWith } from "./goal/evaluator";
-import { GOAL_DIRECTIVE_SENTINEL } from "./goal/prompts";
+import { GOAL_DIRECTIVE_SENTINEL, buildGoalSystemPrompt } from "./goal/prompts";
 import { loadEvaluatorOverride, loadGoalSettings } from "./goal/load-settings";
 import { pickEvaluatorModel } from "./goal/evaluator-model";
 import { resolveGoalSettings } from "./goal/types";
@@ -1427,7 +1427,20 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       "procedure to run inline; a subagent runs the work in fresh context. When " +
       "both fit, load the skill and delegate under its guidance.";
 
-    const systemPrompt = [injected, delegationDirective, skillsDirective].filter(Boolean).join("\n\n");
+    // ── Goal mode: persistence rules for the whole active-goal turn ─────
+    // Stands in the system prompt (not just the follow-up directive) so the
+    // agent finishes more work per turn and stops less — fewer turns, fewer
+    // evaluator calls, less chance of nearing the turn ceiling. Runs in
+    // parent and subagent alike: isActive() is only ever true where a goal
+    // was set (subagents don't drive the loop, but a directly-set goal there
+    // still benefits from the persistence framing).
+    const goalDirective = goalController.isActive()
+      ? buildGoalSystemPrompt(goalController.snapshot()?.condition ?? "")
+      : "";
+
+    const systemPrompt = [injected, delegationDirective, skillsDirective, goalDirective]
+      .filter(Boolean)
+      .join("\n\n");
 
     return systemPrompt ? { systemPrompt } : undefined;
   });

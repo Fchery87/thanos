@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildDirective, buildFirstDirective, buildEvaluatorContext,
+  buildDirective, buildFirstDirective, buildEvaluatorContext, buildGoalSystemPrompt,
   EVALUATOR_SYSTEM, GOAL_DIRECTIVE_SENTINEL,
 } from "../../src/goal/prompts";
 
@@ -23,6 +23,25 @@ describe("goal directives", () => {
       expect(d).toMatch(/final (message|reply)/i);
       expect(d).toMatch(/every (reply|turn)/i);
     }
+  });
+});
+
+describe("buildGoalSystemPrompt", () => {
+  it("embeds the condition and forbids stopping at a plan/partial work", () => {
+    const s = buildGoalSystemPrompt("all tests pass");
+    expect(s).toContain("all tests pass");
+    expect(s).toMatch(/do not stop/i);
+    expect(s).toMatch(/plan/i);
+  });
+
+  it("restates the evidence contract because the judge is tool-less", () => {
+    const s = buildGoalSystemPrompt("cond");
+    expect(s).toMatch(/cannot run tools/i);
+    expect(s).toMatch(/final (message|reply)/i);
+  });
+
+  it("is not a follow-up directive — carries no goal sentinel", () => {
+    expect(buildGoalSystemPrompt("cond").includes(GOAL_DIRECTIVE_SENTINEL)).toBe(false);
   });
 });
 
