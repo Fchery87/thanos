@@ -203,6 +203,8 @@ Use the visible slash commands:
 
 When routing is **on**, `subagents.agentOverrides` is active and each assigned role uses its configured model. When routing is **off**, Thanos saves the assignments under `subagents.savedAgentOverrides` and removes active `agentOverrides`, so the model selected with `/models` controls all subagents as it did before per-role routing existed. Editing routes while disabled updates the saved assignments without activating them.
 
+The [`/goal`](#goal--self-checking-autonomous-loop) evaluator follows this same toggle via the `evaluator` role: its assignment powers goal verdicts while routing is on, and the session model takes over while routing is off. Assignments support cross-family fallbacks (`fallback=<model[,model...]>`), so a provider wobble on the primary fails over instead of stalling the role.
+
 Long provider/model references are shortened in the picker so the terminal UI stays stable while scrolling, but Thanos still saves the full model reference in `settings.json`.
 
 ### Step 6 — Track and verify
@@ -231,15 +233,19 @@ This disables only the completion verification reinjection gate. It does not dis
 
 `/goal <condition>` turns a prompt into a durable objective. Thanos immediately starts a turn toward the condition, and after **each** turn a fresh, tool-less **side-channel evaluator** (a one-shot `completeSimple` call, not a subagent — so no extra agent turn and no re-entrancy) reads the last turn's evidence and returns `MET` / `NOT_MET`. `NOT_MET` auto-continues another turn with the reason as guidance; `MET` clears the goal and records the achievement. Unparseable evaluator output is treated as `NOT_MET` (fail-safe: it never declares a false "done").
 
+Because the checker cannot run tools and sees **only the final message plus the last tool outputs** of each turn, every goal directive carries an explicit evidence contract: the working agent must end each reply with concrete evidence (test output, exit codes, counts, git status) — unsurfaced work reads as no progress and burns ceiling turns. Goals phrased as objectively checkable conditions ("all tests in X pass — paste the output") converge in far fewer turns than vague ones.
+
+The evaluator's model follows [per-subagent model routing](#optional-per-subagent-model-routing): when routing is **on**, the `evaluator` role's assignment (primary, then fallbacks, first registered + authed model wins) powers the verdicts; when routing is **off** or nothing resolves, the current session model is used. The routing entry is re-read per evaluation, so toggling takes effect mid-session.
+
 ```text
 /goal <condition>   # set a goal and start working toward it
 /goal               # status (condition, turns, context growth, last check)
 /goal pause         # stop auto-continuing (resumable)
-/goal resume        # resume a paused goal
+/goal resume        # resume: re-kicks work immediately with a fresh ceiling window
 /goal clear         # cancel (aliases: stop off reset none cancel)
 ```
 
-The loop is **guarded**: it pauses (never clears) on a turn ceiling (`maxTurns`, default 25), an optional context-growth ceiling (`maxTokens`), or an optional `checkpointEvery`. A statusline segment shows `◎ goal:<turns>t·<growth>k` while active. It is main-session only and refuses on untrusted projects. Permission prompts are orthogonal — a tool needing approval pauses the loop until you answer.
+The loop is **guarded**: it pauses (never clears) on a turn ceiling (`maxTurns`, default 25), an optional context-growth ceiling (`maxTokens`), or an optional `checkpointEvery`. Ceilings are **windows, not lifetime caps**: `/goal resume` rebases both counters, so resuming a ceiling pause grants another full window (e.g. 25 more turns) — and it queues a continuation directive itself, so work restarts without you having to type anything further. A statusline segment shows `◎ goal:<turns>t·<growth>k` while active. It is main-session only and refuses on untrusted projects. Permission prompts are orthogonal — a tool needing approval pauses the loop until you answer.
 
 `/goal` and the completion verification gate never fight: while a goal is active, the goal evaluator is the **sole** continuation driver (the gate defers), so at most one follow-up is queued per turn. Configure defaults under `goal` in `~/.pi/agent/settings.json`:
 
@@ -248,7 +254,7 @@ The loop is **guarded**: it pauses (never clears) on a turn ceiling (`maxTurns`,
   "maxTurns": 25,        // pause on hit (0 = unlimited / full-auto)
   "maxTokens": 0,        // cumulative context-growth ceiling, NOT a spend cap; 0 = off
   "checkpointEvery": 0,  // 0 = off; N = pause-to-confirm every N turns
-  "evaluatorRole": "evaluator"
+  "evaluatorRole": "evaluator"  // routing role whose model grades verdicts (session model when routing is off)
 }
 ```
 

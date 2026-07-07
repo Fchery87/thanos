@@ -1,10 +1,7 @@
 import type { GoalController } from "./controller";
-import type { Verdict } from "./types";
 
 export interface AgentEndInfo {
   willRetry: boolean;
-  lastAssistantText: string;
-  toolResultsText: string;
 }
 
 export interface GoalEventRecord {
@@ -15,7 +12,6 @@ export interface GoalEventRecord {
 
 export interface LoopDeps {
   controller: GoalController;
-  runEvaluator: (lastAssistantText: string, toolResultsText: string, previousReason?: string) => Promise<Verdict>;
   sendDirective: (directive: string) => Promise<void>;
   notify: (message: string, level?: "info" | "warning") => void;
   recordEvent: (event: GoalEventRecord) => Promise<void>;
@@ -23,41 +19,29 @@ export interface LoopDeps {
   isSubagent: boolean;
 }
 
+/**
+ * Per-turn driver for an active goal. It no longer runs the evaluator: since
+ * completion is signaled by the agent via the goal_complete tool (which
+ * confirms through the evaluator), a work turn only advances the counters and
+ * either re-prompts the agent to continue or pauses on a ceiling. Achievement
+ * happens in the tool, so by the time that turn ends the goal is no longer
+ * active and this returns early.
+ */
 export async function handleAgentEnd(deps: LoopDeps, info: AgentEndInfo): Promise<void> {
   const { controller } = deps;
   const snap = controller.snapshot();
   if (deps.isSubagent || info.willRetry || !snap || snap.status !== "active") return;
 
-  let verdict: Verdict;
-  try {
-    verdict = await deps.runEvaluator(info.lastAssistantText, info.toolResultsText, snap.lastReason);
-  } catch {
-    try {
-      verdict = await deps.runEvaluator(info.lastAssistantText, info.toolResultsText, snap.lastReason);
-    } catch (e) {
-      const action = controller.onError("eval-error", `Evaluator failed: ${(e as Error).message}`);
-      if (action.kind === "paused") {
-        deps.notify(`◎ /goal paused — ${action.detail} Run /goal resume to continue.`, "warning");
-        await deps.recordEvent({ type: "goal_paused", summary: action.detail, outcome: action.why });
-      }
-      return;
-    }
-  }
-
-  const action = controller.onTurnResult(verdict, deps.getTokens());
+  const action = controller.onTurnEnd(deps.getTokens());
   switch (action.kind) {
     case "continue":
       await deps.sendDirective(action.directive);
-      break;
-    case "achieved":
-      deps.notify(`◎ /goal achieved in ${action.turns} turns — ${action.reason}`);
-      await deps.recordEvent({ type: "goal_achieved", summary: action.reason, outcome: `turns=${action.turns}` });
       break;
     case "paused":
       deps.notify(`◎ /goal paused — ${action.detail} Run /goal resume to continue.`, "warning");
       await deps.recordEvent({ type: "goal_paused", summary: action.detail, outcome: action.why });
       break;
-    case "noop":
+    default:
       break;
   }
 }

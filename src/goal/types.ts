@@ -37,5 +37,6 @@ export type PauseWhy = "ceiling-turns" | "ceiling-tokens" | "checkpoint" | "work
 export type LoopAction =
   | { kind: "continue"; directive: string }
   | { kind: "achieved"; reason: string; turns: number }
+  | { kind: "rejected"; reason: string }
   | { kind: "paused"; why: PauseWhy; detail: string }
   | { kind: "noop" };

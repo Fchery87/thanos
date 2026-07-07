@@ -1,4 +1,4 @@
-import { buildDirective, buildFirstDirective } from "./prompts";
+import { buildContinueDirective, buildFirstDirective } from "./prompts";
 import { resolveGoalSettings, type GoalSettings, type GoalSnapshot, type LoopAction, type Verdict } from "./types";
 
 const MAX_CONDITION = 4000;
@@ -72,20 +72,20 @@ export class GoalController {
     return true;
   }
 
-  onTurnResult(verdict: Verdict, tokensNow: number): LoopAction {
+  /**
+   * Advance one work turn. There is NO verdict here: completion is now signaled
+   * by the agent via confirmComplete(), so per turn we only grow the counters,
+   * fire the ceilings, and otherwise emit the continuation directive. This is
+   * what removed the per-turn evaluator call — and with it the failure mode
+   * where a flaky evaluator paused the goal on an ordinary work turn.
+   */
+  onTurnEnd(tokensNow: number): LoopAction {
     if (!this.g || this.g.status !== "active") return { kind: "noop" };
     // Context size can shrink after compaction; clamp so the ceiling counter
     // is monotone (this is a growth guard, not a spend meter — see types.ts).
     this.g.tokensUsed += Math.max(0, tokensNow - this.g.lastTokens);
     this.g.lastTokens = tokensNow;
     this.g.turnsEvaluated += 1;
-    this.g.lastReason = verdict.reason;
-
-    if (verdict.met) {
-      this.g.status = "achieved";
-      this.g.achieved = { at: this.now(), reason: verdict.reason, turns: this.g.turnsEvaluated };
-      return { kind: "achieved", reason: verdict.reason, turns: this.g.turnsEvaluated };
-    }
 
     const { maxTurns, maxTokens, checkpointEvery } = this.settings;
     if (maxTurns > 0 && this.g.turnsEvaluated - this.g.turnsBase >= maxTurns) {
@@ -100,7 +100,25 @@ export class GoalController {
       this.g.status = "paused";
       return { kind: "paused", why: "checkpoint", detail: `Checkpoint after ${this.g.turnsEvaluated} turns.` };
     }
-    return { kind: "continue", directive: buildDirective(this.g.condition, verdict.reason) };
+    return { kind: "continue", directive: buildContinueDirective() };
+  }
+
+  /**
+   * Agent-signaled completion, judged by the fresh evaluator. On MET the goal is
+   * achieved; on NOT_MET it stays active and the agent keeps working (the reason
+   * is surfaced back through the tool result). The evaluator is consulted ONLY
+   * here — never per turn — so its cost and its failure modes are confined to
+   * the moment completion is actually claimed.
+   */
+  confirmComplete(verdict: Verdict): LoopAction {
+    if (!this.g || this.g.status !== "active") return { kind: "noop" };
+    this.g.lastReason = verdict.reason;
+    if (verdict.met) {
+      this.g.status = "achieved";
+      this.g.achieved = { at: this.now(), reason: verdict.reason, turns: this.g.turnsEvaluated };
+      return { kind: "achieved", reason: verdict.reason, turns: this.g.turnsEvaluated };
+    }
+    return { kind: "rejected", reason: verdict.reason };
   }
 
   onError(kind: "work-error" | "eval-error", detail: string): LoopAction {

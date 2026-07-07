@@ -3,7 +3,7 @@ import type { GoalController } from "./controller";
 import type { GoalEventRecord } from "./loop";
 import type { GoalSnapshot } from "./types";
 import { parseGoalCommand } from "./command-parse";
-import { buildDirective, buildFirstDirective } from "./prompts";
+import { buildContinueDirective } from "./prompts";
 
 /** Compact statusline segment for the active/paused goal, or undefined when
  *  there is no live goal (mirrors the `lens:<changed>` indicator pattern). */
@@ -71,11 +71,11 @@ export async function runGoalCommand(args: string, deps: GoalCommandDeps): Promi
       }
       deps.notify("◎ /goal resumed.");
       // Re-kick the loop: it only advances on agent-end, so without a
-      // directive here nothing happens until the user types something.
-      const snap = deps.controller.snapshot()!;
-      await deps.sendFollowUp(
-        snap.lastReason ? buildDirective(snap.condition, snap.lastReason) : buildFirstDirective(snap.condition),
-      );
+      // directive here nothing happens until the user types something. The
+      // condition, rules, and completion protocol ride in the system prompt
+      // (buildGoalSystemPrompt) every active-goal turn, so the continuation
+      // directive is the same terse nudge the per-turn loop sends.
+      await deps.sendFollowUp(buildContinueDirective());
       return;
     }
     case "set": {
