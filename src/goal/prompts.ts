@@ -48,8 +48,11 @@ export function buildGoalSystemPrompt(condition: string): string {
     "  analysis, a plan, a TODO list, partial fixes, or suggested next steps.",
     "- Do not redefine the goal into a smaller task; satisfy every requirement.",
     "- Batch the work: carry each turn as far as you can rather than pausing after a",
-    "  single step — you are re-prompted automatically until the goal is met, but",
-    "  every extra turn costs an evaluation pass.",
+    "  single step — you are re-prompted automatically each turn until you signal done.",
+    "- Signal completion yourself: when every requirement is met AND verified, call the",
+    "  `goal_complete` tool with a summary of what you did and the evidence that proves",
+    "  it. A fresh tool-less checker confirms before the goal closes, so include real",
+    "  proof (test output, exit codes, counts). Do not call it for partial progress.",
     "- Treat the current worktree, command output, tests, and external state as",
     "  authoritative; re-check them rather than assuming.",
     "- Persevere through recoverable tool failures by trying reasonable alternatives.",
@@ -64,6 +67,25 @@ export function buildFirstDirective(condition: string): string {
     "",
     condition,
     "",
+    "When it is fully met and verified, call the `goal_complete` tool with the proof.",
+    EVIDENCE_CONTRACT,
+  ].join("\n");
+}
+
+/**
+ * Sent after each work turn that did not close the goal. Unlike buildDirective
+ * there is no evaluator "reason" — completion is agent-signaled now, so the
+ * continuation only re-states the goal and how to finish it (call goal_complete).
+ */
+export function buildContinueDirective(condition: string): string {
+  return [
+    `${GOAL_DIRECTIVE_SENTINEL} The /goal is still active — keep working until it is fully met:`,
+    "",
+    condition,
+    "",
+    "When every requirement is met AND verified, call the `goal_complete` tool with a",
+    "summary and the evidence that proves it. A fresh checker confirms before the goal",
+    "closes; until then you will be prompted to continue.",
     EVIDENCE_CONTRACT,
   ].join("\n");
 }

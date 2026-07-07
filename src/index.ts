@@ -2,6 +2,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { matchesKey, Text } from "@earendil-works/pi-tui";
+import { Type } from "typebox";
 import { join } from "node:path";
 
 import { AuditLogger } from "./audit/logger";
@@ -1135,6 +1136,83 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     recordEvent: recordGoalEvent,
   });
 
+  // ── goal_complete tool: agent-signaled completion, evaluator-confirmed ──
+  // The agent calls this when it believes the active /goal is done. A fresh,
+  // tool-less checker (the same evaluator, routed via the subagents toggle,
+  // else the session model) confirms against the last turn's evidence before
+  // the goal closes. On MET the loop terminates; on NOT_MET the agent keeps
+  // working. Crucially, a checker ERROR never pauses the goal — it fails safe
+  // to NOT_MET — so the per-turn "eval-error pause" class is gone entirely.
+  if (!isSubagent) {
+    pi.registerTool({
+      name: "goal_complete",
+      label: "Goal Complete",
+      description:
+        "Mark the active /goal complete. Only call after every requirement is fully implemented AND verified; a fresh checker confirms before the goal closes. Do not call for partial progress, a plan, or unverified work.",
+      promptSnippet: "Mark the active /goal complete once it is fully finished and verified",
+      parameters: Type.Object({
+        summary: Type.String({
+          description:
+            "What you completed and the concrete evidence that verifies it (test output, exit codes, counts, git status). Not for partial progress, blockers, or remaining work.",
+        }),
+      }),
+      async execute(_toolCallId, params: { summary: string }, _signal, _onUpdate, toolCtx: ExtensionContext) {
+        const snap = goalController.snapshot();
+        if (!snap || snap.status !== "active") {
+          return { content: [{ type: "text" as const, text: "goal_complete: no active /goal to complete." }], isError: true, details: undefined };
+        }
+
+        // Judge real output, not just the claim: pull the last work turn from
+        // the session branch (entries → messages) and prepend the agent summary.
+        const sm = toolCtx.sessionManager as { getBranch?: () => Array<{ type?: string; message?: unknown }> } | undefined;
+        const branch = sm?.getBranch?.() ?? [];
+        const messages = branch.filter((e) => e && e.type === "message" && e.message).map((e) => e.message);
+        const { lastAssistantText, toolResultsText } = extractLastTurn(messages);
+        const summary = (params.summary ?? "").trim();
+        const claim = summary ? `AGENT COMPLETION CLAIM:\n${summary}\n\n${lastAssistantText}` : lastAssistantText;
+
+        // Resolve the evaluator model exactly as the per-turn loop used to:
+        // routed override when routing is on, else the session model.
+        const override = loadEvaluatorOverride(goalSettings.evaluatorRole);
+        const routed = override
+          ? pickEvaluatorModel(override, toolCtx.modelRegistry.getAll(), (m) => toolCtx.modelRegistry.hasConfiguredAuth(m))
+          : undefined;
+        const primary = routed?.model ?? toolCtx.model;
+        if (!primary) {
+          return { content: [{ type: "text" as const, text: "goal_complete: no model available to verify completion — keep working and try again." }], details: undefined };
+        }
+
+        const evalInput = { condition: snap.condition, lastAssistantText: claim, toolResultsText, previousReason: snap.lastReason };
+        let verdict: { met: boolean; reason: string };
+        try {
+          verdict = await runEvaluatorWith((context) => completeSimple(primary, context, { reasoning: routed?.thinking ?? "low" }), evalInput);
+        } catch {
+          try {
+            // Retry once on the session model (routing may be pointed at a
+            // flaky provider — the session model is the one already running).
+            verdict = await runEvaluatorWith((context) => completeSimple(toolCtx.model ?? primary, context, { reasoning: "low" }), evalInput);
+          } catch (e) {
+            // Fail SAFE: a checker error must never pause the goal. Treat it as
+            // NOT_MET so the agent keeps working (the safe failure direction).
+            verdict = { met: false, reason: `completion check errored (${(e as Error).message}); re-verify the evidence and call goal_complete again` };
+          }
+        }
+
+        const action = goalController.confirmComplete(verdict);
+        toolCtx.ui.setStatus("harness-goal", renderGoalStatusSegment(goalController.snapshot()));
+
+        if (action.kind === "achieved") {
+          await recordGoalEvent({ type: "goal_achieved", summary: action.reason, outcome: `turns=${action.turns}` });
+          toolCtx.ui.notify(`◎ /goal achieved in ${action.turns} turns — ${action.reason}`, "info");
+          return { content: [{ type: "text" as const, text: `Goal confirmed complete: ${action.reason}` }], terminate: true, details: undefined };
+        }
+
+        const reason = action.kind === "rejected" ? action.reason : "the goal is no longer active";
+        return { content: [{ type: "text" as const, text: `goal_complete rejected — not yet met: ${reason}. Keep working toward the goal, then call goal_complete again once you can show the proof.` }], details: undefined };
+      },
+    });
+  }
+
   // ── Slash commands ─────────────────────────────────────────────────
   registerSlashCommands(pi, {
     permissions,
@@ -1575,36 +1653,17 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     // ── /goal loop ─────────────────────────────────────────────────────
     // Runs regardless of spec state. It is a no-op unless a goal is active,
     // and the gate above already deferred to it, so at most one follow-up is
-    // queued per turn.
-    const { lastAssistantText, toolResultsText } = extractLastTurn(event.messages ?? []);
+    // queued per turn. The evaluator no longer runs here — completion is
+    // signaled by the goal_complete tool (which confirms via the evaluator);
+    // a work turn only advances the counter and re-prompts or pauses.
     await handleGoalAgentEnd({
       controller: goalController,
-      runEvaluator: (assistantText, toolResults, previousReason) => {
-        // Route via the evaluator role's ACTIVE override (same toggle as all
-        // subagents); fall back to the session model while routing is off or
-        // the routed model is unregistered/unauthed.
-        const override = loadEvaluatorOverride(goalSettings.evaluatorRole);
-        const routed = override
-          ? pickEvaluatorModel(override, ctx.modelRegistry.getAll(), (m) => ctx.modelRegistry.hasConfiguredAuth(m))
-          : undefined;
-        const model = routed?.model ?? ctx.model;
-        if (!model) return Promise.resolve({ met: false, reason: "no model available to evaluate the goal" });
-        const condition = goalController.snapshot()?.condition ?? "";
-        return runEvaluatorWith(
-          (context) => completeSimple(model, context, { reasoning: routed?.thinking ?? "low" }),
-          { condition, lastAssistantText: assistantText, toolResultsText: toolResults, previousReason },
-        );
-      },
       sendDirective: async (directive) => { pi.sendUserMessage(directive, { deliverAs: "followUp" }); },
       notify: (message, level) => ctx.ui.notify(message, level ?? "info"),
       recordEvent: recordGoalEvent,
       getTokens: () => ctx.getContextUsage()?.tokens ?? 0,
       isSubagent,
-    }, {
-      willRetry: readWillRetry(event),
-      lastAssistantText,
-      toolResultsText,
-    });
+    }, { willRetry: readWillRetry(event) });
     ctx.ui.setStatus("harness-goal", renderGoalStatusSegment(goalController.snapshot()));
   });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildDirective, buildFirstDirective, buildEvaluatorContext, buildGoalSystemPrompt,
+  buildDirective, buildFirstDirective, buildContinueDirective, buildEvaluatorContext, buildGoalSystemPrompt,
   EVALUATOR_SYSTEM, GOAL_DIRECTIVE_SENTINEL,
 } from "../../src/goal/prompts";
 
@@ -15,6 +15,18 @@ describe("goal directives", () => {
     expect(d).toContain("all tests pass");
     expect(d).toContain("2 failing in auth");
     expect(d).toMatch(/evidence/i);
+  });
+
+  it("buildContinueDirective restates the goal and tells the agent to call goal_complete", () => {
+    const d = buildContinueDirective("all tests pass");
+    expect(d.startsWith(GOAL_DIRECTIVE_SENTINEL)).toBe(true);
+    expect(d).toContain("all tests pass");
+    expect(d).toContain("goal_complete");
+    expect(d).toMatch(/cannot run tools/i);
+  });
+
+  it("buildFirstDirective points the agent at goal_complete", () => {
+    expect(buildFirstDirective("cond")).toContain("goal_complete");
   });
 
   it("directives explain the checker's blindness so the worker surfaces evidence every turn", () => {

@@ -7,12 +7,12 @@ describe("renderGoalStatusSegment", () => {
     expect(renderGoalStatusSegment(undefined)).toBeUndefined();
     const achieved = new GoalController();
     achieved.set("a", 0);
-    achieved.onTurnResult({ met: true, reason: "done" }, 0);
+    achieved.confirmComplete({ met: true, reason: "done" });
     expect(renderGoalStatusSegment(achieved.snapshot())).toBeUndefined();
   });
   it("shows turns and growth while active", () => {
     const c = new GoalController(); c.set("x", 0);
-    c.onTurnResult({ met: false, reason: "nope" }, 3000);
+    c.onTurnEnd(3000);
     expect(renderGoalStatusSegment(c.snapshot())).toBe("◎ goal:1t·3k");
   });
   it("shows paused", () => {
@@ -91,7 +91,7 @@ describe("runGoalCommand", () => {
   it("resume sends a continuation directive so work restarts without a manual nudge", async () => {
     const d = deps();
     await runGoalCommand("a goal", d);
-    d.controller.onTurnResult({ met: false, reason: "2 tests failing" }, 0);
+    d.controller.confirmComplete({ met: false, reason: "2 tests failing" });
     await runGoalCommand("pause", d);
     vi.mocked(d.sendFollowUp).mockClear();
     await runGoalCommand("resume", d);

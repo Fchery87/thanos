@@ -13,7 +13,7 @@ describe("goal persistence", () => {
   });
   it("does not serialize achieved/cleared goals", () => {
     const c = new GoalController(); c.set("cond", 0);
-    c.onTurnResult({ met: true, reason: "x" }, 0);
+    c.confirmComplete({ met: true, reason: "x" });
     expect(serializeGoal(c)).toBeUndefined();
     const c2 = new GoalController();
     expect(serializeGoal(c2)).toBeUndefined();
