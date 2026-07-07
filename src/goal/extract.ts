@@ -43,6 +43,25 @@ export function extractLastTurn(messages: readonly unknown[]): ExtractedTurn {
   return { lastAssistantText: assistantParts.join("\n").trim(), toolResultsText };
 }
 
+interface BranchEntryLike {
+  type?: string;
+  message?: unknown;
+}
+
+/**
+ * Decode a session branch (entries → messages) and extract the last turn. The
+ * goal module's single home for turning `sessionManager.getBranch()` output
+ * into evidence. Returns empty evidence for an empty/undefined branch, so a
+ * caller that fails closed on "no evidence" behaves correctly if the private
+ * branch API ever changes shape.
+ */
+export function extractLastTurnFromBranch(branch: readonly BranchEntryLike[] | undefined): ExtractedTurn {
+  const messages = (branch ?? [])
+    .filter((e) => e && e.type === "message" && e.message)
+    .map((e) => e.message);
+  return extractLastTurn(messages);
+}
+
 /**
  * The typed extension AgentEndEvent declares only `messages`; willRetry is a
  * session-level field that may not be passed through. Read defensively.

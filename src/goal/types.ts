@@ -32,11 +32,16 @@ export interface GoalSnapshot {
 
 export interface Verdict { met: boolean; reason: string }
 
-export type PauseWhy = "ceiling-turns" | "ceiling-tokens" | "checkpoint" | "work-error" | "eval-error";
+export type PauseWhy = "ceiling-turns" | "ceiling-tokens" | "checkpoint";
 
-export type LoopAction =
+/** What a single work turn can decide (GoalController.onTurnEnd). */
+export type TurnAction =
   | { kind: "continue"; directive: string }
+  | { kind: "paused"; why: PauseWhy; detail: string }
+  | { kind: "noop" };
+
+/** What an agent-signaled completion can decide (GoalController.confirmComplete). */
+export type CompletionAction =
   | { kind: "achieved"; reason: string; turns: number }
   | { kind: "rejected"; reason: string }
-  | { kind: "paused"; why: PauseWhy; detail: string }
   | { kind: "noop" };

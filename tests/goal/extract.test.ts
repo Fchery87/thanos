@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractLastTurn, readWillRetry } from "../../src/goal/extract";
+import { extractLastTurn, extractLastTurnFromBranch, readWillRetry } from "../../src/goal/extract";
 
 const user = (text: string) => ({ role: "user", content: text, timestamp: 1 });
 const assistant = (text: string) => ({
@@ -45,6 +45,30 @@ describe("extractLastTurn", () => {
 
   it("does not throw on non-array (undefined) input", () => {
     expect(extractLastTurn(undefined as never)).toEqual({ lastAssistantText: "", toolResultsText: "" });
+  });
+});
+
+describe("extractLastTurnFromBranch", () => {
+  const entry = (message: unknown) => ({ type: "message", message });
+
+  it("decodes branch entries → messages and extracts the last turn", () => {
+    const out = extractLastTurnFromBranch([
+      entry(user("go")), entry(assistant("ran it")), entry(toolResult("bash", "exit 0")),
+    ]);
+    expect(out.lastAssistantText).toBe("ran it");
+    expect(out.toolResultsText).toContain("exit 0");
+  });
+
+  it("skips non-message entries and falsy messages", () => {
+    const out = extractLastTurnFromBranch([
+      { type: "checkpoint" }, entry(null), entry(user("go")), entry(assistant("done")),
+    ]);
+    expect(out.lastAssistantText).toBe("done");
+  });
+
+  it("returns empty evidence for an empty or undefined branch (fail-closed callers rely on this)", () => {
+    expect(extractLastTurnFromBranch([])).toEqual({ lastAssistantText: "", toolResultsText: "" });
+    expect(extractLastTurnFromBranch(undefined)).toEqual({ lastAssistantText: "", toolResultsText: "" });
   });
 });
 
