@@ -1,5 +1,5 @@
 import { buildContinueDirective, buildFirstDirective } from "./prompts";
-import { resolveGoalSettings, type GoalSettings, type GoalSnapshot, type LoopAction, type Verdict } from "./types";
+import { resolveGoalSettings, type CompletionAction, type GoalSettings, type GoalSnapshot, type TurnAction, type Verdict } from "./types";
 
 const MAX_CONDITION = 4000;
 
@@ -79,7 +79,7 @@ export class GoalController {
    * what removed the per-turn evaluator call — and with it the failure mode
    * where a flaky evaluator paused the goal on an ordinary work turn.
    */
-  onTurnEnd(tokensNow: number): LoopAction {
+  onTurnEnd(tokensNow: number): TurnAction {
     if (!this.g || this.g.status !== "active") return { kind: "noop" };
     // Context size can shrink after compaction; clamp so the ceiling counter
     // is monotone (this is a growth guard, not a spend meter — see types.ts).
@@ -110,7 +110,7 @@ export class GoalController {
    * here — never per turn — so its cost and its failure modes are confined to
    * the moment completion is actually claimed.
    */
-  confirmComplete(verdict: Verdict): LoopAction {
+  confirmComplete(verdict: Verdict): CompletionAction {
     if (!this.g || this.g.status !== "active") return { kind: "noop" };
     this.g.lastReason = verdict.reason;
     if (verdict.met) {
@@ -119,11 +119,5 @@ export class GoalController {
       return { kind: "achieved", reason: verdict.reason, turns: this.g.turnsEvaluated };
     }
     return { kind: "rejected", reason: verdict.reason };
-  }
-
-  onError(kind: "work-error" | "eval-error", detail: string): LoopAction {
-    if (!this.g || this.g.status !== "active") return { kind: "noop" };
-    this.g.status = "paused";
-    return { kind: "paused", why: kind, detail };
   }
 }

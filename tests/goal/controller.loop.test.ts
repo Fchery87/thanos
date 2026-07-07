@@ -108,10 +108,3 @@ describe("confirmComplete", () => {
   });
 });
 
-describe("onError", () => {
-  it("pauses an active goal with the error kind", () => {
-    const c = new GoalController(); c.set("a", 0);
-    expect(c.onError("eval-error", "boom")).toMatchObject({ kind: "paused", why: "eval-error" });
-    expect(c.snapshot()?.status).toBe("paused");
-  });
-});

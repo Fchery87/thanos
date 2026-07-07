@@ -15,7 +15,7 @@ import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { GoalController } from "./goal/controller";
 import { registerGoalCommand, renderGoalStatusSegment } from "./goal/command";
 import { handleAgentEnd as handleGoalAgentEnd } from "./goal/loop";
-import { extractLastTurn, readWillRetry } from "./goal/extract";
+import { extractLastTurnFromBranch, readWillRetry } from "./goal/extract";
 import { runEvaluatorWith } from "./goal/evaluator";
 import { GOAL_DIRECTIVE_SENTINEL, buildGoalSystemPrompt } from "./goal/prompts";
 import { confirmGoalCompletion } from "./goal/confirm";
@@ -1149,12 +1149,12 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       name: "goal_complete",
       label: "Goal Complete",
       description:
-        "Mark the active /goal complete. Only call after every requirement is fully implemented AND verified; a fresh checker confirms before the goal closes. Do not call for partial progress, a plan, or unverified work.",
+        "Mark the active /goal complete — only after every requirement is implemented AND verified. A fresh checker confirms before it closes; not for partial progress, a plan, or unverified work.",
       promptSnippet: "Mark the active /goal complete once it is fully finished and verified",
       parameters: Type.Object({
         summary: Type.String({
           description:
-            "What you completed and the concrete evidence that verifies it (test output, exit codes, counts, git status). Not for partial progress, blockers, or remaining work.",
+            "What you finished and the concrete evidence that verifies it (test output, exit codes, counts, git status).",
         }),
       }),
       async execute(_toolCallId, params: { summary: string }, _signal, _onUpdate, toolCtx: ExtensionContext) {
@@ -1164,14 +1164,12 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         }
 
         // Judge real output, not just the claim: pull the last work turn from
-        // the session branch (entries → messages). If the branch read comes
-        // back empty, confirmGoalCompletion fails CLOSED (never judges the bare
-        // summary claim), so a private-API shape drift can't silently reinstate
-        // self-grading.
+        // the session branch. When that read comes back empty (private branch
+        // API drift, or goal_complete called before any proof turn),
+        // confirmGoalCompletion fails CLOSED — it never judges the bare summary
+        // claim, so self-grading cannot silently sneak back in.
         const sm = toolCtx.sessionManager as { getBranch?: () => Array<{ type?: string; message?: unknown }> } | undefined;
-        const branch = sm?.getBranch?.() ?? [];
-        const messages = branch.filter((e) => e && e.type === "message" && e.message).map((e) => e.message);
-        const evidence = extractLastTurn(messages);
+        const evidence = extractLastTurnFromBranch(sm?.getBranch?.());
 
         // Resolve the evaluator model exactly as the per-turn loop used to:
         // routed override when routing is on, else the session model.
@@ -1506,8 +1504,9 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     // parent and subagent alike: isActive() is only ever true where a goal
     // was set (subagents don't drive the loop, but a directly-set goal there
     // still benefits from the persistence framing).
-    const goalDirective = goalController.isActive()
-      ? buildGoalSystemPrompt(goalController.snapshot()?.condition ?? "")
+    const goalSnap = goalController.snapshot();
+    const goalDirective = goalSnap?.status === "active"
+      ? buildGoalSystemPrompt(goalSnap.condition)
       : "";
 
     const systemPrompt = [injected, delegationDirective, skillsDirective, goalDirective]
