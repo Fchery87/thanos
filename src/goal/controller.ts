@@ -100,7 +100,7 @@ export class GoalController {
       this.g.status = "paused";
       return { kind: "paused", why: "checkpoint", detail: `Checkpoint after ${this.g.turnsEvaluated} turns.` };
     }
-    return { kind: "continue", directive: buildContinueDirective(this.g.condition) };
+    return { kind: "continue", directive: buildContinueDirective() };
   }
 
   /**

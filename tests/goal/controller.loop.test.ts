@@ -14,7 +14,7 @@ describe("onTurnEnd", () => {
     const action = c.onTurnEnd(5);
     expect(action.kind).toBe("continue");
     if (action.kind === "continue") {
-      expect(action.directive).toContain("cond");
+      // The condition now rides in the system prompt, not the per-turn directive.
       expect(action.directive).toContain("[harness:goal-directive]");
       expect(action.directive).toContain("goal_complete");
     }

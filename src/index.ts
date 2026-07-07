@@ -18,6 +18,7 @@ import { handleAgentEnd as handleGoalAgentEnd } from "./goal/loop";
 import { extractLastTurn, readWillRetry } from "./goal/extract";
 import { runEvaluatorWith } from "./goal/evaluator";
 import { GOAL_DIRECTIVE_SENTINEL, buildGoalSystemPrompt } from "./goal/prompts";
+import { confirmGoalCompletion } from "./goal/confirm";
 import { loadEvaluatorOverride, loadGoalSettings } from "./goal/load-settings";
 import { pickEvaluatorModel } from "./goal/evaluator-model";
 import { resolveGoalSettings } from "./goal/types";
@@ -1163,13 +1164,14 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         }
 
         // Judge real output, not just the claim: pull the last work turn from
-        // the session branch (entries → messages) and prepend the agent summary.
+        // the session branch (entries → messages). If the branch read comes
+        // back empty, confirmGoalCompletion fails CLOSED (never judges the bare
+        // summary claim), so a private-API shape drift can't silently reinstate
+        // self-grading.
         const sm = toolCtx.sessionManager as { getBranch?: () => Array<{ type?: string; message?: unknown }> } | undefined;
         const branch = sm?.getBranch?.() ?? [];
         const messages = branch.filter((e) => e && e.type === "message" && e.message).map((e) => e.message);
-        const { lastAssistantText, toolResultsText } = extractLastTurn(messages);
-        const summary = (params.summary ?? "").trim();
-        const claim = summary ? `AGENT COMPLETION CLAIM:\n${summary}\n\n${lastAssistantText}` : lastAssistantText;
+        const evidence = extractLastTurn(messages);
 
         // Resolve the evaluator model exactly as the per-turn loop used to:
         // routed override when routing is on, else the session model.
@@ -1182,21 +1184,13 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
           return { content: [{ type: "text" as const, text: "goal_complete: no model available to verify completion — keep working and try again." }], details: undefined };
         }
 
-        const evalInput = { condition: snap.condition, lastAssistantText: claim, toolResultsText, previousReason: snap.lastReason };
-        let verdict: { met: boolean; reason: string };
-        try {
-          verdict = await runEvaluatorWith((context) => completeSimple(primary, context, { reasoning: routed?.thinking ?? "low" }), evalInput);
-        } catch {
-          try {
-            // Retry once on the session model (routing may be pointed at a
-            // flaky provider — the session model is the one already running).
-            verdict = await runEvaluatorWith((context) => completeSimple(toolCtx.model ?? primary, context, { reasoning: "low" }), evalInput);
-          } catch (e) {
-            // Fail SAFE: a checker error must never pause the goal. Treat it as
-            // NOT_MET so the agent keeps working (the safe failure direction).
-            verdict = { met: false, reason: `completion check errored (${(e as Error).message}); re-verify the evidence and call goal_complete again` };
-          }
-        }
+        // Retry once on the session model (routing may point at a flaky
+        // provider); confirmGoalCompletion owns the fail-closed + fail-safe policy.
+        const verdict = await confirmGoalCompletion(
+          { condition: snap.condition, previousReason: snap.lastReason, summary: params.summary, evidence },
+          (input) => runEvaluatorWith((context) => completeSimple(primary, context, { reasoning: routed?.thinking ?? "low" }), input),
+          (input) => runEvaluatorWith((context) => completeSimple(toolCtx.model ?? primary, context, { reasoning: "low" }), input),
+        );
 
         const action = goalController.confirmComplete(verdict);
         toolCtx.ui.setStatus("harness-goal", renderGoalStatusSegment(goalController.snapshot()));

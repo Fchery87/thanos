@@ -17,15 +17,29 @@ export const EVALUATOR_SYSTEM = [
 ].join("\n");
 
 /**
- * The worker must know how it is judged: a tool-less checker sees ONLY the
- * final message + last tool outputs of each turn, so unsurfaced work reads as
- * no progress and burns ceiling turns on NOT_MET verdicts.
+ * The worker must know how it is judged. The checker runs ONLY when the agent
+ * calls `goal_complete` (not per turn) and is tool-less: it sees ONLY the final
+ * message + last tool outputs of the turn in which goal_complete is called, so
+ * proof that is not surfaced in that same turn does not count.
  */
 const EVIDENCE_CONTRACT = [
-  "How you are judged: after each of your turns, a separate checker that cannot run tools",
-  "reads ONLY your final message and the last tool outputs. Work it cannot see does not count.",
-  "End every reply with the concrete evidence so far (test output, exit codes, counts, git",
-  "status) — and when you believe the goal is met, paste the proof.",
+  "How you are judged: when you call `goal_complete`, a separate checker that cannot run tools",
+  "reads ONLY your final message and the last tool outputs of that turn. Work it cannot see",
+  "does not count — keep the concrete proof (test output, exit codes, counts, git status) in",
+  "the same turn where you call `goal_complete`.",
+].join("\n");
+
+/**
+ * The completion protocol, single-sourced like EVIDENCE_CONTRACT so a change
+ * (renaming the tool, adding a required field) propagates to the system prompt
+ * and every directive at once instead of drifting across hand-copied variants.
+ */
+const COMPLETION_CONTRACT = [
+  "Signal completion yourself: when every requirement is met AND verified, call the",
+  "`goal_complete` tool with a summary of what you did and the evidence that proves it.",
+  "A fresh, tool-less checker confirms before the goal closes, so include real proof",
+  "(test output, exit codes, counts). Do not call it for partial progress, a plan, or",
+  "unverified work.",
 ].join("\n");
 
 /**
@@ -49,13 +63,11 @@ export function buildGoalSystemPrompt(condition: string): string {
     "- Do not redefine the goal into a smaller task; satisfy every requirement.",
     "- Batch the work: carry each turn as far as you can rather than pausing after a",
     "  single step — you are re-prompted automatically each turn until you signal done.",
-    "- Signal completion yourself: when every requirement is met AND verified, call the",
-    "  `goal_complete` tool with a summary of what you did and the evidence that proves",
-    "  it. A fresh tool-less checker confirms before the goal closes, so include real",
-    "  proof (test output, exit codes, counts). Do not call it for partial progress.",
     "- Treat the current worktree, command output, tests, and external state as",
     "  authoritative; re-check them rather than assuming.",
     "- Persevere through recoverable tool failures by trying reasonable alternatives.",
+    "",
+    COMPLETION_CONTRACT,
     "",
     EVIDENCE_CONTRACT,
   ].join("\n");
@@ -67,37 +79,24 @@ export function buildFirstDirective(condition: string): string {
     "",
     condition,
     "",
-    "When it is fully met and verified, call the `goal_complete` tool with the proof.",
+    COMPLETION_CONTRACT,
+    "",
     EVIDENCE_CONTRACT,
   ].join("\n");
 }
 
 /**
- * Sent after each work turn that did not close the goal. Unlike buildDirective
- * there is no evaluator "reason" — completion is agent-signaled now, so the
- * continuation only re-states the goal and how to finish it (call goal_complete).
+ * Sent after each work turn that did not close the goal. Deliberately terse: the
+ * active condition, the goal-mode rules, the completion protocol, and how the
+ * checker judges you all ride in the system prompt (buildGoalSystemPrompt) on
+ * every active-goal turn, so re-sending them here would only duplicate — and
+ * re-bill — that text (and burn the very token-growth ceiling the loop guards).
  */
-export function buildContinueDirective(condition: string): string {
+export function buildContinueDirective(): string {
   return [
-    `${GOAL_DIRECTIVE_SENTINEL} The /goal is still active — keep working until it is fully met:`,
-    "",
-    condition,
-    "",
-    "When every requirement is met AND verified, call the `goal_complete` tool with a",
-    "summary and the evidence that proves it. A fresh checker confirms before the goal",
-    "closes; until then you will be prompted to continue.",
-    EVIDENCE_CONTRACT,
-  ].join("\n");
-}
-
-export function buildDirective(condition: string, reason: string): string {
-  return [
-    `${GOAL_DIRECTIVE_SENTINEL} Goal not yet met.`,
-    "",
-    condition,
-    "",
-    `Not yet met: ${reason}. Continue toward the condition.`,
-    EVIDENCE_CONTRACT,
+    `${GOAL_DIRECTIVE_SENTINEL} The /goal is still active — keep working until every`,
+    "requirement is met AND verified, then call the `goal_complete` tool with the proof.",
+    "(The active goal, the rules, and how you are judged are in your system prompt.)",
   ].join("\n");
 }
 

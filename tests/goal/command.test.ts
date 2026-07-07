@@ -88,7 +88,7 @@ describe("runGoalCommand", () => {
     expect(d.controller.snapshot()?.status).toBe("active");
   });
 
-  it("resume sends a continuation directive so work restarts without a manual nudge", async () => {
+  it("resume sends the continuation directive so work restarts without a manual nudge", async () => {
     const d = deps();
     await runGoalCommand("a goal", d);
     d.controller.confirmComplete({ met: false, reason: "2 tests failing" });
@@ -97,9 +97,10 @@ describe("runGoalCommand", () => {
     await runGoalCommand("resume", d);
     expect(d.sendFollowUp).toHaveBeenCalledTimes(1);
     const text = vi.mocked(d.sendFollowUp).mock.calls[0][0];
+    // The resume directive is the same terse nudge the per-turn loop sends: the
+    // condition/rules/completion protocol ride in the system prompt, not here.
     expect(text).toContain("[harness:goal-directive]");
-    expect(text).toContain("a goal");
-    expect(text).toContain("2 tests failing");
+    expect(text).toContain("goal_complete");
   });
 
   it("resume with no paused goal sends nothing", async () => {
