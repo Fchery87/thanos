@@ -26,54 +26,82 @@
     "modelOverridesEnabled": true,
     "agentOverrides": {
       "oracle": {
-        "model": "theclawbay-claude/claude-opus-4-8:xhigh",
-        "fallbackModels": ["theclawbay/gpt-5.5"]
+        "model": "theclawbay/gpt-5.6-sol:xhigh",
+        "fallbackModels": [
+          "theclawbay-claude/claude-opus-4-8:xhigh"
+        ]
       },
       "plan": {
-        "model": "theclawbay-claude/claude-opus-4-8:xhigh",
-        "fallbackModels": ["theclawbay/gpt-5.4"]
+        "model": "theclawbay/gpt-5.6-sol:xhigh",
+        "fallbackModels": [
+          "theclawbay-claude/claude-opus-4-8:xhigh"
+        ]
       },
       "reviewer": {
-        "model": "theclawbay-claude/claude-opus-4-8:high",
-        "fallbackModels": ["theclawbay/gpt-5.5"]
+        "model": "theclawbay/gpt-5.6-sol:high",
+        "fallbackModels": [
+          "theclawbay-claude/claude-opus-4-8:high"
+        ]
       },
       "reviewer-correctness": {
-        "model": "theclawbay-claude/claude-opus-4-8:high"
+        "model": "theclawbay/gpt-5.6-sol:high",
+        "fallbackModels": [
+          "theclawbay-claude/claude-opus-4-8:high"
+        ]
       },
       "reviewer-security": {
-        "model": "theclawbay/gemini-2.5-pro:high"
+        "model": "theclawbay/gpt-5.6:high",
+        "fallbackModels": [
+          "theclawbay-claude/claude-sonnet-4-6:high"
+        ]
       },
       "reviewer-tests": {
-        "model": "zai/glm-5.2:high"
+        "model": "theclawbay/gpt-5.6-terra:high",
+        "fallbackModels": [
+          "theclawbay-claude/claude-sonnet-4-6:high"
+        ]
       },
       "designer": {
-        "model": "theclawbay-claude/claude-opus-4-8:high"
+        "model": "theclawbay/gpt-5.6-sol",
+        "fallbackModels": [
+          "theclawbay-claude/claude-opus-4-8"
+        ]
       },
       "build": {
-        "model": "theclawbay-claude/claude-sonnet-4-6:high"
+        "model": "theclawbay/gpt-5.6-sol",
+        "fallbackModels": [
+          "theclawbay-claude/claude-opus-4-8"
+        ]
       },
       "worker": {
-        "model": "theclawbay-claude/claude-sonnet-4-6:high"
+        "model": "theclawbay/gpt-5.6-terra:high",
+        "fallbackModels": [
+          "theclawbay-claude/claude-sonnet-4-6:high"
+        ]
       },
       "researcher": {
-        "model": "theclawbay-claude/claude-sonnet-4-6"
+        "model": "theclawbay/gpt-5.6-terra:high",
+        "fallbackModels": [
+          "theclawbay-claude/claude-sonnet-4-6:high"
+        ]
       },
       "scout": {
-        "model": "theclawbay-claude/claude-haiku-4-5:low",
-        "fallbackModels": ["theclawbay/gemini-2.5-flash"]
+        "model": "theclawbay/gpt-5.4-mini:low",
+        "fallbackModels": [
+          "theclawbay-claude/claude-haiku-4-5:low"
+        ]
       },
       "explore": {
-        "model": "theclawbay-claude/claude-haiku-4-5:low",
-        "fallbackModels": ["theclawbay/gemini-2.5-flash"]
+        "model": "theclawbay/gpt-5.4-mini:low",
+        "fallbackModels": [
+          "theclawbay-claude/claude-haiku-4-5:low"
+        ]
       },
-      "context-builder": {
-        "model": "theclawbay/gpt-5.5"
-      },
-      "delegate": {
-        "model": "theclawbay/gpt-5.5"
-      },
-      "planner": {
-        "model": "theclawbay-claude/claude-opus-4-8:high"
+      "evaluator": {
+        "model": "theclawbay/gpt-5.4-mini:low",
+        "fallbackModels": [
+          "theclawbay-claude/claude-sonnet-4-6:low"
+        ]
       }
     }
   },
