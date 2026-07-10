@@ -14,187 +14,199 @@ async function writeExecutable(path: string, content: string): Promise<void> {
   await writeFile(path, content, { mode: 0o755 });
 }
 
-async function makeRelease(rootDir: string, version: string): Promise<{ tarball: string; sums: string; checksum: string }> {
-  const source = join(rootDir, `thanos-${version}`);
-  await mkdir(join(source, "scripts"), { recursive: true });
-  await writeFile(join(source, "package.json"), JSON.stringify({ name: "thanos-release", version }, null, 2), "utf-8");
-  await writeFile(join(source, "mcp.example.json"), "{}\n", "utf-8");
-  await writeFile(join(source, "scripts", "install.sh"), "#!/usr/bin/env sh\nexit 0\n", { mode: 0o755 });
-
-  const tarball = join(rootDir, `thanos-${version}.tar.gz`);
-  await execFileAsync("tar", ["-czf", tarball, "-C", rootDir, `thanos-${version}`]);
-  const { stdout } = await execFileAsync("sha256sum", [tarball]);
-  const checksum = stdout.split(/\s+/)[0];
-  const sums = join(rootDir, "SHA256SUMS");
-  await writeFile(sums, `${checksum}  thanos-${version}.tar.gz\n`, "utf-8");
-  return { tarball, sums, checksum };
+async function git(cwd: string, ...args: string[]): Promise<string> {
+  const { stdout } = await execFileAsync("git", [
+    "-c", "user.email=test@thanos.test",
+    "-c", "user.name=Thanos Test",
+    "-C", cwd,
+    ...args,
+  ]);
+  return stdout.trim();
 }
 
-async function makeFakeBin(dir: string, files: Record<string, string>): Promise<string> {
+/** Build an origin repo with release tags v0.1.0 and v0.2.0. */
+async function makeOrigin(rootDir: string): Promise<string> {
+  const origin = join(rootDir, "origin");
+  await mkdir(join(origin, "scripts"), { recursive: true });
+  await mkdir(join(origin, "agent"), { recursive: true });
+  await execFileAsync("git", ["init", "-b", "master", origin]);
+
+  await writeFile(join(origin, "package.json"), JSON.stringify({ name: "thanos", version: "0.1.0" }, null, 2), "utf-8");
+  await writeFile(join(origin, "mcp.example.json"), "{}\n", "utf-8");
+  await writeFile(join(origin, "agent", "models.example.json"), '{"catalog":"v1"}\n', "utf-8");
+  await writeExecutable(join(origin, "scripts", "install.sh"), "#!/usr/bin/env sh\nexit 0\n");
+  await writeExecutable(join(origin, "scripts", "patch-pi-subagents.mjs"), "// noop\n");
+  await git(origin, "add", "-A");
+  await git(origin, "commit", "-m", "release v0.1.0");
+  await git(origin, "tag", "v0.1.0");
+
+  await writeFile(join(origin, "package.json"), JSON.stringify({ name: "thanos", version: "0.2.0" }, null, 2), "utf-8");
+  await git(origin, "add", "-A");
+  await git(origin, "commit", "-m", "release v0.2.0");
+  await git(origin, "tag", "v0.2.0");
+
+  return origin;
+}
+
+/** Cut another release in the origin repo. */
+async function cutRelease(origin: string, version: string): Promise<void> {
+  await writeFile(join(origin, "package.json"), JSON.stringify({ name: "thanos", version: version.replace(/^v/, "") }, null, 2), "utf-8");
+  await git(origin, "add", "-A");
+  await git(origin, "commit", "-m", `release ${version}`);
+  await git(origin, "tag", version);
+}
+
+async function makeFakeBin(dir: string, commandLog: string): Promise<string> {
   const bin = join(dir, "bin");
   await mkdir(bin, { recursive: true });
-  for (const [name, content] of Object.entries(files)) {
-    await writeExecutable(join(bin, name), content);
-  }
+  await writeExecutable(join(bin, "pi"), `#!/bin/sh\nif [ "$1" = '--version' ]; then echo 'pi 0.80.6'; exit 0; fi\necho "pi $*" >> '${commandLog}'\n`);
+  await writeExecutable(join(bin, "bun"), `#!/bin/sh\necho "bun $*" >> '${commandLog}'\n`);
+  await writeExecutable(join(bin, "npm"), `#!/bin/sh\necho "npm $*" >> '${commandLog}'\n`);
+  await writeExecutable(join(bin, "node"), `#!/bin/sh\necho "node $*" >> '${commandLog}'\n`);
   return bin;
 }
 
-async function runInstaller(env: Record<string, string>, pathPrefix: string) {
-  return execFileAsync("/bin/sh", [installer], {
+interface InstallEnv {
+  HOME: string;
+  THANOS_DIR: string;
+  BIN_DIR: string;
+  THANOS_REPO_URL: string;
+  THANOS_REF?: string;
+}
+
+async function runInstaller(env: InstallEnv, pathPrefix: string, args: string[] = []) {
+  return execFileAsync("/bin/sh", [installer, ...args], {
     env: {
       HOME: env.HOME,
       PATH: pathPrefix,
       THANOS_DIR: env.THANOS_DIR,
       BIN_DIR: env.BIN_DIR,
-      THANOS_VERSION: env.THANOS_VERSION,
-      THANOS_RELEASE_BASE_URL: env.THANOS_RELEASE_BASE_URL,
-      THANOS_LATEST_RELEASE_API_URL: env.THANOS_LATEST_RELEASE_API_URL,
+      THANOS_REPO_URL: env.THANOS_REPO_URL,
+      ...(env.THANOS_REF ? { THANOS_REF: env.THANOS_REF } : {}),
     },
   });
 }
 
-describe("install.sh release bootstrap", () => {
-  it("fails closed when no checksum command is available", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "thanos-install-no-checksum-"));
-    const bin = await makeFakeBin(dir, {
-      env: "#!/bin/sh\nexec /usr/bin/env \"$@\"\n",
-      sh: "#!/bin/sh\nexec /bin/sh \"$@\"\n",
-      mktemp: "#!/bin/sh\n/usr/bin/mktemp \"$@\"\n",
-      pi: "#!/bin/sh\necho 'pi 0.74.0'\n",
-    });
-
-    await expect(runInstaller({
-      HOME: dir,
-      THANOS_DIR: join(dir, ".pi"),
-      BIN_DIR: join(dir, "bin-out"),
-      THANOS_VERSION: "v0.1.0",
-      THANOS_RELEASE_BASE_URL: "https://example.test/releases",
-      THANOS_LATEST_RELEASE_API_URL: "https://example.test/latest",
-    }, bin)).rejects.toMatchObject({
-      stderr: expect.stringContaining("Neither sha256sum nor shasum -a 256 found"),
-    });
-  });
-
-  it("rejects release tarballs whose checksum does not match SHA256SUMS", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "thanos-install-bad-checksum-"));
-    const release = await makeRelease(dir, "v0.2.0");
-    await writeFile(release.sums, `0000000000000000000000000000000000000000000000000000000000000000  thanos-v0.2.0.tar.gz\n`, "utf-8");
-    const bin = await makeFakeBin(dir, {
-      mktemp: "#!/bin/sh\n/usr/bin/mktemp \"$@\"\n",
-      pi: "#!/bin/sh\necho 'pi 0.74.0'\n",
-      curl: `#!/bin/sh\nout=''\nurl=''\nwhile [ "$#" -gt 0 ]; do\n  case "$1" in\n    -o) out="$2"; shift 2 ;;\n    -*) shift ;;\n    *) url="$1"; shift ;;\n  esac\ndone\ncase "$url" in\n  */thanos-v0.2.0.tar.gz) cp '${release.tarball}' "$out" ;;\n  */SHA256SUMS) cp '${release.sums}' "$out" ;;\n  https://example.test/latest) printf '{"tag_name":"v0.2.0","prerelease":false}\n' > "$out" ;;\n  *) echo 'unexpected url' >&2; exit 2 ;;\nesac\n`,
-      sha256sum: "#!/bin/sh\n/usr/bin/sha256sum \"$@\"\n",
-      bun: "#!/bin/sh\nexit 0\n",
-      npm: "#!/bin/sh\nexit 0\n",
-    });
-
-    await expect(runInstaller({
-      HOME: dir,
-      THANOS_DIR: join(dir, ".pi"),
-      BIN_DIR: join(dir, "bin-out"),
-      THANOS_VERSION: "v0.2.0",
-      THANOS_RELEASE_BASE_URL: "https://example.test/releases",
-      THANOS_LATEST_RELEASE_API_URL: "https://example.test/latest",
-    }, `${bin}:/usr/bin:/bin`)).rejects.toMatchObject({
-      stderr: expect.stringContaining("Checksum mismatch for thanos-v0.2.0.tar.gz"),
-    });
-  });
-
-  it("installs the latest stable release from a verified source tarball", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "thanos-install-success-"));
-    const release = await makeRelease(dir, "v0.3.0");
+describe("install.sh git bootstrap", () => {
+  it("clones and checks out the latest release tag on fresh install", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "thanos-install-fresh-"));
+    const origin = await makeOrigin(dir);
     const commandLog = join(dir, "commands.log");
-    const bin = await makeFakeBin(dir, {
-      mktemp: "#!/bin/sh\n/usr/bin/mktemp \"$@\"\n",
-      pi: `#!/bin/sh\nif [ "$1" = '--version' ]; then echo 'pi 0.74.0'; exit 0; fi\necho "pi $*" >> '${commandLog}'\n`,
-      curl: `#!/bin/sh\nout=''\nurl=''\nwhile [ "$#" -gt 0 ]; do\n  case "$1" in\n    -o) out="$2"; shift 2 ;;\n    -*) shift ;;\n    *) url="$1"; shift ;;\n  esac\ndone\ncase "$url" in\n  https://example.test/latest) printf '{"tag_name":"v0.3.0","prerelease":false}\n' > "$out" ;;\n  */thanos-v0.3.0.tar.gz) cp '${release.tarball}' "$out" ;;\n  */SHA256SUMS) cp '${release.sums}' "$out" ;;\n  *) echo "unexpected url: $url" >&2; exit 2 ;;\nesac\n`,
-      sha256sum: "#!/bin/sh\n/usr/bin/sha256sum \"$@\"\n",
-      bun: `#!/bin/sh\necho "bun $*" >> '${commandLog}'\n`,
-      npm: `#!/bin/sh\necho "npm $*" >> '${commandLog}'\n`,
-    });
+    const bin = await makeFakeBin(dir, commandLog);
+    const installDir = join(dir, ".pi");
 
-    const result = await runInstaller({
-      HOME: dir,
-      THANOS_DIR: join(dir, ".pi"),
-      BIN_DIR: join(dir, "bin-out"),
-      THANOS_VERSION: "",
-      THANOS_RELEASE_BASE_URL: "https://example.test/releases",
-      THANOS_LATEST_RELEASE_API_URL: "https://example.test/latest",
-    }, `${bin}:/usr/bin:/bin`);
+    const result = await runInstaller(
+      { HOME: dir, THANOS_DIR: installDir, BIN_DIR: join(dir, "bin-out"), THANOS_REPO_URL: origin },
+      `${bin}:/usr/bin:/bin`,
+    );
 
-    await expect(stat(join(dir, ".pi", "package.json"))).resolves.toBeTruthy();
-    await expect(stat(join(dir, ".pi", "scripts", "install.sh"))).resolves.toBeTruthy();
-    await expect(stat(join(dir, "bin-out", "thanos"))).resolves.toBeTruthy();
-    const installedPackage = await readFile(join(dir, ".pi", "package.json"), "utf-8");
+    expect(result.stdout).toContain("Resolved latest release: v0.2.0");
+    const installedPackage = await readFile(join(installDir, "package.json"), "utf-8");
+    expect(installedPackage).toContain('"version": "0.2.0"');
+
+    // template copies created for user-owned config
+    await expect(stat(join(installDir, "mcp.json"))).resolves.toBeTruthy();
+    const models = await readFile(join(installDir, "agent", "models.json"), "utf-8");
+    expect(models).toContain('"catalog":"v1"');
+
+    // launcher installed
+    const wrapper = await readFile(join(dir, "bin-out", "thanos"), "utf-8");
+    expect(wrapper).toContain("exec pi");
+    expect(wrapper).not.toContain("--ref");
+
     const log = await readFile(commandLog, "utf-8");
-
-    expect(installedPackage).toContain('"version": "v0.3.0"');
     expect(log).toContain("bun install");
     expect(log).toContain("pi install .");
-    expect(result.stdout).toContain("Resolved Thanos version: v0.3.0");
-    expect(result.stdout).toContain(`Computed checksum: ${release.checksum}`);
-    expect(result.stdout).toContain(`Install directory: ${join(dir, ".pi")}`);
-    expect(result.stdout).toContain("Pi version: pi 0.74.0");
   });
 
-  it("pins installs to an explicit version when requested", async () => {
+  it("updates an existing checkout to a new release and preserves user config", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "thanos-install-update-"));
+    const origin = await makeOrigin(dir);
+    const commandLog = join(dir, "commands.log");
+    const bin = await makeFakeBin(dir, commandLog);
+    const installDir = join(dir, ".pi");
+    const env = { HOME: dir, THANOS_DIR: installDir, BIN_DIR: join(dir, "bin-out"), THANOS_REPO_URL: origin };
+
+    await runInstaller(env, `${bin}:/usr/bin:/bin`);
+
+    // user customizes gitignored config and adds credentials after install
+    await writeFile(join(installDir, "agent", "models.json"), '{"catalog":"user-edited"}\n', "utf-8");
+    await writeFile(join(installDir, "agent", "auth.json"), '{"secret":"keep-me"}\n', "utf-8");
+
+    await cutRelease(origin, "v0.3.0");
+    const result = await runInstaller(env, `${bin}:/usr/bin:/bin`);
+
+    expect(result.stdout).toContain("Updating existing Thanos checkout");
+    expect(result.stdout).toContain("Resolved latest release: v0.3.0");
+    const installedPackage = await readFile(join(installDir, "package.json"), "utf-8");
+    expect(installedPackage).toContain('"version": "0.3.0"');
+
+    // user files survived the update untouched
+    const models = await readFile(join(installDir, "agent", "models.json"), "utf-8");
+    expect(models).toContain("user-edited");
+    const auth = await readFile(join(installDir, "agent", "auth.json"), "utf-8");
+    expect(auth).toContain("keep-me");
+  });
+
+  it("pins to an explicit ref when requested", async () => {
     const dir = await mkdtemp(join(tmpdir(), "thanos-install-pinned-"));
-    const release = await makeRelease(dir, "v1.2.3");
-    const bin = await makeFakeBin(dir, {
-      mktemp: "#!/bin/sh\n/usr/bin/mktemp \"$@\"\n",
-      pi: "#!/bin/sh\necho 'pi 0.74.0'\n",
-      curl: `#!/bin/sh\nout=''\nurl=''\nwhile [ "$#" -gt 0 ]; do\n  case "$1" in\n    -o) out="$2"; shift 2 ;;\n    -*) shift ;;\n    *) url="$1"; shift ;;\n  esac\ndone\ncase "$url" in\n  */thanos-v1.2.3.tar.gz) cp '${release.tarball}' "$out" ;;\n  */SHA256SUMS) cp '${release.sums}' "$out" ;;\n  https://example.test/latest) printf '{"tag_name":"v9.9.9","prerelease":false}\n' > "$out" ;;\n  *) echo "unexpected url: $url" >&2; exit 2 ;;\nesac\n`,
-      sha256sum: "#!/bin/sh\n/usr/bin/sha256sum \"$@\"\n",
-      npm: "#!/bin/sh\nexit 0\n",
+    const origin = await makeOrigin(dir);
+    const bin = await makeFakeBin(dir, join(dir, "commands.log"));
+    const installDir = join(dir, ".pi");
+
+    const result = await runInstaller(
+      { HOME: dir, THANOS_DIR: installDir, BIN_DIR: join(dir, "bin-out"), THANOS_REPO_URL: origin },
+      `${bin}:/usr/bin:/bin`,
+      ["--ref", "v0.1.0"],
+    );
+
+    expect(result.stdout).toContain("Using requested ref: v0.1.0");
+    expect(result.stdout).not.toContain("Resolved latest release");
+    const installedPackage = await readFile(join(installDir, "package.json"), "utf-8");
+    expect(installedPackage).toContain('"version": "0.1.0"');
+  });
+
+  it("refuses to overwrite an existing non-Thanos directory without --force", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "thanos-install-collision-"));
+    const origin = await makeOrigin(dir);
+    const bin = await makeFakeBin(dir, join(dir, "commands.log"));
+    const installDir = join(dir, ".pi");
+    await mkdir(installDir, { recursive: true });
+    await writeFile(join(installDir, "precious.txt"), "not thanos\n", "utf-8");
+
+    await expect(runInstaller(
+      { HOME: dir, THANOS_DIR: installDir, BIN_DIR: join(dir, "bin-out"), THANOS_REPO_URL: origin },
+      `${bin}:/usr/bin:/bin`,
+    )).rejects.toMatchObject({
+      stderr: expect.stringContaining("already exists and is not the Thanos repository"),
     });
 
-    const result = await runInstaller({
-      HOME: dir,
-      THANOS_DIR: join(dir, ".pi"),
-      BIN_DIR: join(dir, "bin-out"),
-      THANOS_VERSION: "v1.2.3",
-      THANOS_RELEASE_BASE_URL: "https://example.test/releases",
-      THANOS_LATEST_RELEASE_API_URL: "https://example.test/latest",
-    }, `${bin}:/usr/bin:/bin`);
-
-    expect(result.stdout).toContain("Using requested Thanos version: v1.2.3");
-    expect(result.stdout).not.toContain("Resolved Thanos version: v9.9.9");
-    expect(result.stdout).toContain(`Computed checksum: ${release.checksum}`);
+    // the existing directory was left alone
+    const precious = await readFile(join(installDir, "precious.txt"), "utf-8");
+    expect(precious).toContain("not thanos");
   });
 
   it("uses an existing checkout when --skip-clone is requested", async () => {
     const dir = await mkdtemp(join(tmpdir(), "thanos-install-skip-clone-"));
-    const installDir = join(dir, ".pi");
     const commandLog = join(dir, "commands.log");
+    const installDir = join(dir, ".pi");
     await mkdir(join(installDir, "scripts"), { recursive: true });
     await writeFile(join(installDir, "package.json"), JSON.stringify({ name: "local-thanos" }, null, 2), "utf-8");
-    await writeFile(join(installDir, "scripts", "install.sh"), "#!/usr/bin/env sh\nexit 0\n", { mode: 0o755 });
+    await writeExecutable(join(installDir, "scripts", "install.sh"), "#!/usr/bin/env sh\nexit 0\n");
+    await writeExecutable(join(installDir, "scripts", "patch-pi-subagents.mjs"), "// noop\n");
+    const bin = await makeFakeBin(dir, commandLog);
 
-    const bin = await makeFakeBin(dir, {
-      pi: `#!/bin/sh\nif [ "$1" = '--version' ]; then echo 'pi 0.74.0'; exit 0; fi\necho "pi $*" >> '${commandLog}'\n`,
-      curl: "#!/bin/sh\necho 'curl should not run for --skip-clone' >&2\nexit 2\n",
-      npm: `#!/bin/sh\necho "npm $*" >> '${commandLog}'\n`,
-    });
-
-    const result = await execFileAsync("/bin/sh", [installer, "--skip-clone"], {
-      env: {
-        HOME: dir,
-        PATH: `${bin}:/usr/bin:/bin`,
-        THANOS_DIR: installDir,
-        BIN_DIR: join(dir, "bin-out"),
-        THANOS_VERSION: "v9.9.9",
-        THANOS_RELEASE_BASE_URL: "https://example.test/releases",
-        THANOS_LATEST_RELEASE_API_URL: "https://example.test/latest",
-      },
-    });
+    const result = await runInstaller(
+      { HOME: dir, THANOS_DIR: installDir, BIN_DIR: join(dir, "bin-out"), THANOS_REPO_URL: join(dir, "nonexistent-origin") },
+      `${bin}:/usr/bin:/bin`,
+      ["--skip-clone"],
+    );
 
     const installedPackage = await readFile(join(installDir, "package.json"), "utf-8");
     const log = await readFile(commandLog, "utf-8");
 
     expect(installedPackage).toContain("local-thanos");
-    expect(log).toContain("npm install");
     expect(log).toContain("pi install .");
     expect(result.stdout).toContain("Using existing Thanos checkout");
-    expect(result.stdout).not.toContain("Artifact URL:");
   });
 });

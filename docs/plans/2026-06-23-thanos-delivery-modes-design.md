@@ -82,7 +82,7 @@ It never widens reach.
   "projects": [
     {
       "match": "git@github.com:Fchery87/scanforge.git",
-      "path": "/home/nochaserz/Documents/Coding Projects/scanforge",
+      "path": "/home/you/code/scanforge",
       "mode": "no-mistakes",
       "autonomy": "unattended",
       "yolo": "locked"

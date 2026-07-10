@@ -116,7 +116,7 @@ const STONES = [
   { color: "syntaxNumber", label: "subagents" }, // soul
   { color: "mdLink", label: "web" }, // space
   { color: "success", label: "quality" }, // time
-  { color: "warning", label: "86+ skills" }, // mind
+  { color: "warning", label: "skills" }, // mind
 ] as const;
 
 function renderStoneStrip(theme: TUITheme, width: number): string {
