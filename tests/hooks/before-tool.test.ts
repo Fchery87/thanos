@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { makeBeforeToolHandler } from "../../src/hooks/before-tool";
+import { evaluateGovernedToolCall } from "../../src/governance/tool-call";
 import { PermissionManager } from "../../src/permissions/manager";
 import { SpecEngine } from "../../src/spec/engine";
 import type { HarnessPolicy } from "../../src/policy/types";
@@ -61,6 +62,32 @@ describe("makeBeforeToolHandler audit context", () => {
   });
 });
 
+describe("precomputed governed decision threading", () => {
+  it("honors a governed decision computed by the caller (no recompute)", async () => {
+    const denyPolicy: HarnessPolicy = {
+      ...basePolicy,
+      rules: [
+        { id: "deny-deploys", capability: "exec", pattern: "**/deploy*", decision: "deny", reason: "no deploys" },
+      ],
+    };
+    // Handler factory receives NO policy — the deny can only come from the
+    // precomputed decision passed per call.
+    const handler = makeBeforeToolHandler(
+      makePermissions(false),
+      makeSpec(),
+      async () => true,
+      true,
+    );
+
+    const event = { toolName: "bash", input: { command: "./deploy.sh prod" } };
+    const governed = evaluateGovernedToolCall(event.toolName, event.input, denyPolicy);
+    const result = await handler(event, governed);
+
+    expect(result?.block).toBe(true);
+    expect(result?.reason).toContain("deny-deploys");
+  });
+});
+
 describe("headless audit record correctness", () => {
   it("records 'deny' in audit when headless gate blocks — not the defaultDecision config value", async () => {
     const auditLogger = { record: vi.fn(async () => undefined) };
@@ -79,8 +106,8 @@ describe("headless audit record correctness", () => {
       { sessionId: "s1", agentType: "parent" },
     );
 
-    // bash is critical-tier, requires confirmation — should block in headless
-    const result = await handler({ toolName: "bash", input: { command: "ls" } });
+    // mutating bash is critical-tier, requires confirmation — should block in headless
+    const result = await handler({ toolName: "bash", input: { command: "rm -rf tmp" } });
 
     expect(result?.block).toBe(true);
     // Audit must record the actual decision ("deny"), not the config value ("allow")

@@ -78,7 +78,8 @@ A stable identifier for a policy rule, used to connect policy files, policy deni
 _Avoid_: Anonymous policy rule
 
 **Risk Tier**
-`low | medium | high | critical`. Assigned per tool name before capability rule evaluation. Low-risk tools (`read`, `ls`, `find`, `grep`) bypass rule evaluation entirely — always allowed. High/critical tools always trigger `ask` unless an explicit `allow` rule exists.
+`low | medium | high | critical`. Assigned per tool name before capability rule evaluation, except `bash`, which is tiered by inspecting the command itself: a command whose every clause is a recognized read-only invocation (read-only binary or git read subcommand, no shell metacharacters, no **Sensitive Read** targets) is `low`; anything else — mutating, unknown, redirected, substituted — is `critical` (fail-safe). Low-risk tools (`read`, `ls`, `find`, `grep`) and low-tier bash bypass rule evaluation entirely — always allowed after policy denial checks. High/critical tools always trigger `ask` unless an explicit `allow` rule exists; only `critical` bash triggers the pre-call git snapshot. The builtin sensitive-read patterns are enforced inside the bash tiering because policy sensitive-read rules are `read`-capability and do not match `exec` targets.
+_Avoid_: Tiering every bash command `critical` regardless of content; downgrading a command the analyzer cannot prove read-only
 
 **SpecEngine**
 Singleton per session. Runs classify → generate → verify lifecycle. `reset()` called at each `before_agent_start`. `verify()` called at `agent_end`.

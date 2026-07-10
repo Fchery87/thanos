@@ -64,7 +64,7 @@ import { MemoryStore, MAX_MEMORY_LENGTH } from "./memory/store";
 import { formatMemoriesForInjection } from "./memory/injector";
 // Model router removed — use /models command or pi-subagents for model selection
 import { createSnapshot } from "./security/snapshot";
-import { classifyRisk } from "./permissions/risk";
+import { evaluateGovernedToolCall } from "./governance/tool-call";
 // registerSearchTool removed — superseded by npm:pi-web-access
 import { AskParamsSchema, buildAskDecision, resolveHeadlessAsk, type AskQuestion } from "./interaction/ask";
 import {
@@ -1550,6 +1550,11 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       return { block: true, reason: "local-only delivery mode forbids pushing to a remote (argv-level guard)" };
     }
 
+    // Governed Tool Call: computed once per tool call and passed to every
+    // consumer (permission handler, snapshot decision) — the single source
+    // for capability, target, risk tier, and policy decision.
+    const governed = evaluateGovernedToolCall(event.toolName, event.input, policy);
+
     const handler = makeBeforeToolHandler(
       permissions,
       spec,
@@ -1561,7 +1566,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       { sessionId, agentType },
       delivery?.autonomy ?? "attended",
     );
-    const result = await handler(event);
+    const result = await handler(event, governed);
     if (result?.block) return { block: true, reason: result.reason };
 
     const ctxGuardResult = contextModeExecutionGuard(event);
@@ -1571,10 +1576,10 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     if (lensResult?.block) return lensResult;
 
     if (!permissions.isYolo) {
-      const { toolName, input } = event;
-      // Git snapshot: stash working tree before critical (bash) tool calls.
+      // Git snapshot: stash working tree before critical (mutating bash) tool
+      // calls. Read-only bash is low-tier and skips this entirely.
       // Secret scanning is handled by Lens Lite, even when yolo is enabled.
-      if (classifyRisk(toolName, input) === "critical") {
+      if (governed.call.riskTier === "critical") {
         createSnapshot(process.cwd()).catch(() => {});
       }
     }

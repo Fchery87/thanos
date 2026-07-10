@@ -5,7 +5,7 @@ import { formatPolicyDenial } from "../policy/denial";
 import type { HarnessPolicy } from "../policy/types";
 import type { SpecEngine } from "../spec/engine";
 import type { FormalSpec } from "../spec/types";
-import { evaluateGovernedToolCall } from "../governance/tool-call";
+import { evaluateGovernedToolCall, type GovernedToolDecision } from "../governance/tool-call";
 
 export interface BlockResult { block: true; reason: string; }
 type PromptUser = (message: string) => Promise<boolean>;
@@ -27,9 +27,12 @@ export function makeBeforeToolHandler(
   auditContext?: AuditContext,
   autonomy: "attended" | "unattended" = "attended",
 ) {
-  return async (event: { toolName: string; input: Record<string, unknown> }): Promise<BlockResult | undefined> => {
+  return async (
+    event: { toolName: string; input: Record<string, unknown> },
+    precomputed?: GovernedToolDecision,
+  ): Promise<BlockResult | undefined> => {
     const { toolName, input } = event;
-    const governed = evaluateGovernedToolCall(toolName, input, policy);
+    const governed = precomputed ?? evaluateGovernedToolCall(toolName, input, policy);
     const { call, policyDecision, auditTarget } = governed;
     const { capability, target, riskTier: tier } = call;
 
