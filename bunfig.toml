@@ -1,0 +1,5 @@
+[test]
+# Bare `bun test` would run the vitest suite under bun's incompatible built-in
+# runner (no vi.mocked, no vi.mock hoisting) and report phantom failures.
+# The preload throws immediately with a pointer to `bun run test`.
+preload = ["./tests/guard-bun-test.ts"]
