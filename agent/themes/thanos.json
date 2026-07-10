@@ -82,6 +82,7 @@
     "thinkingMedium": "amethyst",
     "thinkingHigh": "amethystBright",
     "thinkingXhigh": "amethystPale",
+    "thinkingMax": "gold",
     "bashMode": "gold"
   },
   "export": {
