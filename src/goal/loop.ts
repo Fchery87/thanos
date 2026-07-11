@@ -2,6 +2,8 @@ import type { GoalController } from "./controller";
 
 export interface AgentEndInfo {
   willRetry: boolean;
+  /** True when the user aborted the turn (ESC) — pause instead of continuing. */
+  aborted: boolean;
 }
 
 export interface GoalEventRecord {
@@ -31,6 +33,16 @@ export async function handleAgentEnd(deps: LoopDeps, info: AgentEndInfo): Promis
   const { controller } = deps;
   const snap = controller.snapshot();
   if (deps.isSubagent || info.willRetry || !snap || snap.status !== "active") return;
+
+  // ESC must win: pause the goal (recoverable via /goal resume) without
+  // consuming a turn — the aborted turn produced no evaluable work.
+  if (info.aborted) {
+    controller.pause();
+    const detail = "Turn aborted by user.";
+    deps.notify(`◎ /goal paused — ${detail} Run /goal resume to continue.`, "warning");
+    await deps.recordEvent({ type: "goal_paused", summary: detail, outcome: "user-abort" });
+    return;
+  }
 
   const action = controller.onTurnEnd(deps.getTokens());
   switch (action.kind) {
