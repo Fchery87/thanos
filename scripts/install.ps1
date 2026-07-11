@@ -1,7 +1,7 @@
 # Thanos installer for Windows (PowerShell).
 # Installs/updates Thanos into %USERPROFILE%\.pi, installs Pi if missing, and creates a `thanos` launcher.
 param(
-  [string]$Ref = $(if ($env:THANOS_REF) { $env:THANOS_REF } else { "master" }),
+  [string]$Ref = $(if ($env:THANOS_REF) { $env:THANOS_REF } else { "" }),
   [string]$Dir = $(if ($env:THANOS_DIR) { $env:THANOS_DIR } else { Join-Path $env:USERPROFILE ".pi" }),
   [string]$BinDir = $(if ($env:BIN_DIR) { $env:BIN_DIR } else { Join-Path $env:USERPROFILE ".local\bin" }),
   [switch]$SkipClone,
@@ -27,7 +27,7 @@ Usage:
   powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1 [options]
 
 Options:
-  -Ref <ref>        Git branch, tag, or commit to install (default: master)
+  -Ref <ref>        Git branch, tag, or commit to install (default: latest release tag)
   -Dir <path>       Install directory (default: `$HOME\.pi)
   -BinDir <path>    Directory for the thanos.cmd launcher (default: `$HOME\.local\bin)
   -SkipClone        Use the existing install directory without fetching/cloning
@@ -50,10 +50,27 @@ function Is-ThanosRepo {
   if (-not (Test-Path (Join-Path $ThanosDir ".git"))) { return $false }
   try {
     $remote = git -C $ThanosDir remote get-url origin 2>$null
+    if ($remote -eq $RepoUrl) { return $true }
     return ($remote -match "(?i)Fchery87/thanos")
   } catch {
     return $false
   }
+}
+
+# Resolve the ref to install: explicit -Ref wins, otherwise the highest release
+# tag, otherwise master. Must run after tags have been fetched.
+function Resolve-TargetRef {
+  if ($Ref) {
+    Info "Using requested ref: $Ref"
+    return $Ref
+  }
+  $latestTag = git -C $ThanosDir tag --list "v*" --sort=-v:refname | Select-Object -First 1
+  if ($latestTag) {
+    Info "Resolved latest release: $latestTag"
+    return $latestTag
+  }
+  Warn "No release tags found; falling back to master"
+  return "master"
 }
 
 function Backup-ExistingDir {
@@ -65,8 +82,6 @@ function Backup-ExistingDir {
 }
 
 function Checkout-Ref($GitRef) {
-  git -C $ThanosDir fetch --tags origin
-
   $originRef = git -C $ThanosDir rev-parse --verify --quiet "origin/$GitRef" 2>$null
   if ($LASTEXITCODE -eq 0 -and $originRef) {
     git -C $ThanosDir checkout -B $GitRef "origin/$GitRef"
@@ -89,8 +104,11 @@ function Prepare-InstallSource {
   Ensure-Command "git" "git is required. Install Git for Windows first, then rerun the installer."
 
   if (Is-ThanosRepo) {
-    Info "Updating existing Thanos checkout at $ThanosDir to $Ref"
-    Checkout-Ref $Ref
+    Info "Updating existing Thanos checkout at $ThanosDir"
+    git -C $ThanosDir fetch --tags origin
+    $targetRef = Resolve-TargetRef
+    Checkout-Ref $targetRef
+    Info "Now at: $(git -C $ThanosDir describe --tags --always)"
     return
   }
 
@@ -106,7 +124,10 @@ function Prepare-InstallSource {
   if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
   Info "Cloning Thanos from $RepoUrl into $ThanosDir"
   git clone $RepoUrl $ThanosDir
-  Checkout-Ref $Ref
+  git -C $ThanosDir fetch --tags origin
+  $targetRef = Resolve-TargetRef
+  Checkout-Ref $targetRef
+  Info "Now at: $(git -C $ThanosDir describe --tags --always)"
 }
 
 function Ensure-Pi {
@@ -128,6 +149,13 @@ function Install-Harness {
   if (Get-Command bun -ErrorAction SilentlyContinue) { bun install } else { npm install }
   Info "Registering Thanos as a Pi package..."
   pi install .
+  Info "Patching pi-subagents (skip skills dirs in agent discovery)..."
+  try {
+    node (Join-Path $ThanosDir "scripts\patch-pi-subagents.mjs")
+    if ($LASTEXITCODE -ne 0) { Warn "pi-subagents patch skipped (non-fatal)" }
+  } catch {
+    Warn "pi-subagents patch skipped (non-fatal)"
+  }
   Pop-Location
 }
 
@@ -171,31 +199,92 @@ function Setup-WebSearch {
 
 function Install-Wrapper {
   New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
-  $wrapperPath = Join-Path $BinDir "thanos.cmd"
+
+  # thanos.cmd — for cmd.exe (and PowerShell via PATHEXT)
+  $cmdPath = Join-Path $BinDir "thanos.cmd"
   @'
 @echo off
 setlocal
-set THANOS_DIR=%THANOS_DIR%
-if "%THANOS_DIR%"=="" set THANOS_DIR=%USERPROFILE%\.pi
-set THANOS_REF=%THANOS_REF%
-if "%THANOS_REF%"=="" set THANOS_REF=master
+if "%THANOS_DIR%"=="" set "THANOS_DIR=%USERPROFILE%\.pi"
 
-if "%1"=="update" (
-  echo [thanos] Updating Thanos...
-  powershell -ExecutionPolicy Bypass -File "%THANOS_DIR%\scripts\install.ps1" -Ref "%THANOS_REF%"
-  exit /b %ERRORLEVEL%
+if /i "%~1"=="update" goto :update
+if /i "%~1"=="version" goto :version
+if "%~1"=="--version" goto :version
+
+where pi >nul 2>nul
+if errorlevel 1 (
+  echo [thanos] 'pi' was not found on PATH. Open a new terminal and try again.
+  echo [thanos] If it persists, reinstall: https://github.com/Fchery87/thanos
+  exit /b 1
 )
-
 pi %*
-'@ | Set-Content $wrapperPath -Encoding ASCII
-  Info "Installed thanos wrapper at $wrapperPath"
+exit /b %ERRORLEVEL%
+
+:update
+echo [thanos] Updating Thanos...
+if "%THANOS_REF%"=="" (
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%THANOS_DIR%\scripts\install.ps1"
+) else (
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%THANOS_DIR%\scripts\install.ps1" -Ref "%THANOS_REF%"
+)
+exit /b %ERRORLEVEL%
+
+:version
+set "THANOS_VER="
+for /f "delims=" %%v in ('git -C "%THANOS_DIR%" describe --tags --always 2^>nul') do set "THANOS_VER=%%v"
+if not defined THANOS_VER set "THANOS_VER=unknown"
+echo thanos %THANOS_VER%
+where pi >nul 2>nul && pi --version
+exit /b 0
+'@ | Set-Content $cmdPath -Encoding ASCII
+  Info "Installed thanos.cmd launcher at $cmdPath (cmd, PowerShell)"
+
+  # NOTE: deliberately no thanos.ps1 — PowerShell prefers .ps1 over .cmd, and the
+  # default Restricted execution policy on Windows clients would then break `thanos`
+  # with "running scripts is disabled" (the classic npm.ps1 failure). PowerShell
+  # falls back to thanos.cmd via PATHEXT, which works under any policy.
+
+  # thanos — extensionless sh script for Git Bash / MSYS / Cygwin
+  $shPath = Join-Path $BinDir "thanos"
+  $shContent = @'
+#!/bin/sh
+THANOS_DIR="${THANOS_DIR:-$HOME/.pi}"
+
+if [ "${1:-}" = "update" ]; then
+  printf '[thanos] Updating Thanos...\n'
+  if [ -n "${THANOS_REF:-}" ]; then
+    exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$THANOS_DIR/scripts/install.ps1" -Ref "$THANOS_REF"
+  fi
+  exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$THANOS_DIR/scripts/install.ps1"
+fi
+
+if [ "${1:-}" = "version" ] || [ "${1:-}" = "--version" ]; then
+  printf 'thanos %s\n' "$(git -C "$THANOS_DIR" describe --tags --always 2>/dev/null || echo unknown)"
+  command -v pi >/dev/null 2>&1 && printf 'pi %s\n' "$(pi --version 2>/dev/null || echo unknown)"
+  exit 0
+fi
+
+if ! command -v pi >/dev/null 2>&1; then
+  echo "[thanos] 'pi' was not found on PATH. Open a new terminal and try again."
+  echo "[thanos] If it persists, reinstall: https://github.com/Fchery87/thanos"
+  exit 1
+fi
+exec pi "$@"
+'@
+  # LF line endings so sh parses it cleanly under Git Bash
+  [IO.File]::WriteAllText($shPath, ($shContent -replace "`r`n", "`n") + "`n")
+  Info "Installed thanos launcher at $shPath (Git Bash)"
 }
 
 function Ensure-Path {
   $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
   if ($userPath -notlike "*$BinDir*") {
     [Environment]::SetEnvironmentVariable("PATH", "$BinDir;$userPath", "User")
-    Warn "Added $BinDir to user PATH — restart your terminal"
+    Warn "Added $BinDir to user PATH — other terminals need a restart to pick it up"
+  }
+  # Make `thanos` available in this session immediately
+  if ($env:PATH -notlike "*$BinDir*") {
+    $env:PATH = "$BinDir;$env:PATH"
   }
 }
 

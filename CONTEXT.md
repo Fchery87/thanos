@@ -14,7 +14,7 @@ The governance pillar inside Thanos: policy, verification, audit, and delegation
 _Avoid_: Multi-tenant runtime
 
 **Pi**
-The installed coding agent CLI — package `@earendil-works/pi-coding-agent` (currently v0.80.2+; keep the repo's devDependency aligned with the installed CLI so the extension typechecks against the runtime API). Loaded via nvm node v24.15.0. Binary at `~/.nvm/versions/node/v24.15.0/bin/pi`.
+The installed coding agent CLI — package `@earendil-works/pi-coding-agent` (currently v0.80.2+; keep the repo's devDependency aligned with the installed CLI so the extension typechecks against the runtime API). Installed globally via npm or bun; resolved from `PATH`.
 
 **Welcome Header**
 The startup TUI surface for Thanos. It should orient the user to the current **Agent Distribution** session by showing the active model, thinking level, specialist mode, MCP connectivity, policy/audit posture, recent work, and the commands that answer "what can I do next?".

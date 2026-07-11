@@ -29,6 +29,17 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Verify tag matches package.json version
+        env:
+          TAG_VERSION: ${{ github.ref_name }}
+        run: |
+          pkg_version=$(node -p "require('./package.json').version")
+          if [ "v${pkg_version}" != "${TAG_VERSION}" ]; then
+            echo "::error::Tag ${TAG_VERSION} does not match package.json version v${pkg_version}." \
+                 "Bump package.json (the update-notice check reads it) and re-tag."
+            exit 1
+          fi
+
       - name: Configure git identity
         run: |
           git config --global user.email "ci@harness.release"
@@ -44,18 +55,22 @@ jobs:
         run: bun run test
 
       - name: Package release tarball and checksum
+        env:
+          TAG_VERSION: ${{ github.ref_name }}
+          RELEASE_SHA: ${{ github.sha }}
         run: |
           mkdir -p dist
-          git archive --format=tar.gz --prefix="thanos-${{ github.ref_name }}/" \
-            -o "dist/thanos-${{ github.ref_name }}.tar.gz" "${{ github.sha }}"
-          (cd dist && sha256sum "thanos-${{ github.ref_name }}.tar.gz" > SHA256SUMS)
+          git archive --format=tar.gz --prefix="thanos-${TAG_VERSION}/" \
+            -o "dist/thanos-${TAG_VERSION}.tar.gz" "${RELEASE_SHA}"
+          (cd dist && sha256sum "thanos-${TAG_VERSION}.tar.gz" > SHA256SUMS)
 
       - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_VERSION: ${{ github.ref_name }}
         run: |
-          gh release create "${{ github.ref_name }}" \
-            dist/thanos-${{ github.ref_name }}.tar.gz \
+          gh release create "${TAG_VERSION}" \
+            "dist/thanos-${TAG_VERSION}.tar.gz" \
             dist/SHA256SUMS \
-            --title "Thanos ${{ github.ref_name }}" \
+            --title "Thanos ${TAG_VERSION}" \
             --generate-notes

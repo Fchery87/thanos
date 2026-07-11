@@ -34,6 +34,11 @@ context-mode/
 # ── Binaries ─────────────────────────────────────────────────────────
 agent/bin/
 
+# ── Skills ───────────────────────────────────────────────────────────
+# Skills are personal/third-party content and are NOT part of the
+# distribution — users install their own.
+agent/skills/
+
 # ── Backup files ─────────────────────────────────────────────────────
 *.bak
 *.bak-*

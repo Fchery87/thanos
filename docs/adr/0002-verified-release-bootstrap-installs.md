@@ -1,6 +1,6 @@
 # ADR 0002 — Bootstrap installs use verified release artifacts
 
-**Status:** Accepted
+**Status:** Superseded by [ADR 0008](0008-git-based-install-and-update.md)
 
 ## Context
 

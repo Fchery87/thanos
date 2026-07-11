@@ -60,6 +60,7 @@ import {
 } from "./ui-utils";
 import { renderAuditPanel, renderPolicyPanel, renderSessionSnapshotPanel, renderSpecVerificationPanel } from "./commands/presenters";
 import { renderWelcomeHeader, formatTimeAgo, type WelcomeMcpSummary, type WelcomePolicySummary } from "./welcome/header";
+import { checkForUpdate } from "./welcome/update-check";
 import { MemoryStore, MAX_MEMORY_LENGTH } from "./memory/store";
 import { formatMemoriesForInjection } from "./memory/injector";
 // Model router removed — use /models command or pi-subagents for model selection
@@ -264,6 +265,17 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         policy,
         recentRows,
       }));
+
+      // Non-blocking release check (cached 24h). Failure is silent — an
+      // offline session should never see noise from this.
+      checkForUpdate().then((update) => {
+        if (update?.updateAvailable) {
+          ctx.ui.notify(
+            `Thanos ${update.latest} is available (you have v${update.current}) — run 'thanos update' to upgrade.`,
+            "info",
+          );
+        }
+      }).catch(() => {});
     }
 
     initializeMcpSession({ manager: mcpManager, pi, cwd: ctx.cwd }).then((init) => {

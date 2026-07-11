@@ -1,13 +1,13 @@
 #!/usr/bin/env sh
-# Thanos installer — verified release bootstrap for Linux/macOS.
+# Thanos installer — git-based bootstrap for Linux/macOS.
 # Installs/updates Thanos into ~/.pi, installs Pi if missing, and creates a `thanos` launcher.
+# First install clones the repo; re-running (or `thanos update`) fetches and checks out the
+# latest release tag. User-owned files (agent/auth.json, agent/models.json, mcp.json, ...)
+# are gitignored and never touched by install or update.
 set -eu
 
 THANOS_REPO_URL="${THANOS_REPO_URL:-https://github.com/Fchery87/thanos.git}"
-THANOS_REF="${THANOS_REF:-master}"
-THANOS_VERSION="${THANOS_VERSION:-}"
-THANOS_RELEASE_BASE_URL="${THANOS_RELEASE_BASE_URL:-https://github.com/Fchery87/thanos/releases/latest/download}"
-THANOS_LATEST_RELEASE_API_URL="${THANOS_LATEST_RELEASE_API_URL:-https://api.github.com/repos/Fchery87/thanos/releases/latest}"
+THANOS_REF="${THANOS_REF:-}"
 THANOS_DIR="${THANOS_DIR:-$HOME/.pi}"
 BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
 SKIP_CLONE="${SKIP_CLONE:-0}"
@@ -31,7 +31,7 @@ Usage:
   sh install.sh [options]
 
 Options:
-  --ref, -r <ref>       Legacy git ref to install when using git checkout mode
+  --ref, -r <ref>       Git branch, tag, or commit to install (default: latest release tag)
   --dir <path>          Install directory (default: ~/.pi)
   --bin-dir <path>      Directory for the `thanos` launcher (default: ~/.local/bin)
   --skip-clone          Use the existing install directory without fetching/cloning
@@ -40,16 +40,13 @@ Options:
 
 Environment overrides:
   THANOS_REPO_URL       Git repository URL
-  THANOS_VERSION        Release version to install, e.g. v0.3.0
-  THANOS_RELEASE_BASE_URL       Base URL for release assets
-  THANOS_LATEST_RELEASE_API_URL URL returning latest release JSON
-  THANOS_REF            Legacy git ref for --skip-clone/update compatibility
+  THANOS_REF            Git branch, tag, or commit (default: latest release tag)
   THANOS_DIR            Install directory
   BIN_DIR               Launcher directory
 
 Examples:
-  curl -fsSL https://github.com/Fchery87/thanos/releases/latest/download/install.sh | sh
-  THANOS_VERSION=v0.3.0 curl -fsSL https://github.com/Fchery87/thanos/releases/latest/download/install.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/Fchery87/thanos/master/scripts/install.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/Fchery87/thanos/master/scripts/install.sh | sh -s -- --ref v0.2.0
 USAGE
 }
 
@@ -93,101 +90,10 @@ ensure_git() {
   have_command git || die "git is required. Install git first, then rerun the installer."
 }
 
-checksum_command() {
-  if have_command sha256sum; then
-    printf '%s\n' sha256sum
-    return 0
-  fi
-  if have_command shasum; then
-    printf '%s\n' shasum
-    return 0
-  fi
-  return 1
-}
-
-download_file() {
-  url="$1"
-  out="$2"
-  if have_command curl; then
-    curl -fsSL -o "$out" "$url"
-    return
-  fi
-  die "curl is required to download Thanos release assets."
-}
-
-resolve_release_version() {
-  if [ -n "$THANOS_VERSION" ]; then
-    info "Using requested Thanos version: $THANOS_VERSION"
-    RESOLVED_THANOS_VERSION="$THANOS_VERSION"
-    return
-  fi
-
-  tmp_json=$(mktemp)
-  download_file "$THANOS_LATEST_RELEASE_API_URL" "$tmp_json"
-  version=$(sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$tmp_json" | sed -n '1p')
-  rm -f "$tmp_json"
-  [ -n "$version" ] || die "Unable to resolve latest Thanos release version."
-  info "Resolved Thanos version: $version"
-  RESOLVED_THANOS_VERSION="$version"
-}
-
-verify_checksum() {
-  checksum_tool=$(checksum_command) || die "Neither sha256sum nor shasum -a 256 found. Install one before running the installer."
-  tarball="$1"
-  sums="$2"
-  artifact="$3"
-
-  expected=$(awk -v name="$artifact" '$2 == name { print $1; exit }' "$sums")
-  [ -n "$expected" ] || die "No checksum found for $artifact in SHA256SUMS."
-  if [ "$checksum_tool" = "sha256sum" ]; then
-    computed=$(sha256sum "$tarball" | awk '{ print $1 }')
-  else
-    computed=$(shasum -a 256 "$tarball" | awk '{ print $1 }')
-  fi
-  info "Computed checksum: $computed"
-  [ "$computed" = "$expected" ] || die "Checksum mismatch for $artifact"
-}
-
-install_release_tarball() {
-  checksum_command >/dev/null 2>&1 || die "Neither sha256sum nor shasum -a 256 found. Install one before running the installer."
-  resolve_release_version
-  version="$RESOLVED_THANOS_VERSION"
-  artifact="thanos-${version}.tar.gz"
-  artifact_url="${THANOS_RELEASE_BASE_URL%/}/$artifact"
-  checksum_url="${THANOS_RELEASE_BASE_URL%/}/SHA256SUMS"
-  tmp_dir=$(mktemp -d)
-  tarball="$tmp_dir/$artifact"
-  sums="$tmp_dir/SHA256SUMS"
-
-  info "Artifact URL: $artifact_url"
-  info "Checksum URL: $checksum_url"
-  info "Install directory: $THANOS_DIR"
-  download_file "$artifact_url" "$tarball"
-  download_file "$checksum_url" "$sums"
-  verify_checksum "$tarball" "$sums" "$artifact"
-
-  if [ -e "$THANOS_DIR" ]; then
-    if [ "$FORCE_INSTALL" = "1" ]; then
-      backup_existing_dir
-    else
-      die "$THANOS_DIR already exists. Re-run with --force to back it up, or set THANOS_DIR to another path."
-    fi
-  fi
-
-  parent_dir=$(dirname "$THANOS_DIR")
-  mkdir -p "$parent_dir"
-  extract_dir="$tmp_dir/extract"
-  mkdir -p "$extract_dir"
-  tar -xzf "$tarball" -C "$extract_dir"
-  first_entry=$(find "$extract_dir" -mindepth 1 -maxdepth 1 -type d | sed -n '1p')
-  [ -n "$first_entry" ] || die "Release tarball did not contain a source directory."
-  mv "$first_entry" "$THANOS_DIR"
-  rm -rf "$tmp_dir"
-}
-
 is_thanos_repo() {
   [ -d "$THANOS_DIR/.git" ] || return 1
   remote_url=$(git -C "$THANOS_DIR" remote get-url origin 2>/dev/null || true)
+  [ "$remote_url" = "$THANOS_REPO_URL" ] && return 0
   case "$remote_url" in
     *Fchery87/thanos*|*fchery87/thanos*) return 0 ;;
     *) return 1 ;;
@@ -202,10 +108,26 @@ backup_existing_dir() {
   mv "$THANOS_DIR" "$backup_dir"
 }
 
+# Resolve the ref to install: explicit THANOS_REF wins, otherwise the highest
+# release tag, otherwise master. Must run after tags have been fetched.
+resolve_target_ref() {
+  if [ -n "$THANOS_REF" ]; then
+    RESOLVED_REF="$THANOS_REF"
+    info "Using requested ref: $RESOLVED_REF"
+    return
+  fi
+  latest_tag=$(git -C "$THANOS_DIR" tag --list 'v*' --sort=-v:refname | sed -n '1p')
+  if [ -n "$latest_tag" ]; then
+    RESOLVED_REF="$latest_tag"
+    info "Resolved latest release: $RESOLVED_REF"
+  else
+    RESOLVED_REF="master"
+    warn "No release tags found; falling back to master"
+  fi
+}
+
 checkout_ref() {
   ref="$1"
-  git -C "$THANOS_DIR" fetch --tags origin
-
   if git -C "$THANOS_DIR" rev-parse --verify --quiet "origin/$ref" >/dev/null; then
     git -C "$THANOS_DIR" checkout -B "$ref" "origin/$ref"
     git -C "$THANOS_DIR" reset --hard "origin/$ref"
@@ -222,7 +144,33 @@ prepare_install_source() {
     return
   fi
 
-  install_release_tarball
+  ensure_git
+
+  if is_thanos_repo; then
+    info "Updating existing Thanos checkout at $THANOS_DIR"
+    git -C "$THANOS_DIR" fetch --tags origin
+    resolve_target_ref
+    checkout_ref "$RESOLVED_REF"
+    info "Now at: $(git -C "$THANOS_DIR" describe --tags --always)"
+    return
+  fi
+
+  if [ -e "$THANOS_DIR" ]; then
+    if [ "$FORCE_INSTALL" = "1" ]; then
+      backup_existing_dir
+    else
+      die "$THANOS_DIR already exists and is not the Thanos repository. Re-run with --force to back it up, or set THANOS_DIR to another path."
+    fi
+  fi
+
+  parent_dir=$(dirname "$THANOS_DIR")
+  mkdir -p "$parent_dir"
+  info "Cloning Thanos from $THANOS_REPO_URL into $THANOS_DIR"
+  git clone "$THANOS_REPO_URL" "$THANOS_DIR"
+  git -C "$THANOS_DIR" fetch --tags origin
+  resolve_target_ref
+  checkout_ref "$RESOLVED_REF"
+  info "Now at: $(git -C "$THANOS_DIR" describe --tags --always)"
 }
 
 ensure_pi() {
@@ -297,14 +245,24 @@ install_wrapper() {
   cat > "$WRAPPER" <<'WRAPPER_EOF'
 #!/usr/bin/env sh
 THANOS_DIR="${THANOS_DIR:-$HOME/.pi}"
-THANOS_REF="${THANOS_REF:-master}"
 
 if [ "${1:-}" = "update" ]; then
   shift
   printf '\033[1;34m[thanos]\033[0m Updating Thanos...\n'
-  exec sh "$THANOS_DIR/scripts/install.sh" --ref "$THANOS_REF" "$@"
+  exec sh "$THANOS_DIR/scripts/install.sh" "$@"
 fi
 
+if [ "${1:-}" = "version" ] || [ "${1:-}" = "--version" ]; then
+  printf 'thanos %s\n' "$(git -C "$THANOS_DIR" describe --tags --always 2>/dev/null || echo unknown)"
+  command -v pi >/dev/null 2>&1 && printf 'pi %s\n' "$(pi --version 2>/dev/null || echo unknown)"
+  exit 0
+fi
+
+if ! command -v pi >/dev/null 2>&1; then
+  echo "[thanos] 'pi' was not found on PATH. Open a new terminal and try again."
+  echo "[thanos] If it persists, reinstall: https://github.com/Fchery87/thanos"
+  exit 1
+fi
 exec pi "$@"
 WRAPPER_EOF
   chmod +x "$WRAPPER"
@@ -338,7 +296,7 @@ main() {
   install_wrapper
   ensure_path
   success "Thanos installed! Run 'thanos' to start a session."
-  success "Run 'thanos update' anytime to pull the latest Thanos config."
+  success "Run 'thanos update' anytime to get the latest release."
   warn "Provider/API keys are not bundled. Add your own keys with 'pi' /login, as environment"
   warn "variables (e.g. export THECLAWBAY_API_KEY=...), or by editing $THANOS_DIR/agent/models.json."
   warn "MCP keys go in $THANOS_DIR/mcp.json (and optional $THANOS_DIR/mcp-secrets.json)."
