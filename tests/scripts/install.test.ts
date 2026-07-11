@@ -114,6 +114,13 @@ describe("install.sh git bootstrap", () => {
     expect(wrapper).toContain("exec pi");
     expect(wrapper).not.toContain("--ref");
 
+    // `thanos version` reports the checked-out tag without launching pi
+    const versionOut = await execFileAsync("/bin/sh", [join(dir, "bin-out", "thanos"), "version"], {
+      env: { HOME: dir, THANOS_DIR: installDir, PATH: `${bin}:/usr/bin:/bin` },
+    });
+    expect(versionOut.stdout).toContain("thanos v0.2.0");
+    expect(versionOut.stdout).toContain("pi 0.80.6");
+
     const log = await readFile(commandLog, "utf-8");
     expect(log).toContain("bun install");
     expect(log).toContain("pi install .");

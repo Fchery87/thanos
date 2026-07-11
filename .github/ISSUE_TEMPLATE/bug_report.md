@@ -22,8 +22,7 @@ assignees: ""
 
 - OS: <!-- e.g. Windows 11 / macOS 15 / Ubuntu 24.04 -->
 - Terminal: <!-- e.g. PowerShell, cmd, Git Bash, bash, zsh -->
-- Thanos version: <!-- `git -C ~/.pi describe --tags` -->
-- Pi version: <!-- `pi --version` -->
+- Thanos + Pi version: <!-- paste the output of `thanos version` (works in any terminal) -->
 - Runtime: <!-- Node.js version (`node -v`) and/or Bun version (`bun -v`) -->
 
 ## Additional context

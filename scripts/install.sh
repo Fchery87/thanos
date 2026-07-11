@@ -252,6 +252,12 @@ if [ "${1:-}" = "update" ]; then
   exec sh "$THANOS_DIR/scripts/install.sh" "$@"
 fi
 
+if [ "${1:-}" = "version" ] || [ "${1:-}" = "--version" ]; then
+  printf 'thanos %s\n' "$(git -C "$THANOS_DIR" describe --tags --always 2>/dev/null || echo unknown)"
+  command -v pi >/dev/null 2>&1 && printf 'pi %s\n' "$(pi --version 2>/dev/null || echo unknown)"
+  exit 0
+fi
+
 if ! command -v pi >/dev/null 2>&1; then
   echo "[thanos] 'pi' was not found on PATH. Open a new terminal and try again."
   echo "[thanos] If it persists, reinstall: https://github.com/Fchery87/thanos"

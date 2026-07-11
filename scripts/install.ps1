@@ -207,15 +207,9 @@ function Install-Wrapper {
 setlocal
 if "%THANOS_DIR%"=="" set "THANOS_DIR=%USERPROFILE%\.pi"
 
-if /i "%~1"=="update" (
-  echo [thanos] Updating Thanos...
-  if "%THANOS_REF%"=="" (
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%THANOS_DIR%\scripts\install.ps1"
-  ) else (
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%THANOS_DIR%\scripts\install.ps1" -Ref "%THANOS_REF%"
-  )
-  exit /b %ERRORLEVEL%
-)
+if /i "%~1"=="update" goto :update
+if /i "%~1"=="version" goto :version
+if "%~1"=="--version" goto :version
 
 where pi >nul 2>nul
 if errorlevel 1 (
@@ -224,6 +218,24 @@ if errorlevel 1 (
   exit /b 1
 )
 pi %*
+exit /b %ERRORLEVEL%
+
+:update
+echo [thanos] Updating Thanos...
+if "%THANOS_REF%"=="" (
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%THANOS_DIR%\scripts\install.ps1"
+) else (
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%THANOS_DIR%\scripts\install.ps1" -Ref "%THANOS_REF%"
+)
+exit /b %ERRORLEVEL%
+
+:version
+set "THANOS_VER="
+for /f "delims=" %%v in ('git -C "%THANOS_DIR%" describe --tags --always 2^>nul') do set "THANOS_VER=%%v"
+if not defined THANOS_VER set "THANOS_VER=unknown"
+echo thanos %THANOS_VER%
+where pi >nul 2>nul && pi --version
+exit /b 0
 '@ | Set-Content $cmdPath -Encoding ASCII
   Info "Installed thanos.cmd launcher at $cmdPath (cmd, PowerShell)"
 
@@ -244,6 +256,12 @@ if [ "${1:-}" = "update" ]; then
     exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$THANOS_DIR/scripts/install.ps1" -Ref "$THANOS_REF"
   fi
   exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$THANOS_DIR/scripts/install.ps1"
+fi
+
+if [ "${1:-}" = "version" ] || [ "${1:-}" = "--version" ]; then
+  printf 'thanos %s\n' "$(git -C "$THANOS_DIR" describe --tags --always 2>/dev/null || echo unknown)"
+  command -v pi >/dev/null 2>&1 && printf 'pi %s\n' "$(pi --version 2>/dev/null || echo unknown)"
+  exit 0
 fi
 
 if ! command -v pi >/dev/null 2>&1; then

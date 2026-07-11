@@ -57,6 +57,11 @@ thanos update
 
 Updates check out the latest release tag and **never touch your keys or settings**.
 
+> **Prefer not to pipe a branch-tip script?** The one-liners above fetch the bootstrap
+> from `master` for convenience (the install itself is pinned to the latest release
+> tag). To pin the bootstrap too, fetch it from a release tag — or download and
+> inspect it first: see [docs/install.md](docs/install.md#pinning-the-bootstrap-script).
+
 ## Documentation
 
 | Page | Contents |

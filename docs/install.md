@@ -74,6 +74,28 @@ curl -fsSL https://raw.githubusercontent.com/Fchery87/thanos/master/scripts/inst
 resolve to the latest release tag. `THANOS_REF` works as an environment override,
 including for `thanos update`.
 
+## Pinning the bootstrap script
+
+The quick-install one-liners fetch the bootstrap script from `master` for convenience;
+the install itself is pinned (it clones and checks out a release tag). If you don't
+want to execute a mutable branch tip at all, fetch the bootstrap from a release tag:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Fchery87/thanos/v0.2.0/scripts/install.sh | sh -s -- --ref v0.2.0
+```
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Fchery87/thanos/v0.2.0/scripts/install.ps1))) -Ref v0.2.0
+```
+
+Or download the script, inspect it, and run it locally:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/Fchery87/thanos/v0.2.0/scripts/install.sh
+less install.sh   # review
+sh install.sh --ref v0.2.0
+```
+
 ## Existing Pi users
 
 The default install location is `~/.pi` because Pi reads user packages and settings

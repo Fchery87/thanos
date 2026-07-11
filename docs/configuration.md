@@ -44,8 +44,8 @@ unconfigured servers never start with bogus credentials). Web search keys go in
 
 Add or edit providers in `~/.pi/agent/models.json`, supplying keys via `/login`, env
 vars (bare name in the `apiKey` field), or a `!command`. See
-[Adding keys](#adding-keys). `/models` lists every model in the catalog, even before
-credentials are configured.
+[Adding keys](#adding-keys). `/models` shows only models from providers with
+configured credentials — add a key first and the provider's models appear.
 
 The user-owned copies are gitignored so credentials and local edits are never published:
 
@@ -63,7 +63,7 @@ can never leak credentials.
 
 ## What's in here
 
-```
+```text
 ~/.pi/
 ├── agent/
 │   ├── agents/                 # Specialist subagent definitions (explore, plan, build, reviewer, designer, oracle, researcher, evaluator)
@@ -120,7 +120,7 @@ can never leak credentials.
 | `permission-gate/*` | ✅ Active |
 | `questionnaire/*` | ✅ Active |
 | `slow-mode/*` | ✅ Active |
-| `statusline/*` | ✅ Active (with custom token count segment) |
+| `statusline/*` | ⚪ Available, disabled by default (shipped default status bar is `npm:@npm-ken/pi-bar`; see [Status bar](#status-bar)) |
 | `direnv/*` | ❌ Excluded (binary not installed) |
 | `stash/*` | ❌ Excluded (redundant with pi-web-access) |
 
@@ -150,7 +150,7 @@ Copy `mcp.example.json` to `mcp.json` and fill in your API keys.
 
 The rytswd statusline shows a single condensed line below the editor:
 
-```
+```text
 glm-5.1 ❯ D:45% ❯ 42%/200k ❯ think:med ❯ ↑15.2k ↓3.1k ❯ Alora ❯ main +2 ~1 ❯ $0.12
 ```
 

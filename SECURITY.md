@@ -15,7 +15,7 @@ Include:
 
 - A description of the issue and its impact
 - Steps to reproduce
-- Affected version (`git -C ~/.pi describe --tags` or the release you installed)
+- Affected version (`thanos version`, or the release you installed)
 
 You should receive an acknowledgement within a few days. Once a fix is released,
 the advisory will be published with credit (unless you prefer otherwise).
