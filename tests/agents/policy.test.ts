@@ -73,6 +73,21 @@ describe("narrowPolicyForAgent", () => {
     });
   });
 
+  describe("evaluator (verification-only: may exec, never edits)", () => {
+    it("cannot edit", () => {
+      const narrowed = narrowPolicyForAgent("evaluator", basePolicy);
+      const result = evaluatePolicy(narrowed, "edit", "somefile.ts");
+      expect(result).not.toBeNull();
+      expect(result?.decision).toBe("deny");
+    });
+
+    it("does not deny exec (may re-run tests to grade evidence)", () => {
+      const narrowed = narrowPolicyForAgent("evaluator", basePolicy);
+      const result = evaluatePolicy(narrowed, "exec", "bun run test");
+      expect(result).toBeNull();
+    });
+  });
+
   describe("build", () => {
     it("gets full parent policy with no narrowing", () => {
       const narrowed = narrowPolicyForAgent("build", basePolicy);
