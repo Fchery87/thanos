@@ -1615,7 +1615,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     // ESC must win over both continuation drivers below: an aborted turn ends
     // with a final assistant message whose stopReason is "aborted".
     const turnAborted = readAborted(event);
-    const results = spec.finishTurn(event.messages);
+    const results = spec.finishTurn(event.messages, { aborted: turnAborted });
     if (results.length > 0) {
       const theme = ctx.ui.theme ?? noopTheme;
       const passed = results.filter((r) => r.passed).length;
