@@ -10,10 +10,13 @@ export interface ReinjectInputs {
   enabled: boolean;
   /** While a /goal is active, the goal evaluator is the sole continuation driver. */
   goalActive: boolean;
+  /** True when the user aborted the turn (ESC) — never restart aborted work. */
+  aborted?: boolean;
 }
 
 export function shouldReinject(input: ReinjectInputs): boolean {
   if (!input.enabled) return false;
+  if (input.aborted) return false;
   if (input.goalActive) return false;
   if (input.isSubagent) return false;
   if (input.results.length === 0) return false;

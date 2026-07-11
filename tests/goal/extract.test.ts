@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractLastTurn, extractLastTurnFromBranch, readWillRetry } from "../../src/goal/extract";
+import { extractLastTurn, extractLastTurnFromBranch, readAborted, readWillRetry } from "../../src/goal/extract";
 
 const user = (text: string) => ({ role: "user", content: text, timestamp: 1 });
 const assistant = (text: string) => ({
@@ -69,6 +69,34 @@ describe("extractLastTurnFromBranch", () => {
   it("returns empty evidence for an empty or undefined branch (fail-closed callers rely on this)", () => {
     expect(extractLastTurnFromBranch([])).toEqual({ lastAssistantText: "", toolResultsText: "" });
     expect(extractLastTurnFromBranch(undefined)).toEqual({ lastAssistantText: "", toolResultsText: "" });
+  });
+});
+
+describe("readAborted", () => {
+  const stopped = (stopReason: string) => ({
+    role: "assistant", content: [{ type: "text", text: "…" }], stopReason, timestamp: 2,
+  });
+
+  it("detects a user abort from the last assistant message", () => {
+    expect(readAborted({ messages: [user("go"), stopped("aborted")] })).toBe(true);
+  });
+
+  it("detects an abort even when tool results trail the assistant message", () => {
+    expect(readAborted({
+      messages: [user("go"), stopped("aborted"), toolResult("bash", "Operation aborted", true)],
+    })).toBe(true);
+  });
+
+  it("returns false for a normally completed turn", () => {
+    expect(readAborted({ messages: [user("go"), stopped("stop")] })).toBe(false);
+    expect(readAborted({ messages: [user("go"), stopped("toolUse"), stopped("stop")] })).toBe(false);
+  });
+
+  it("returns false with no assistant message, empty messages, or malformed events", () => {
+    expect(readAborted({ messages: [user("go")] })).toBe(false);
+    expect(readAborted({ messages: [] })).toBe(false);
+    expect(readAborted({})).toBe(false);
+    expect(readAborted(undefined)).toBe(false);
   });
 });
 

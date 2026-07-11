@@ -70,3 +70,19 @@ export function readWillRetry(event: unknown): boolean {
   return typeof event === "object" && event !== null &&
     (event as { willRetry?: unknown }).willRetry === true;
 }
+
+/**
+ * True when the turn ended because the user aborted it (ESC). Pi's agent loop
+ * always closes an aborted run with a final assistant message whose stopReason
+ * is "aborted"; scan in reverse because tool-result messages can trail it.
+ */
+export function readAborted(event: unknown): boolean {
+  if (typeof event !== "object" || event === null) return false;
+  const messages = (event as { messages?: unknown }).messages;
+  if (!Array.isArray(messages)) return false;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i] as { role?: string; stopReason?: string };
+    if (m?.role === "assistant") return m.stopReason === "aborted";
+  }
+  return false;
+}

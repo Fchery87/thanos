@@ -15,7 +15,7 @@ import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { GoalController } from "./goal/controller";
 import { registerGoalCommand, renderGoalStatusSegment } from "./goal/command";
 import { handleAgentEnd as handleGoalAgentEnd } from "./goal/loop";
-import { extractLastTurnFromBranch, readWillRetry } from "./goal/extract";
+import { extractLastTurnFromBranch, readAborted, readWillRetry } from "./goal/extract";
 import { runEvaluatorWith } from "./goal/evaluator";
 import { GOAL_DIRECTIVE_SENTINEL, buildGoalSystemPrompt } from "./goal/prompts";
 import { confirmGoalCompletion } from "./goal/confirm";
@@ -1612,6 +1612,9 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   });
 
   pi.on("agent_end", async (event, ctx: ExtensionContext) => {
+    // ESC must win over both continuation drivers below: an aborted turn ends
+    // with a final assistant message whose stopReason is "aborted".
+    const turnAborted = readAborted(event);
     const results = spec.finishTurn(event.messages);
     if (results.length > 0) {
       const theme = ctx.ui.theme ?? noopTheme;
@@ -1641,6 +1644,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         isSubagent,
         enabled: !gateDisabledByEnv(),
         goalActive: goalController.isActive(),
+        aborted: turnAborted,
       })) {
         const prompt = buildContinuationPrompt(results, spec.gateAttempts);
         const failedCriteria = results.filter((result) => !result.passed).map((result) => result.criterion.statement);
@@ -1673,7 +1677,7 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
       recordEvent: recordGoalEvent,
       getTokens: () => ctx.getContextUsage()?.tokens ?? 0,
       isSubagent,
-    }, { willRetry: readWillRetry(event) });
+    }, { willRetry: readWillRetry(event), aborted: turnAborted });
     ctx.ui.setStatus("harness-goal", renderGoalStatusSegment(goalController.snapshot()));
   });
 

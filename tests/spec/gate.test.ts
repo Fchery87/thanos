@@ -36,6 +36,10 @@ describe("shouldReinject", () => {
   it("does not re-inject while a goal is active (goal loop is the only driver)", () => {
     expect(shouldReinject({ results: [crit(false)], attempts: 0, isSubagent: false, enabled: true, goalActive: true })).toBe(false);
   });
+
+  it("does not re-inject when the user aborted the turn (ESC must win)", () => {
+    expect(shouldReinject({ results: [crit(false)], attempts: 0, isSubagent: false, enabled: true, goalActive: false, aborted: true })).toBe(false);
+  });
 });
 
 describe("buildContinuationPrompt", () => {
