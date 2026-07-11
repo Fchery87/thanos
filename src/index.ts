@@ -20,7 +20,7 @@ import { runEvaluatorWith } from "./goal/evaluator";
 import { GOAL_DIRECTIVE_SENTINEL, buildGoalSystemPrompt } from "./goal/prompts";
 import { confirmGoalCompletion } from "./goal/confirm";
 import { loadEvaluatorOverride, loadGoalSettings } from "./goal/load-settings";
-import { pickEvaluatorModel } from "./goal/evaluator-model";
+import { pickEvaluatorModel, resolveEvaluatorAuth } from "./goal/evaluator-model";
 import { resolveGoalSettings } from "./goal/types";
 import { makeBeforeToolHandler } from "./hooks/before-tool";
 import { makeAfterToolHandler } from "./hooks/after-tool";
@@ -1194,12 +1194,21 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
           return { content: [{ type: "text" as const, text: "goal_complete: no model available to verify completion — keep working and try again." }], details: undefined };
         }
 
+        // Out-of-band completions bypass pi's request path, so auth must be
+        // resolved through the registry (auth.json, $ENV refs, OAuth) — a bare
+        // completeSimple only finds well-known env keys for builtin providers
+        // and resolves (not rejects!) with stopReason "error" for the rest.
+        const completeAuthed = async (model: NonNullable<typeof primary>, context: Parameters<typeof completeSimple>[1], reasoning?: string) => {
+          const auth = await resolveEvaluatorAuth(toolCtx.modelRegistry, model);
+          return completeSimple(model, context, { reasoning: (reasoning ?? "low") as "low", ...auth });
+        };
+
         // Retry once on the session model (routing may point at a flaky
         // provider); confirmGoalCompletion owns the fail-closed + fail-safe policy.
         const verdict = await confirmGoalCompletion(
           { condition: snap.condition, previousReason: snap.lastReason, summary: params.summary, evidence },
-          (input) => runEvaluatorWith((context) => completeSimple(primary, context, { reasoning: routed?.thinking ?? "low" }), input),
-          (input) => runEvaluatorWith((context) => completeSimple(toolCtx.model ?? primary, context, { reasoning: "low" }), input),
+          (input) => runEvaluatorWith((context) => completeAuthed(primary, context, routed?.thinking), input),
+          (input) => runEvaluatorWith((context) => completeAuthed(toolCtx.model ?? primary, context), input),
         );
 
         const action = goalController.confirmComplete(verdict);
