@@ -40,6 +40,14 @@ model:
 - Release integrity comes from **tag pinning over HTTPS to GitHub** rather than
   detached SHA256SUMS. The release workflow still runs the full CI gate before a tag
   becomes a release.
+- **Bootstrap script trust (accepted tradeoff):** the documented one-liner fetches
+  `scripts/install.sh`/`install.ps1` from the `master` tip, while the *payload* it
+  installs is tag-pinned. This is the same shape as bun/rustup bootstrap installs:
+  the mutable surface is the small bootstrap script, not the installed code. Users
+  who want a fully immutable chain fetch the installer itself from a release tag
+  (documented in `docs/install.md`). ADR 0002's "no mutable branch-tip installs"
+  concern applied to installing *payload* from branch tips, which this model does
+  not do.
 
 `tests/scripts/install.test.ts` exercises the flow against local git origins: fresh
 install resolves the latest tag, update advances to a new tag while preserving

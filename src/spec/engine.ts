@@ -79,9 +79,13 @@ export class SpecEngine {
     this.evidence.push(evidence);
   }
 
-  finishTurn(messages: unknown): VerificationResult[] {
-    for (const text of assistantTexts(messages)) {
-      this.collectOutput(text);
+  finishTurn(messages: unknown, opts?: { aborted?: boolean }): VerificationResult[] {
+    // An ESC-aborted turn must not contribute its partial assistant claims as
+    // passing evidence; verify against whatever evidence already exists.
+    if (!opts?.aborted) {
+      for (const text of assistantTexts(messages)) {
+        this.collectOutput(text);
+      }
     }
     return this.verify();
   }

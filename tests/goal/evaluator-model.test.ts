@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseModelRef, pickEvaluatorModel } from "../../src/goal/evaluator-model";
+import { parseModelRef, pickEvaluatorModel, resolveEvaluatorAuth } from "../../src/goal/evaluator-model";
 
 const registry = [
   { provider: "theclawbay-claude", id: "claude-sonnet-4-6" },
@@ -48,5 +48,28 @@ describe("pickEvaluatorModel", () => {
   it("returns undefined when nothing in the chain is usable", () => {
     expect(pickEvaluatorModel({ model: "nope/missing" }, registry, allAuthed)).toBeUndefined();
     expect(pickEvaluatorModel({ model: "not-a-ref" }, registry, allAuthed)).toBeUndefined();
+  });
+});
+
+describe("resolveEvaluatorAuth", () => {
+  const model = { provider: "someprovider", id: "some-model" };
+
+  it("returns apiKey and headers from the registry resolution", async () => {
+    const registry = {
+      getApiKeyAndHeaders: async () => ({ ok: true as const, apiKey: "sk-123", headers: { "x-a": "b" } }),
+    };
+    await expect(resolveEvaluatorAuth(registry, model)).resolves.toEqual({
+      apiKey: "sk-123",
+      headers: { "x-a": "b" },
+    });
+  });
+
+  it("throws with provider/model context when resolution fails", async () => {
+    const registry = {
+      getApiKeyAndHeaders: async () => ({ ok: false as const, error: "no key configured" }),
+    };
+    await expect(resolveEvaluatorAuth(registry, model)).rejects.toThrow(
+      /someprovider\/some-model.*no key configured/,
+    );
   });
 });

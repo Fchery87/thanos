@@ -20,4 +20,26 @@ describe("runEvaluatorWith", () => {
     });
     expect(v.met).toBe(false);
   });
+
+  // completeSimple resolves (never rejects) on API errors: the message carries
+  // stopReason "error" + errorMessage and empty content. That must THROW so the
+  // caller's fallback runs and the real error surfaces — not parse as
+  // "evaluator output unreadable" with an empty head.
+  it("throws the underlying errorMessage when the completion resolves with stopReason error", async () => {
+    const complete = vi.fn(async () => ({
+      stopReason: "error",
+      errorMessage: "No API key for provider: someprovider",
+      content: [],
+    }));
+    await expect(
+      runEvaluatorWith(complete as never, { condition: "x", lastAssistantText: "", toolResultsText: "" }),
+    ).rejects.toThrow(/No API key for provider: someprovider/);
+  });
+
+  it("throws on stopReason aborted even if error message is absent", async () => {
+    const complete = vi.fn(async () => ({ stopReason: "aborted", content: [] }));
+    await expect(
+      runEvaluatorWith(complete as never, { condition: "x", lastAssistantText: "", toolResultsText: "" }),
+    ).rejects.toThrow(/aborted/);
+  });
 });

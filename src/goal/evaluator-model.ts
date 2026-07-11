@@ -37,6 +37,30 @@ export function parseModelRef(ref: string): ParsedModelRef | undefined {
   return { provider, id, thinking };
 }
 
+export interface RequestAuthRegistryLike<M> {
+  getApiKeyAndHeaders(model: M): Promise<
+    { ok: true; apiKey?: string; headers?: Record<string, string> } | { ok: false; error: string }
+  >;
+}
+
+/**
+ * Resolve request auth for an out-of-band evaluator completion through the
+ * model registry — the same path pi's own requests use, covering auth.json
+ * keys, $ENV references in models.json, and OAuth. Calling completeSimple
+ * without this only works for builtin providers with well-known env keys;
+ * every models.json-configured provider fails with "No API key".
+ */
+export async function resolveEvaluatorAuth<M extends ModelLike>(
+  registry: RequestAuthRegistryLike<M>,
+  model: M,
+): Promise<{ apiKey?: string; headers?: Record<string, string> }> {
+  const auth = await registry.getApiKeyAndHeaders(model);
+  if (auth.ok === false) {
+    throw new Error(`cannot resolve auth for ${model.provider}/${model.id}: ${auth.error}`);
+  }
+  return { apiKey: auth.apiKey, headers: auth.headers };
+}
+
 /**
  * Resolve the /goal evaluator's model from a routing override, walking
  * primary then fallbacks and returning the first registered+authed match.

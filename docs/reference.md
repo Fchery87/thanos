@@ -4,7 +4,8 @@
 
 | Tool | Purpose |
 |------|---------|
-| `task` | Delegate to a bounded specialist subagent under the current policy ceiling (see [Governed subagents](governance.md#governed-subagents)) |
+| `subagent` | Delegate to a bounded specialist subagent under the current policy ceiling — the live delegation engine, provided by pi-subagents (see [Governed subagents](governance.md#governed-subagents)) |
+| `task` | **Legacy, dormant** — the pre-pi-subagents delegation tool; registered only when `THANOS_LEGACY_TASK=1` |
 | `todo` | Track phased tasks with in-progress state and export/import |
 | `ask` | Governed option-based question → decision record |
 | `report_finding` | Record structured P0–P3 review findings |
@@ -20,10 +21,10 @@
 | `/designer [goal]` | Spawn the Designer subagent for UI/UX implementation, review, or design-system audit |
 | `/run designer <task>` | Run Designer through `pi-subagents` directly; also appears in `/run` completions after reload |
 | `/lens` | Thanos Lens Lite: changed files, read-before-modify guard, secret scan, manual diagnostics |
-| `/goal [condition\|pause\|resume\|clear]` | Set a self-checking goal; the agent auto-continues until a fresh evaluator confirms it. No arg shows status. Main session only; pauses on ceilings. See [`/goal`](guide.md#goal--self-checking-autonomous-loop) |
+| `/goal [condition\|pause\|resume\|clear]` | Set a self-checking goal; the agent auto-continues until it signals completion via `goal_complete` and a fresh checker confirms it. No arg shows status. Main session only; pauses on ceilings. See [`/goal`](guide.md#goal--self-checking-autonomous-loop) |
 | `/waves <goal>` | Run a bounded WAVES orchestration: discover the shape, plan independent slices, fan out parallel workers, verify handoffs, synthesize one deliverable. See [Bounded waves](governance.md#bounded-waves-waves) |
 | `/todo` | Show the current todo checklist for this branch (Escape to close); `/todo export` prints the markdown |
-| `/modes` | Select the default specialist mode used by `task` when `type` is omitted (`explore`, `plan`, `build`, `reviewer`, `designer`, `oracle`, `researcher`, `evaluator`) |
+| `/modes` | Select the default specialist mode for the **legacy** `task` tool (`explore`, `plan`, `build`, `reviewer`, `designer`, `oracle`, `researcher`, `evaluator`) — only meaningful with `THANOS_LEGACY_TASK=1` |
 | `/yolo` | Toggle yolo mode for this session (bypasses thanos permission checks; Lens Lite secret scan still runs). Refuses when yolo is locked by config — see [Yolo lockout](governance.md#yolo-lockout) |
 | `/ship` | Deliver the current branch per the resolved [delivery mode](governance.md#delivery-modes) (local-only: fast-forward merge into the default branch; main session only) |
 | `/remember` | Save a durable project preference, injected into future sessions on this branch/project |

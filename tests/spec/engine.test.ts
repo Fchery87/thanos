@@ -94,4 +94,17 @@ describe("SpecEngine lifecycle", () => {
     expect(results[0]?.passed).toBe(true);
     expect(results[0]?.evidence).toContain("done");
   });
+
+  it("does not record assistant text from an aborted turn as evidence", () => {
+    const spec = new SpecEngine();
+    spec.startTurn("Complete the billing task with clear updates", false);
+
+    const results = spec.finishTurn(
+      [{ role: "assistant", content: [{ type: "text", text: "done" }] }],
+      { aborted: true },
+    );
+
+    expect(results[0]?.passed).toBe(false);
+    expect(results.every((result) => !result.evidence.includes("done"))).toBe(true);
+  });
 });

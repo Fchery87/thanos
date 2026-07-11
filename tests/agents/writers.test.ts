@@ -14,4 +14,8 @@ describe("agentWrites", () => {
     expect(agentWrites("oracle")).toBe(false);
     expect(agentWrites("researcher")).toBe(false);
   });
+
+  it("returns false for evaluator (may exec but never writes, so no worktree)", () => {
+    expect(agentWrites("evaluator")).toBe(false);
+  });
 });

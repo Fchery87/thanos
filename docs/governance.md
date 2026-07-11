@@ -137,7 +137,7 @@ Yolo can be hard-disabled for a session, which makes `/yolo` and `Ctrl+Shift+Y` 
 
 ## Governed subagents
 
-The `task` tool delegates work to a bounded **specialist subagent** — a separate `pi` subprocess spawned in JSON mode under the parent's policy as a ceiling. Subagents are a deliberate governance surface, not just parallelism:
+The `subagent` tool (pi-subagents; the legacy `task` tool is dormant behind `THANOS_LEGACY_TASK=1`) delegates work to a bounded **specialist subagent** — a separate `pi` subprocess spawned in JSON mode under the parent's policy as a ceiling. Subagents are a deliberate governance surface, not just parallelism:
 
 - **Bounded nesting (depth ≤ 2).** The legacy `task` tool is suppressed inside subagents (`HARNESS_SUBAGENT` set), so that path is depth-1. The live pi-subagents `subagent` tool permits **one** further level — capped by `maxSubagentDepth` (engine default 2) — so a specialist can delegate a capability it deliberately lacks (e.g. the exec-denied `designer` delegating a render + screenshot to `build` for self-validation). A depth-2 child cannot spawn further, and subagents never talk to the user directly. Deeper nesting stays a recognized anti-pattern.
 - **Policy ceiling inheritance.** Each subagent's capabilities are narrowed from the parent policy; read-only roles get hard `edit`/`exec` denies regardless of what the parent allows.
