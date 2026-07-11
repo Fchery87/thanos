@@ -77,11 +77,12 @@ This file is **gitignored and trusted** — only you edit it, and a repo can nev
 Drive the session in natural language. For bounded, parallelizable, or adversarial work, delegate to a **specialist subagent** instead of doing it inline:
 
 ```text
-/modes              # choose the default specialist for the `task` tool
 /designer <goal>    # spawn the Designer for UI/UX work
 Ctrl+Shift+R        # spawn a Reviewer for a structured P0–P3 review
 Ctrl+Shift+D        # spawn the Designer
 ```
+
+Delegation runs through the pi-subagents `subagent` tool — ask for a specialist by name ("have a reviewer check this") or use the shortcuts above. (The pre-pi-subagents `task` tool and its `/modes` selector are legacy, dormant unless `THANOS_LEGACY_TASK=1`.)
 
 Subagents run under your policy as a ceiling, return a typed result contract, and nest at most one level deeper (capped). Driving from the main session and letting it orchestrate specialists is the recommended pattern — see [Main-agent-as-orchestrator workflow](governance.md#main-agent-as-orchestrator-workflow) and [Governed subagents](governance.md#governed-subagents).
 
@@ -130,9 +131,9 @@ This disables only the completion verification reinjection gate. It does not dis
 
 ### `/goal` — self-checking autonomous loop
 
-`/goal <condition>` turns a prompt into a durable objective. Thanos immediately starts a turn toward the condition, and after **each** turn a fresh, tool-less **side-channel evaluator** (a one-shot `completeSimple` call, not a subagent — so no extra agent turn and no re-entrancy) reads the last turn's evidence and returns `MET` / `NOT_MET`. `NOT_MET` auto-continues another turn with the reason as guidance; `MET` clears the goal and records the achievement. Unparseable evaluator output is treated as `NOT_MET` (fail-safe: it never declares a false "done").
+`/goal <condition>` turns a prompt into a durable objective. Thanos immediately starts a turn toward the condition and auto-continues after each turn with the goal as guidance. Completion is **agent-signaled**: when the agent believes the goal is met, it calls the `goal_complete` tool with a summary of what it finished and the verifying evidence. A fresh, tool-less **checker** (a one-shot `completeSimple` call, not a subagent — so no extra agent turn and no re-entrancy) then confirms the claim against the last work turn's real output pulled from the session branch — never against the bare summary alone (missing evidence fails closed). `MET` clears the goal and records the achievement; `NOT_MET` rejects the call with the reason and the loop keeps working. Checker errors and unparseable output are treated as `NOT_MET` (fail-safe: it never declares a false "done", and a checker error never pauses the goal).
 
-Because the checker cannot run tools and sees **only the final message plus the last tool outputs** of each turn, every goal directive carries an explicit evidence contract: the working agent must end each reply with concrete evidence (test output, exit codes, counts, git status) — unsurfaced work reads as no progress and burns ceiling turns. Goals phrased as objectively checkable conditions ("all tests in X pass — paste the output") converge in far fewer turns than vague ones.
+Because the checker cannot run tools and sees **only the final message plus the last tool outputs** of the turn it judges, every goal directive carries an explicit evidence contract: the working agent must end each reply with concrete evidence (test output, exit codes, counts, git status) — a `goal_complete` call without surfaced proof is rejected. Goals phrased as objectively checkable conditions ("all tests in X pass — paste the output") converge in far fewer turns than vague ones.
 
 The evaluator's model follows [per-subagent model routing](#optional-per-subagent-model-routing): when routing is **on**, the `evaluator` role's assignment (primary, then fallbacks, first registered + authed model wins) powers the verdicts; when routing is **off** or nothing resolves, the current session model is used. The routing entry is re-read per evaluation, so toggling takes effect mid-session.
 
@@ -146,7 +147,7 @@ The evaluator's model follows [per-subagent model routing](#optional-per-subagen
 
 The loop is **guarded**: it pauses (never clears) on a turn ceiling (`maxTurns`, default 25), an optional context-growth ceiling (`maxTokens`), or an optional `checkpointEvery`. Ceilings are **windows, not lifetime caps**: `/goal resume` rebases both counters, so resuming a ceiling pause grants another full window (e.g. 25 more turns) — and it queues a continuation directive itself, so work restarts without you having to type anything further. A statusline segment shows `◎ goal:<turns>t·<growth>k` while active. It is main-session only and refuses on untrusted projects. Permission prompts are orthogonal — a tool needing approval pauses the loop until you answer.
 
-`/goal` and the completion verification gate never fight: while a goal is active, the goal evaluator is the **sole** continuation driver (the gate defers), so at most one follow-up is queued per turn. Configure defaults under `goal` in `~/.pi/agent/settings.json`:
+`/goal` and the completion verification gate never fight: while a goal is active, the goal loop is the **sole** continuation driver (the gate defers), so at most one follow-up is queued per turn. Configure defaults under `goal` in `~/.pi/agent/settings.json`:
 
 ```jsonc
 "goal": {
