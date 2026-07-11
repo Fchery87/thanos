@@ -54,7 +54,7 @@ sessions, …) are gitignored and **never touched by an update**.
 When a new release is available, Thanos also tells you at session start:
 
 ```text
-Thanos v0.3.0 is available (you have v0.2.0) — run 'thanos update' to upgrade.
+Thanos v0.3.0 is available (you have v0.2.1) — run 'thanos update' to upgrade.
 ```
 
 The check hits the GitHub releases API at most once every 24 hours, fails silently when
@@ -63,11 +63,11 @@ offline, and can be disabled entirely with `THANOS_SKIP_UPDATE_CHECK=1`.
 ## Installing a pinned tag or branch
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Fchery87/thanos/master/scripts/install.sh | sh -s -- --ref v0.2.0
+curl -fsSL https://raw.githubusercontent.com/Fchery87/thanos/master/scripts/install.sh | sh -s -- --ref v0.2.1
 ```
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Fchery87/thanos/master/scripts/install.ps1))) -Ref v0.2.0
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Fchery87/thanos/master/scripts/install.ps1))) -Ref v0.2.1
 ```
 
 `--ref` / `-Ref` accepts any branch, tag, or commit. Without it, installs and updates
@@ -81,19 +81,19 @@ the install itself is pinned (it clones and checks out a release tag). If you do
 want to execute a mutable branch tip at all, fetch the bootstrap from a release tag:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Fchery87/thanos/v0.2.0/scripts/install.sh | sh -s -- --ref v0.2.0
+curl -fsSL https://raw.githubusercontent.com/Fchery87/thanos/v0.2.1/scripts/install.sh | sh -s -- --ref v0.2.1
 ```
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Fchery87/thanos/v0.2.0/scripts/install.ps1))) -Ref v0.2.0
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Fchery87/thanos/v0.2.1/scripts/install.ps1))) -Ref v0.2.1
 ```
 
 Or download the script, inspect it, and run it locally:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/Fchery87/thanos/v0.2.0/scripts/install.sh
+curl -fsSLO https://raw.githubusercontent.com/Fchery87/thanos/v0.2.1/scripts/install.sh
 less install.sh   # review
-sh install.sh --ref v0.2.0
+sh install.sh --ref v0.2.1
 ```
 
 ## Existing Pi users

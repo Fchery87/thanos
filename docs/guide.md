@@ -88,7 +88,9 @@ Subagents run under your policy as a ceiling, return a typed result contract, an
 
 ### Optional per-subagent model routing
 
-By default, Thanos can route each specialist role to its own model from your active `~/.pi/agent/models.json` catalog. This is the "reasoning sandwich": deep reasoning roles such as `oracle`, `plan`, and reviewers can use stronger/high-thinking models, while mechanical roles can use faster or cheaper models.
+Thanos can route each specialist role to its own model from your active `~/.pi/agent/models.json` catalog. This is the "reasoning sandwich": deep reasoning roles such as `oracle`, `plan`, and reviewers can use stronger/high-thinking models, while mechanical roles can use faster or cheaper models.
+
+Routing ships **toggled off**: the example settings stash a full per-role table in `savedAgentOverrides`, and `/subagents-models-toggle on` activates it. While off, every subagent — and the `/goal` completion checker — uses the session model.
 
 Use the visible slash commands:
 
