@@ -23,6 +23,8 @@ export interface ResolvedDelivery {
   defaultBranch: string;
   merge: DeliveryMerge;
   yoloLocked: boolean;
+  /** True when a registry entry matched this repo (vs. falling to the default). */
+  registered: boolean;
 }
 
 export interface RepoId {
@@ -71,7 +73,7 @@ export function resolveDelivery(inputs: ResolveDeliveryInputs): ResolvedDelivery
   const merge: DeliveryMerge =
     shipFile?.merge ?? (mode === "direct-PR" ? "pr" : "fast-forward");
 
-  return { mode, autonomy, gates, defaultBranch, merge, yoloLocked };
+  return { mode, autonomy, gates, defaultBranch, merge, yoloLocked, registered: entry !== undefined };
 }
 
 function isMissingFile(err: unknown): boolean {
@@ -83,17 +85,28 @@ function isMissingFile(err: unknown): boolean {
   );
 }
 
-/** Read + parse the trusted captain registry. Fail-safe to null; never throws. */
-async function loadRegistry(): Promise<Registry | null> {
+/**
+ * Absolute path of the trusted captain registry file. Throws when no home
+ * directory can be determined — the alternative is a CWD-relative path, which
+ * would let saveRegistry create the trusted registry inside an arbitrary repo.
+ */
+export function registryPath(): string {
   const home = homedir() || process.env.HOME || "";
-  const filePath = path.join(home, ".pi", "agent", "projects.json");
+  if (!home) throw new Error("Cannot determine the home directory for the delivery registry");
+  return path.join(home, ".pi", "agent", "projects.json");
+}
+
+/** Read + parse the trusted captain registry. Fail-safe to null; never throws. */
+export async function loadRegistry(): Promise<Registry | null> {
+  let filePath = "<no home directory>";
   try {
+    filePath = registryPath();
     const raw = await readFile(filePath, "utf-8");
     return parseRegistry(JSON.parse(raw) as unknown);
   } catch (err) {
     if (isMissingFile(err)) return null; // missing file is normal: no warning
     const reason = err instanceof Error ? err.message : String(err);
-    console.error(`[delivery] Ignoring malformed registry at ${filePath}: ${reason}`);
+    console.error(`[delivery] Ignoring unreadable registry at ${filePath}: ${reason}`);
     return null;
   }
 }
@@ -110,6 +123,11 @@ async function loadShipFile(cwd: string): Promise<ShipFile | null> {
     console.error(`[delivery] Ignoring malformed ship file at ${filePath}: ${reason}`);
     return null;
   }
+}
+
+/** Repo identity as the registry sees it: origin remote (or null) + resolved path. */
+export async function readRepoId(cwd: string): Promise<RepoId> {
+  return { remote: await readRemote(cwd), path: path.resolve(cwd) };
 }
 
 /** Best-effort `git remote get-url origin`. Any failure/empty output -> null. */
@@ -136,15 +154,11 @@ async function readRemote(cwd: string): Promise<string | null> {
  * restrictive safe defaults rather than ever throwing or escalating trust.
  */
 export async function resolveDeliveryState(cwd: string): Promise<ResolvedDelivery> {
-  const [registry, shipFile, remote] = await Promise.all([
+  const [registry, shipFile, repoId] = await Promise.all([
     loadRegistry(),
     loadShipFile(cwd),
-    readRemote(cwd),
+    readRepoId(cwd),
   ]);
 
-  return resolveDelivery({
-    registry,
-    shipFile,
-    repoId: { remote, path: path.resolve(cwd) },
-  });
+  return resolveDelivery({ registry, shipFile, repoId });
 }

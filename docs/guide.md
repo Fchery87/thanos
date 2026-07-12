@@ -41,6 +41,8 @@ You have three ways to reduce prompting, in increasing order of trust:
 
 Tell Thanos how far each repo's work may travel and how autonomously it may act there. This is the file that makes coding frictionless: list the repos you trust as `unattended` so they stop prompting, and pick a `mode` that allows what you need (e.g. pushing).
 
+**The easy way:** just launch Thanos in the repo. Unregistered projects get a one-time selector at session start ("New project — choose a delivery mode"); your choice is saved to `~/.pi/agent/projects.json`. Run `/delivery` anytime to change it (e.g. `/delivery direct-PR`). The selector grants modes only — for `unattended` autonomy, edit the file:
+
 ```bash
 cp ~/.pi/agent/projects.example.json ~/.pi/agent/projects.json
 # then edit ~/.pi/agent/projects.json

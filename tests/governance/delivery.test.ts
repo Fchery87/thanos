@@ -63,6 +63,19 @@ describe("resolveDelivery", () => {
     expect(r.yoloLocked).toBe(false);
   });
 
+  it("reports registered=true when a registry entry matched, false otherwise", () => {
+    const registry = { version: 1, default: SAFE, projects: [
+      { match: "git@github.com:me/repo.git", mode: "direct-PR", autonomy: "attended" },
+    ]} as any;
+    const matched = resolveDelivery({ registry, shipFile: null, repoId: { remote: "git@github.com:me/repo.git", path: "/x" }});
+    expect(matched.registered).toBe(true);
+    const unmatched = resolveDelivery({ registry, shipFile: null, repoId: { remote: "other", path: "/y" }});
+    expect(unmatched.registered).toBe(false);
+    // No registry at all → not registered (safe-default path).
+    const noRegistry = resolveDelivery({ registry: null, shipFile: null, repoId: { remote: null, path: "/z" }});
+    expect(noRegistry.registered).toBe(false);
+  });
+
   it("derives merge from mode when ship file omits it", () => {
     const registry = { version: 1, default: SAFE, projects: [
       { match: "r", mode: "direct-PR", autonomy: "attended" },
