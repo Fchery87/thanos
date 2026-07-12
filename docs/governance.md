@@ -85,7 +85,9 @@ Resolution reads two files:
 - **Captain registry** — `~/.pi/agent/projects.json` (gitignored; trusted). Owns `mode`, `autonomy`, and the yolo lock. Matched per project by git remote URL (`match`) or absolute path (`path`), falling back to the top-level `default`.
 - **Ship file** — `<repo>/.thanos/delivery.json` (committed; untrusted). Describes only how the repo builds: `gates`, `defaultBranch`, and `merge`.
 
-A starter registry ships as [`agent/projects.example.json`](../agent/projects.example.json). Copy it to `~/.pi/agent/projects.json` and edit:
+You normally don't need to hand-edit the registry: when a session starts in an **unregistered** repo with an interactive UI, Thanos shows a one-time selector ("New project — choose a delivery mode") and persists your choice to `~/.pi/agent/projects.json`. Dismissing the selector (ESC) keeps the safe default and changes nothing. The `/delivery` command re-opens the picker for the current repo at any time (or set a mode directly: `/delivery direct-PR`). The selector only ever grants a **mode** — newly registered projects always get `attended` autonomy; granting `unattended` remains a deliberate hand-edit.
+
+A starter registry ships as [`agent/projects.example.json`](../agent/projects.example.json). To seed one by hand instead, copy it to `~/.pi/agent/projects.json` and edit:
 
 ```json
 {

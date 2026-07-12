@@ -26,6 +26,7 @@
 | `/todo` | Show the current todo checklist for this branch (Escape to close); `/todo export` prints the markdown |
 | `/modes` | Select the default specialist mode for the **legacy** `task` tool (`explore`, `plan`, `build`, `reviewer`, `designer`, `oracle`, `researcher`, `evaluator`) — only meaningful with `THANOS_LEGACY_TASK=1` |
 | `/yolo` | Toggle yolo mode for this session (bypasses thanos permission checks; Lens Lite secret scan still runs). Refuses when yolo is locked by config — see [Yolo lockout](governance.md#yolo-lockout) |
+| `/delivery [mode]` | Choose this repo's [delivery mode](governance.md#delivery-modes) (`local-only`, `direct-PR`, `no-mistakes`); persists to `~/.pi/agent/projects.json`. No arg opens the picker; main session only |
 | `/ship` | Deliver the current branch per the resolved [delivery mode](governance.md#delivery-modes) (local-only: fast-forward merge into the default branch; main session only) |
 | `/remember` | Save a durable project preference, injected into future sessions on this branch/project |
 | `/memory` | List remembered project preferences; `/memory forget <n>` removes one |

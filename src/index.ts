@@ -27,8 +27,10 @@ import { makeAfterToolHandler } from "./hooks/after-tool";
 import { TaskParamsSchema, executeTask, needsClarification, parseSubagentResult, type TaskParams } from "./agents/task-tool";
 import { AGENT_TYPES } from "./agents/registry";
 import { loadPolicyState } from "./policy/state";
-import { resolveDeliveryState } from "./governance/delivery";
+import { loadRegistry, readRepoId, resolveDeliveryState } from "./governance/delivery";
+import type { DeliveryMode, ResolvedDelivery } from "./governance/delivery";
 import { deliveryPolicyOverlay } from "./governance/delivery-overlay";
+import { DELIVERY_MODE_HELP, DELIVERY_MODES, saveRegistry, upsertRegistryEntry } from "./governance/delivery-select";
 import { shouldBlockLocalOnlyPush } from "./governance/push-guard";
 import { fastForwardMerge, getCurrentBranch } from "./governance/ff-merge";
 import type { FormalSpec } from "./spec/types";
@@ -183,10 +185,45 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   // subagent (its cwd is the worktree path), so it falls back to the safe default
   // (local-only/attended) — fail-safe, but path-only entries don't propagate to
   // subagents.
-  const deliveryStatePromise = resolveDeliveryState(process.cwd());
-  // The overlay is a session constant (mode never changes mid-session), so derive
-  // it once here instead of recomputing it on every tool call at the gate.
-  const deliveryOverlayPromise = deliveryStatePromise.then((d) => deliveryPolicyOverlay(d.mode));
+  let deliveryStatePromise = resolveDeliveryState(process.cwd());
+  // The overlay is derived once per RESOLUTION, not per tool call. Both bindings
+  // are `let`: the delivery selector (first-launch prompt or /delivery) swaps
+  // them mid-session after persisting a registry change, so a granted mode takes
+  // effect without a restart. Every swap goes through applyDeliverySelection.
+  let deliveryOverlayPromise = deliveryStatePromise.then((d) => deliveryPolicyOverlay(d.mode));
+
+  function deliveryStatusLabel(d: ResolvedDelivery): string {
+    return `mode:${d.mode}${d.autonomy === "unattended" ? " ⚙ unattended" : ""}`;
+  }
+
+  /** Show the delivery-mode picker. Returns undefined when dismissed (fail-closed). */
+  async function promptDeliveryMode(ctx: ExtensionContext, repoLabel: string): Promise<DeliveryMode | undefined> {
+    const options = DELIVERY_MODES.map((m) => `${m} — ${DELIVERY_MODE_HELP[m]}`);
+    const choice = await ctx.ui.select(`New project: ${repoLabel} — choose a delivery mode`, options);
+    if (!choice) return undefined;
+    return DELIVERY_MODES.find((m) => choice.startsWith(m));
+  }
+
+  /**
+   * Persist a selector choice to the trusted registry, then swap the LIVE
+   * session's delivery state (mode overlay, yolo lock, status segment) so the
+   * grant applies immediately. Throws on persistence failure — callers surface
+   * it rather than letting the session believe the grant stuck.
+   */
+  async function applyDeliverySelection(ctx: ExtensionContext, mode: DeliveryMode): Promise<void> {
+    const repoId = await readRepoId(process.cwd());
+    await saveRegistry(upsertRegistryEntry(await loadRegistry(), repoId, mode));
+    const next = await resolveDeliveryState(process.cwd());
+    deliveryStatePromise = Promise.resolve(next);
+    deliveryOverlayPromise = Promise.resolve(deliveryPolicyOverlay(next.mode));
+    if (next.yoloLocked) permissions.lockYolo();
+    const theme = ctx.ui.theme ?? noopTheme;
+    ctx.ui.setStatus("harness-delivery", theme.fg("accent", deliveryStatusLabel(next)));
+    ctx.ui.notify(
+      `Delivery mode for ${repoId.remote ?? repoId.path}: ${next.mode} (saved to ~/.pi/agent/projects.json — /delivery to change)`,
+      "info",
+    );
+  }
 
   async function requirePolicy(ctx: ExtensionContext) {
     const policyState = await policyStatePromise;
@@ -223,8 +260,33 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
 
     // Delivery mode status segment (autonomy shown only when unattended).
     if (delivery) {
-      const label = `mode:${delivery.mode}${delivery.autonomy === "unattended" ? " ⚙ unattended" : ""}`;
-      ctx.ui.setStatus("harness-delivery", theme.fg("accent", label));
+      ctx.ui.setStatus("harness-delivery", theme.fg("accent", deliveryStatusLabel(delivery)));
+    }
+
+    // ── First-launch delivery selector ─────────────────────────────────
+    // An unregistered repo resolves to the safe default (local-only/attended).
+    // When a human is present, offer to register it in the trusted captain
+    // registry — the interactive counterpart of hand-editing projects.json.
+    // Every non-interactive path (ESC, no UI, subagent — excluded above by the
+    // mcpManager guard) keeps the fail-closed default untouched.
+    if (delivery && !delivery.registered && ctx.hasUI) {
+      try {
+        const repoId = await readRepoId(process.cwd());
+        const mode = await promptDeliveryMode(ctx, repoId.remote ?? repoId.path);
+        if (mode) {
+          await applyDeliverySelection(ctx, mode);
+        } else {
+          ctx.ui.notify(
+            "Keeping the safe default (local-only). Run /delivery to register this project later.",
+            "info",
+          );
+        }
+      } catch (err) {
+        ctx.ui.notify(
+          `Delivery selector failed: ${err instanceof Error ? err.message : String(err)}`,
+          "warning",
+        );
+      }
     }
 
     let mcpSummary: WelcomeMcpSummary = { configured: 0, connected: 0, failed: 0, initFailed: false };
@@ -462,6 +524,52 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
         ctx.ui.notify(
           formatPanel(theme, "Yolo Mode OFF", "Permission checks restored.", "dim"),
           "info",
+        );
+      }
+    },
+  });
+
+  // ── /delivery — choose this project's delivery mode (persisted) ──
+
+  pi.registerCommand("delivery", {
+    description: "Choose the delivery mode for this project (persists to ~/.pi/agent/projects.json)",
+    getArgumentCompletions: (prefix) => {
+      const filtered = (DELIVERY_MODES as readonly string[]).filter((mode) => mode.startsWith(prefix));
+      return filtered.length > 0 ? filtered.map((value) => ({ value, label: value })) : null;
+    },
+    handler: async (args, ctx) => {
+      if (isSubagent) {
+        ctx.ui.notify("/delivery is only available in the main session.", "warning");
+        return;
+      }
+      const trimmed = args.trim();
+      const explicit = (DELIVERY_MODES as readonly string[]).includes(trimmed)
+        ? (trimmed as DeliveryMode)
+        : undefined;
+      if (trimmed && !explicit) {
+        ctx.ui.notify(
+          `Unknown delivery mode "${trimmed}" — expected one of: ${DELIVERY_MODES.join(", ")}`,
+          "warning",
+        );
+        return;
+      }
+      if (!ctx.hasUI && !explicit) {
+        ctx.ui.notify("The delivery selector requires an interactive UI (or pass a mode: /delivery direct-PR)", "warning");
+        return;
+      }
+
+      let mode = explicit;
+      if (!mode) {
+        const repoId = await readRepoId(process.cwd());
+        mode = await promptDeliveryMode(ctx, repoId.remote ?? repoId.path);
+      }
+      if (!mode) return;
+      try {
+        await applyDeliverySelection(ctx, mode);
+      } catch (err) {
+        ctx.ui.notify(
+          `Failed to save delivery mode: ${err instanceof Error ? err.message : String(err)}`,
+          "warning",
         );
       }
     },
