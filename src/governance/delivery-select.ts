@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import type { DeliveryAutonomy, DeliveryMode, RepoId } from "./delivery";
 import { registryPath } from "./delivery";
@@ -69,9 +69,26 @@ export function upsertRegistryEntry(
  * directory if needed. Pretty-printed: the file is documented as hand-editable
  * and the selector must not clobber that. Throws on IO failure — callers
  * surface the error rather than silently believing the grant persisted.
+ *
+ * Write-then-rename so a crash mid-write can never leave a torn file: a
+ * half-written registry parses as malformed, which loadRegistry fail-safes to
+ * null — silently collapsing EVERY project to the local-only default.
+ *
+ * Deliberately no inter-process lock for the load→upsert→save sequence: the
+ * registry is only written from interactive selector actions, and callers load
+ * immediately before saving (a milliseconds-wide race window). A concurrent
+ * lost update is possible in principle but bounded to one selector choice;
+ * revisit with a lockfile if the registry ever gains non-interactive writers.
  */
 export async function saveRegistry(registry: Registry): Promise<void> {
   const filePath = registryPath();
   await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, `${JSON.stringify(registry, null, 2)}\n`, "utf-8");
+  const tmpPath = `${filePath}.tmp-${process.pid}`;
+  try {
+    await writeFile(tmpPath, `${JSON.stringify(registry, null, 2)}\n`, "utf-8");
+    await rename(tmpPath, filePath);
+  } catch (err) {
+    await rm(tmpPath, { force: true }).catch(() => {});
+    throw err;
+  }
 }

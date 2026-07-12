@@ -85,22 +85,28 @@ function isMissingFile(err: unknown): boolean {
   );
 }
 
-/** Absolute path of the trusted captain registry file. */
+/**
+ * Absolute path of the trusted captain registry file. Throws when no home
+ * directory can be determined — the alternative is a CWD-relative path, which
+ * would let saveRegistry create the trusted registry inside an arbitrary repo.
+ */
 export function registryPath(): string {
   const home = homedir() || process.env.HOME || "";
+  if (!home) throw new Error("Cannot determine the home directory for the delivery registry");
   return path.join(home, ".pi", "agent", "projects.json");
 }
 
 /** Read + parse the trusted captain registry. Fail-safe to null; never throws. */
 export async function loadRegistry(): Promise<Registry | null> {
-  const filePath = registryPath();
+  let filePath = "<no home directory>";
   try {
+    filePath = registryPath();
     const raw = await readFile(filePath, "utf-8");
     return parseRegistry(JSON.parse(raw) as unknown);
   } catch (err) {
     if (isMissingFile(err)) return null; // missing file is normal: no warning
     const reason = err instanceof Error ? err.message : String(err);
-    console.error(`[delivery] Ignoring malformed registry at ${filePath}: ${reason}`);
+    console.error(`[delivery] Ignoring unreadable registry at ${filePath}: ${reason}`);
     return null;
   }
 }

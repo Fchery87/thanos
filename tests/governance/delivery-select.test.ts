@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { loadRegistry, readRepoId, resolveDeliveryState } from "../../src/governance/delivery";
@@ -102,6 +102,10 @@ describe("saveRegistry / loadRegistry / readRepoId (IO, hermetic HOME)", () => {
     const raw = await readFile(path.join(tmpHome, ".pi", "agent", "projects.json"), "utf-8");
     expect(raw.endsWith("\n")).toBe(true);
     expect(raw).toContain("\n  ");
+    // The atomic write-then-rename must not leave temp files behind, even
+    // when overwriting an existing registry.
+    await saveRegistry(upsertRegistryEntry(registry, { remote: "r2", path: "/p2" }, "local-only"));
+    expect(await readdir(path.join(tmpHome, ".pi", "agent"))).toEqual(["projects.json"]);
   });
 
   it("readRepoId on a non-git dir yields null remote and the resolved path", async () => {
