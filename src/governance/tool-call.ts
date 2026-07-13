@@ -1,6 +1,6 @@
 import { commandAuditTarget } from "../audit/target";
 import type { AuditTarget } from "../audit/types";
-import { classifyRisk, type RiskTier } from "../permissions/risk";
+import { classifyRisk, isRecognizedTool, type RiskTier } from "../permissions/risk";
 import type { Capability } from "../permissions/rules";
 import { evaluatePolicy, type PolicyDecision } from "../policy/evaluator";
 import type { HarnessPolicy } from "../policy/types";
@@ -13,6 +13,8 @@ export interface GovernedToolCall {
   riskTier: RiskTier;
   commandFamily?: string;
   auditTarget: AuditTarget;
+  /** False for a tool this harness has never registered or integrated with — most commonly an MCP server's tool. */
+  recognized: boolean;
 }
 
 export interface GovernedToolDecision {
@@ -79,6 +81,7 @@ export function describeGovernedToolCall(
     riskTier: classifyRisk(toolName, input),
     commandFamily: auditTarget.kind === "bash-command" ? auditTarget.family : undefined,
     auditTarget,
+    recognized: isRecognizedTool(toolName),
   };
 }
 

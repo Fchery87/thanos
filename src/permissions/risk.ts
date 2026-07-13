@@ -7,6 +7,16 @@ export type RiskTier = "low" | "medium" | "high" | "critical";
 const LOW_RISK = new Set(["read", "ls", "find", "grep"]);
 const HIGH_RISK = new Set(["write", "edit"]);
 
+// Interaction/delegation tools this harness explicitly registers or is built
+// around, beyond the LOW_RISK/HIGH_RISK builtins: task is the dormant legacy
+// delegation tool; ask/todo/report_finding/goal_complete are harness state
+// and interaction tools; subagent is the live delegation entry point,
+// registered by the pi-subagents package this harness integrates with (its
+// per-call governance already comes from agent frontmatter tool lists and
+// worktree/policy narrowing, not from prompting on every dispatch). These
+// keep their historical "medium" tier.
+const KNOWN_MEDIUM_TOOLS = new Set(["task", "ask", "todo", "report_finding", "goal_complete", "subagent"]);
+
 // Binaries that only inspect state: they cannot write files or mutate the
 // working tree on their own. Redirections, substitutions, and expansions are
 // disqualified separately, so membership here means "safe as a bare argv".
@@ -99,9 +109,23 @@ function bashCommandTier(command: unknown): RiskTier {
   return splitShellClauses(command).every(clauseIsReadOnly) ? "low" : "critical";
 }
 
+/**
+ * True for every tool name this harness explicitly recognizes and tiers on
+ * its own terms — the builtin file tools, bash, and the harness/pi-subagents
+ * tools in KNOWN_MEDIUM_TOOLS. Anything else is unrecognized: most commonly
+ * an MCP server's tool, but also any future extension's tool this harness was
+ * never taught about.
+ */
+export function isRecognizedTool(toolName: string): boolean {
+  return LOW_RISK.has(toolName) || HIGH_RISK.has(toolName) || KNOWN_MEDIUM_TOOLS.has(toolName) || toolName === "bash";
+}
+
 export function classifyRisk(toolName: string, input: Record<string, unknown>): RiskTier {
   if (LOW_RISK.has(toolName)) return "low";
   if (toolName === "bash") return bashCommandTier(input.command);
   if (HIGH_RISK.has(toolName)) return "high";
-  return "medium";
+  if (KNOWN_MEDIUM_TOOLS.has(toolName)) return "medium";
+  // Unrecognized tool (most commonly an MCP server's): fail safe to high
+  // rather than silently trusting a tool this harness was never taught about.
+  return "high";
 }

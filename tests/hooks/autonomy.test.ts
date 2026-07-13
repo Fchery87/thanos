@@ -156,6 +156,54 @@ describe("unattended autonomy gate", () => {
     expect(result?.reason).toContain("denied");
   });
 
+  it("does NOT auto-allow an unrecognized tool that matched no policy rule", async () => {
+    const auditLogger = { record: vi.fn(async () => undefined) };
+    const handler = makeBeforeToolHandler(
+      makePermissions(),
+      makeSpec(),
+      promptThatThrows, // no UI below, so this must never even be reached
+      false, // no UI — the common unattended shape
+      undefined,
+      basePolicy, // rules: [] — no explicit policy rule can match
+      auditLogger as never,
+      { sessionId: "s1", agentType: "parent" },
+      "unattended",
+    );
+
+    const result = await handler({ toolName: "mcp__some-server__deploy", input: {} });
+
+    expect(result?.block).toBe(true);
+    expect(auditLogger.record).toHaveBeenCalledWith(
+      expect.objectContaining({ decision: "deny" }),
+    );
+  });
+
+  it("DOES auto-allow an unrecognized tool when an explicit policy rule allows it", async () => {
+    const auditLogger = { record: vi.fn(async () => undefined) };
+    const trustingPolicy: HarnessPolicy = {
+      ...basePolicy,
+      rules: [{ id: "trust-deploy-mcp", capability: "exec", pattern: "mcp__some-server__deploy", decision: "allow", reason: "vetted integration" }],
+    };
+    const handler = makeBeforeToolHandler(
+      makePermissions(),
+      makeSpec(),
+      promptThatThrows,
+      false, // no UI — proves the allow came from the policy match, not a prompt
+      undefined,
+      trustingPolicy,
+      auditLogger as never,
+      { sessionId: "s1", agentType: "parent" },
+      "unattended",
+    );
+
+    const result = await handler({ toolName: "mcp__some-server__deploy", input: {} });
+
+    expect(result).toBeUndefined();
+    expect(auditLogger.record).toHaveBeenCalledWith(
+      expect.objectContaining({ decision: "allow", ruleId: "trust-deploy-mcp" }),
+    );
+  });
+
   it("still BLOCKS on an active explicit-spec capability restriction", async () => {
     const spec = makeSpec();
     const explicitSpec: FormalSpec = {

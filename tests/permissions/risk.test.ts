@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyRisk } from "../../src/permissions/risk";
+import { classifyRisk, isRecognizedTool } from "../../src/permissions/risk";
 
 describe("classifyRisk — non-bash tools (unchanged contract)", () => {
   it("keeps low-risk read tools low", () => {
@@ -9,11 +9,38 @@ describe("classifyRisk — non-bash tools (unchanged contract)", () => {
     expect(classifyRisk("grep", {})).toBe("low");
   });
 
-  it("keeps write/edit high and unknown tools medium", () => {
+  it("keeps write/edit high", () => {
     expect(classifyRisk("write", {})).toBe("high");
     expect(classifyRisk("edit", {})).toBe("high");
+  });
+
+  it("keeps known harness interaction/delegation tools medium", () => {
     expect(classifyRisk("task", {})).toBe("medium");
-    expect(classifyRisk("mystery", {})).toBe("medium");
+    expect(classifyRisk("ask", {})).toBe("medium");
+    expect(classifyRisk("todo", {})).toBe("medium");
+    expect(classifyRisk("report_finding", {})).toBe("medium");
+    expect(classifyRisk("goal_complete", {})).toBe("medium");
+    expect(classifyRisk("subagent", {})).toBe("medium");
+  });
+});
+
+describe("classifyRisk — unrecognized tools (e.g. MCP servers) are high risk", () => {
+  it("tiers a tool name the harness has never registered as high", () => {
+    expect(classifyRisk("mystery", {})).toBe("high");
+    expect(classifyRisk("mcp__some-server__deploy", {})).toBe("high");
+  });
+});
+
+describe("isRecognizedTool", () => {
+  it("is true for every built-in and harness-registered tool", () => {
+    for (const name of ["read", "ls", "find", "grep", "write", "edit", "bash", "task", "ask", "todo", "report_finding", "goal_complete", "subagent"]) {
+      expect(isRecognizedTool(name)).toBe(true);
+    }
+  });
+
+  it("is false for an unrecognized tool name", () => {
+    expect(isRecognizedTool("mystery")).toBe(false);
+    expect(isRecognizedTool("mcp__some-server__deploy")).toBe(false);
   });
 });
 
