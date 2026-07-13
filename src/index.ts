@@ -1706,11 +1706,14 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     if (lensResult?.block) return lensResult;
 
     if (!permissions.isYolo) {
-      // Git snapshot: stash working tree before critical (mutating bash) tool
-      // calls. Read-only bash is low-tier and skips this entirely.
+      // Git snapshot: record a recovery point before critical (mutating bash)
+      // tool calls. Read-only bash is low-tier and skips this entirely.
       // Secret scanning is handled by Lens Lite, even when yolo is enabled.
+      // Awaited so the snapshot reflects state strictly before the mutating
+      // command runs; createSnapshot never throws (failures are swallowed
+      // internally), so this can never block or error the tool call.
       if (governed.call.riskTier === "critical") {
-        createSnapshot(process.cwd()).catch(() => {});
+        await createSnapshot(process.cwd());
       }
     }
   });
