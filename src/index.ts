@@ -80,6 +80,7 @@ import { FindingParamsSchema, addFinding, formatReviewSummary, type ReviewFindin
 import { buildJuryPrompt } from "./review/jury";
 import { LensLite, registerLensLiteCommand } from "./lens/lite";
 import { appendHarnessEvent } from "./observability/harness-ledger";
+import { isSubagentProcess } from "./agents/child-role";
 
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -145,13 +146,13 @@ function contextModeExecutionGuard(event: { toolName?: string; input?: unknown }
 
 export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof executeTask; initialYolo?: boolean }) {
   const _executeTask = deps?.executeTask ?? executeTask;
-  const subagentRole = process.env.HARNESS_SUBAGENT; // undefined | "1" | "reviewer"
   // PI_SUBAGENT_CHILD is set by the pi-subagents engine for every child it
   // spawns. Without checking it, children get the parent-only delegation
   // directive and recursively re-delegate (a reviewer spawning a reviewer)
   // instead of doing their own work, idling until their budget kills them.
-  const isSubagent = !!subagentRole || process.env.PI_SUBAGENT_CHILD === "1";
-  const isReviewer = subagentRole === "reviewer";
+  // See src/agents/child-role.ts for the full legacy vs. live env contract
+  // (detectChildRole exposes the precise role name for role-based governance).
+  const isSubagent = isSubagentProcess(process.env);
   const sessionId = crypto.randomUUID();
   const agentType = isSubagent ? "subagent" : "parent" as const;
   let defaultTaskType: TaskParams["type"] | undefined;
@@ -1942,7 +1943,14 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     });
   }
 
-  if (isReviewer) {
+  // Registered for every subagent process, not just reviewer roles: several
+  // live roster agents (reviewer, reviewer-correctness, reviewer-security,
+  // reviewer-tests, evaluator) list report_finding in their frontmatter tool
+  // set, and per-agent exposure is already governed by that list (pi-subagents
+  // filters registered tools down to it) — narrowing the registration itself
+  // to one legacy-only role left every live one calling a tool that was never
+  // registered in their process.
+  if (isSubagent) {
     pi.registerTool({
       name: "report_finding",
       label: "Report review finding",
