@@ -34,7 +34,7 @@ export function makeBeforeToolHandler(
     const { toolName, input } = event;
     const governed = precomputed ?? evaluateGovernedToolCall(toolName, input, policy);
     const { call, policyDecision, auditTarget } = governed;
-    const { capability, target, riskTier: tier } = call;
+    const { capability, target, riskTier: tier, recognized } = call;
 
     const recordAudit = async (
       decision: "allow" | "deny" | "ask",
@@ -104,11 +104,28 @@ export function makeBeforeToolHandler(
       return { block: true, reason: `${toolName} denied (capability: ${capability})` };
     }
 
+    // An explicit policy allow rule for an unrecognized tool (most commonly an
+    // MCP server's) is the deliberately-authored escape hatch that keeps a
+    // specifically-vetted integration from re-prompting on every call, in any
+    // autonomy mode. Scoped to unrecognized tools only: a known tool (edit,
+    // bash, …) keeps its existing prompt-then-remember behavior even under a
+    // broad policy allow rule — this is not a general "policy allow skips
+    // every prompt" feature, only the unknown-tool trust escape hatch.
+    if (!recognized && policyDecision?.decision === "allow") {
+      await recordAudit("allow", policyDecision.ruleId);
+      return;
+    }
+
     // Unattended autonomy: trust the policy ceiling — skip the interactive
-    // confirmation for actions already permitted. All deny paths (policy deny,
-    // permission deny, explicit-spec scope) were enforced above and still block;
-    // this only replaces the human prompt with an automatic allow.
-    if (autonomy === "unattended") {
+    // confirmation for actions already permitted by the default ceiling. All
+    // deny paths (policy deny, permission deny, explicit-spec scope) were
+    // enforced above and still block; this only replaces the human prompt
+    // with an automatic allow. Restricted to recognized tools: an
+    // unrecognized tool (most commonly an MCP server's) has no default
+    // ceiling to trust — only an explicit policy allow (handled above) earns
+    // it a pass; otherwise it falls through to the confirm/deny path below,
+    // which denies under the common unattended (headless) shape.
+    if (autonomy === "unattended" && recognized) {
       await recordAudit("allow", "autonomy:unattended");
       return;
     }
