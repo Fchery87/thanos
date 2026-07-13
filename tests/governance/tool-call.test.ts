@@ -25,6 +25,16 @@ describe("describeGovernedToolCall", () => {
     expect(call.capability).toBe("exec");
     expect(call.target).toBe("echo hi");
   });
+
+  it("marks known harness/builtin tools as recognized", () => {
+    expect(describeGovernedToolCall("read", { path: "src/index.ts" }).recognized).toBe(true);
+    expect(describeGovernedToolCall("bash", { command: "ls" }).recognized).toBe(true);
+    expect(describeGovernedToolCall("subagent", {}).recognized).toBe(true);
+  });
+
+  it("marks an unrecognized tool (e.g. an MCP server's) as not recognized", () => {
+    expect(describeGovernedToolCall("mcp__some-server__deploy", {}).recognized).toBe(false);
+  });
 });
 
 describe("governed interaction tools", () => {
