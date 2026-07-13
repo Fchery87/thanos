@@ -81,7 +81,8 @@ import { FindingParamsSchema, addFinding, formatReviewSummary, type ReviewFindin
 import { buildJuryPrompt } from "./review/jury";
 import { LensLite, registerLensLiteCommand } from "./lens/lite";
 import { appendHarnessEvent } from "./observability/harness-ledger";
-import { isSubagentProcess } from "./agents/child-role";
+import { detectChildRole, isSubagentProcess } from "./agents/child-role";
+import { roleNarrowingOverlay } from "./governance/role-overlay";
 
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -151,9 +152,13 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
   // spawns. Without checking it, children get the parent-only delegation
   // directive and recursively re-delegate (a reviewer spawning a reviewer)
   // instead of doing their own work, idling until their budget kills them.
-  // See src/agents/child-role.ts for the full legacy vs. live env contract
-  // (detectChildRole exposes the precise role name for role-based governance).
+  // See src/agents/child-role.ts for the full legacy vs. live env contract.
   const isSubagent = isSubagentProcess(process.env);
+  // Precise live-roster role name (e.g. "reviewer-security", "explore"),
+  // undefined in the parent session and for the legacy path's generic "1"
+  // marker. Drives roleNarrowingOverlay below — undefined naturally yields no
+  // narrowing, which is exactly right for a parent session.
+  const childRole = detectChildRole(process.env);
   const sessionId = crypto.randomUUID();
   const agentType = isSubagent ? "subagent" : "parent" as const;
   let defaultTaskType: TaskParams["type"] | undefined;
@@ -1663,11 +1668,13 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
     if (policyState.kind === "error") {
       return { block: true, reason: `Policy configuration error: ${policyState.error}` };
     }
-    // Overlay the delivery mode's policy ceiling onto the base policy. Overlay
-    // rules are PREPENDED so they take precedence (mirrors narrowPolicyForAgent).
-    // Resolved in both parent and subagents, so the overlay (e.g. local-only
-    // push-deny) applies to child processes too. resolveDeliveryState is fail-safe.
-    const overlay = await deliveryOverlayPromise;
+    // Overlay the delivery mode's policy ceiling AND this process's role
+    // narrowing onto the base policy. Both are PREPENDED so they take
+    // precedence (mirrors narrowPolicyForAgent) and cannot be shadowed by a
+    // looser policy rule. The delivery overlay is resolved in both parent and
+    // subagents (resolveDeliveryState is fail-safe); the role overlay is a
+    // no-op ([]) in the parent session, since childRole is undefined there.
+    const overlay = [...roleNarrowingOverlay(childRole), ...(await deliveryOverlayPromise)];
     const policy = overlay.length
       ? { ...policyState.policy, rules: [...overlay, ...policyState.policy.rules] }
       : policyState.policy;
