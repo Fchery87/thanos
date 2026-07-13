@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
+import { modelForRef, type ModelCatalog } from "./model-catalog-helpers";
 
 interface Settings {
   defaultProvider?: string;
@@ -10,22 +11,6 @@ interface Settings {
     agentOverrides?: Record<string, { model: string; fallbackModels?: string[] }>;
     savedAgentOverrides?: Record<string, { model: string; fallbackModels?: string[] }>;
   };
-}
-
-interface ModelCatalog {
-  providers: Record<string, { models?: { id: string; input?: string[] }[] }>;
-}
-
-function splitModelRef(ref: string): { provider: string; model: string } {
-  const [withoutThinking] = ref.split(":");
-  const [provider, model] = withoutThinking?.split("/") ?? [];
-  if (!provider || !model) throw new Error(`Invalid model reference: ${ref}`);
-  return { provider, model };
-}
-
-function modelForRef(catalog: ModelCatalog, ref: string): { id: string; input?: string[] } | undefined {
-  const { provider, model } = splitModelRef(ref);
-  return catalog.providers[provider]?.models?.find((entry) => entry.id === model);
 }
 
 describe("settings.example model routing", () => {
