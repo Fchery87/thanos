@@ -63,6 +63,7 @@ import {
 import { renderAuditPanel, renderPolicyPanel, renderSessionSnapshotPanel, renderSpecVerificationPanel } from "./commands/presenters";
 import { renderWelcomeHeader, formatTimeAgo, type WelcomeMcpSummary, type WelcomePolicySummary } from "./welcome/header";
 import { checkForUpdate } from "./welcome/update-check";
+import { checkPatchDrift, formatPatchDriftWarning } from "./welcome/patch-drift";
 import { MemoryStore, MAX_MEMORY_LENGTH } from "./memory/store";
 import { formatMemoriesForInjection } from "./memory/injector";
 // Model router removed — use /models command or pi-subagents for model selection
@@ -338,6 +339,16 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
             "info",
           );
         }
+      }).catch(() => {});
+
+      // Non-blocking pi-subagents patch-drift check. A package update can
+      // silently revert the two Thanos source patches (see
+      // scripts/patch-pi-subagents.mjs), and the first symptom is the fanout
+      // double-registration crash resurfacing unexplained on a reviewer run.
+      // Silent when pi-subagents isn't installed or both patches are intact.
+      checkPatchDrift().then((result) => {
+        const warning = formatPatchDriftWarning(result);
+        if (warning) ctx.ui.notify(warning, "warning");
       }).catch(() => {});
     }
 
