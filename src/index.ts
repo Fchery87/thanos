@@ -26,6 +26,7 @@ import { makeBeforeToolHandler } from "./hooks/before-tool";
 import { makeAfterToolHandler } from "./hooks/after-tool";
 import { TaskParamsSchema, executeTask, needsClarification, parseSubagentResult, type TaskParams } from "./agents/task-tool";
 import { AGENT_TYPES } from "./agents/registry";
+import { formatRoster, loadRoster } from "./agents/roster";
 import { loadPolicyState } from "./policy/state";
 import { loadRegistry, readRepoId, resolveDeliveryState } from "./governance/delivery";
 import type { DeliveryMode, ResolvedDelivery } from "./governance/delivery";
@@ -1613,16 +1614,25 @@ export default function register(pi: ExtensionAPI, deps?: { executeTask?: typeof
 
     // ── Auto-invoke: nudge the top-level agent to delegate proactively ──
     // Parent only — children must not recursively fan out. The per-agent
-    // `description` frontmatter (~/.pi/agent/agents/*.md) is the routing signal.
+    // `description` frontmatter (~/.pi/agent/agents/*.md) is the routing signal,
+    // so the roster is injected here verbatim instead of instructing the model
+    // to call `subagent {action:"list"}` — that instruction made it re-list the
+    // roster on every prompt, burning ~700 transcript tokens per turn for
+    // information that is static within a session. If roster loading fails,
+    // fall back to the list-call instruction so routing still works.
+    const roster = isSubagent ? "" : formatRoster(await loadRoster());
+    const rosterBlock = roster
+      ? "These specialists are available (roster is current — do NOT call " +
+        "{action:\"list\"} to re-discover it):\n" + roster
+      : "Call `subagent` with {action:\"list\"} once to see the available " +
+        "specialists, then reuse that roster for the rest of the session.";
     const delegationDirective = isSubagent ? "" :
-      "Specialist subagents are available via the `subagent` tool. Before doing " +
-      "non-trivial work yourself, call `subagent` with {action:\"list\"} to see the " +
-      "available specialists, then PROACTIVELY delegate matching work: codebase " +
-      "search/mapping → explore, planning → plan, implementation → build/worker, " +
-      "code review → reviewer, second opinions → oracle, web/doc research → " +
-      "researcher, UI/UX → designer, fast recon for handoff → scout. Prefer " +
-      "delegating to a specialist over doing specialist work inline; use the " +
-      "parallel/chain modes when tasks are independent or form a pipeline. " +
+      "Specialist subagents are available via the `subagent` tool. " +
+      rosterBlock + "\n" +
+      "Before doing non-trivial work yourself, PROACTIVELY delegate matching " +
+      "work to the specialist whose description fits; prefer delegating to a " +
+      "specialist over doing specialist work inline; use the parallel/chain " +
+      "modes when tasks are independent or form a pipeline. " +
       "Read-only specialists cannot edit or run commands by design. " +
       "Do NOT pass timeoutMs/maxRuntimeMs when delegating — every agent has its " +
       "own maxExecutionTimeMs budget, and short caller timeouts kill healthy runs " +
