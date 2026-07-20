@@ -1,4 +1,5 @@
 import type { Context } from "@earendil-works/pi-ai";
+import { buildEvaluatorEvidenceMessage, EVALUATOR_RUBRIC } from "../evaluation/prompt-boundary";
 
 /**
  * Marks every goal-injected user message. before_agent_start treats this like
@@ -7,14 +8,7 @@ import type { Context } from "@earendil-works/pi-ai";
  */
 export const GOAL_DIRECTIVE_SENTINEL = "[harness:goal-directive]";
 
-export const EVALUATOR_SYSTEM = [
-  "You are a fresh completion checker. You did NOT do the work.",
-  "Decide ONLY from the evidence surfaced below whether the condition is met.",
-  "You cannot run tools; if the evidence does not prove the condition, it is NOT met.",
-  "Reply in exactly this format and nothing else:",
-  "VERDICT: MET|NOT_MET",
-  "REASON: <one short line>",
-].join("\n");
+export const EVALUATOR_SYSTEM = EVALUATOR_RUBRIC;
 
 /**
  * The worker must know how it is judged. The checker runs ONLY when the agent
@@ -102,17 +96,17 @@ export function buildContinueDirective(): string {
 
 export interface EvaluatorInput {
   condition: string;
-  lastAssistantText: string;
+  assistantClaim: string;
   toolResultsText: string;
   previousReason?: string;
 }
 
 export function buildEvaluatorContext(input: EvaluatorInput): Context {
-  const body = [
-    `CONDITION:\n${input.condition}`,
-    input.previousReason ? `\nPREVIOUS CHECK:\n${input.previousReason}` : "",
-    `\nLAST ASSISTANT MESSAGE:\n${input.lastAssistantText || "(empty)"}`,
-    `\nLAST TOOL RESULTS:\n${input.toolResultsText || "(none)"}`,
-  ].join("\n");
+  const body = buildEvaluatorEvidenceMessage({
+    condition: input.condition,
+    previousReason: input.previousReason,
+    assistantClaim: input.assistantClaim,
+    toolResultsText: input.toolResultsText,
+  });
   return { systemPrompt: EVALUATOR_SYSTEM, messages: [{ role: "user", content: body, timestamp: Date.now() }] };
 }

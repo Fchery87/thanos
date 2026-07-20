@@ -55,7 +55,7 @@ export async function confirmGoalCompletion(
   const claim = summary ? `AGENT COMPLETION CLAIM:\n${summary}\n\n${lastAssistantText}` : lastAssistantText;
   const evalInput: EvaluatorInput = {
     condition: input.condition,
-    lastAssistantText: claim,
+    assistantClaim: claim,
     toolResultsText,
     previousReason: input.previousReason,
   };

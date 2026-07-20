@@ -25,9 +25,9 @@ describe("confirmGoalCompletion", () => {
     expect(v).toEqual(met);
     expect(fallback).not.toHaveBeenCalled();
     const seen = primary.mock.calls[0][0];
-    expect(seen.lastAssistantText).toContain("AGENT COMPLETION CLAIM:");
-    expect(seen.lastAssistantText).toContain("ran the suite");
-    expect(seen.lastAssistantText).toContain("0 failures");
+    expect(seen.assistantClaim).toContain("AGENT COMPLETION CLAIM:");
+    expect(seen.assistantClaim).toContain("ran the suite");
+    expect(seen.assistantClaim).toContain("0 failures");
     expect(seen.toolResultsText).toBe("exit 0");
   });
 
@@ -80,7 +80,7 @@ describe("confirmGoalCompletion", () => {
       primary, runner(async () => met),
     );
     expect(v).toEqual(met);
-    expect(primary.mock.calls[0][0].lastAssistantText).toBe("0 failures");
-    expect(primary.mock.calls[0][0].lastAssistantText).not.toContain("CLAIM");
+    expect(primary.mock.calls[0][0].assistantClaim).toBe("0 failures");
+    expect(primary.mock.calls[0][0].assistantClaim).not.toContain("CLAIM");
   });
 });

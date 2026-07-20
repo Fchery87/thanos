@@ -7,9 +7,9 @@ describe("parseVerdict", () => {
       .toEqual({ met: true, reason: "all tests pass" });
   });
 
-  it("parses NOT_MET case-insensitively and with surrounding text", () => {
-    expect(parseVerdict("blah\nverdict: not_met\nreason: 2 tests failing\nmore"))
-      .toEqual({ met: false, reason: "2 tests failing" });
+  it("rejects surrounding text and fails closed", () => {
+    expect(parseVerdict("blah\nVERDICT: NOT_MET\nREASON: 2 tests failing\nmore"))
+      .toEqual({ met: false, reason: "evaluator output unreadable: blah VERDICT: NOT_MET REASON: 2 tests failing more" });
   });
 
   it("treats unparseable output as NOT_MET (fail-safe)", () => {
@@ -18,7 +18,13 @@ describe("parseVerdict", () => {
     expect(v.reason).toMatch(/unreadable/i);
   });
 
-  it("defaults reason when REASON line missing", () => {
-    expect(parseVerdict("VERDICT: MET")).toEqual({ met: true, reason: "condition met" });
+  it("requires a reason line for MET", () => {
+    expect(parseVerdict("VERDICT: MET")).toEqual({ met: false, reason: "evaluator output unreadable: VERDICT: MET" });
+  });
+
+  it("treats contradictory verdicts as NOT_MET", () => {
+    const v = parseVerdict("VERDICT: MET\nREASON: done\nVERDICT: NOT_MET\nREASON: actually no");
+    expect(v.met).toBe(false);
+    expect(v.reason).toMatch(/unreadable/i);
   });
 });
