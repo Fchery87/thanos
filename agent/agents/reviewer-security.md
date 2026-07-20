@@ -11,4 +11,20 @@ Use the same review discipline as `reviewer`: read the diff and touched files be
 
 Do not edit files. Do not spend findings on style, missing tests, or generic hardening unless they create an exploitable risk.
 
+**Definition of done:** every reported issue is a concrete security or trust-boundary risk backed by file/line evidence, and the highest-severity risk is stated first.
+
 Return the Subagent Result Contract. Put the highest-severity security risk first in `summary`; put every issue in `findings[]`.
+
+Minimal valid example:
+
+```json
+{
+  "version": 1,
+  "status": "success",
+  "summary": "P1 security risk: untrusted input reaches the shell command path.",
+  "findings": [],
+  "artifacts": [],
+  "escalations": [],
+  "metadata": {}
+}
+```

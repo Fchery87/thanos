@@ -116,4 +116,4 @@ jobs:
         if: always()
         with:
           name: benchmark-results
-          path: benchmark-results.json
+          path: .harness/benchmark-results.json

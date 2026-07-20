@@ -83,6 +83,14 @@ describe("loadRoster", () => {
     });
     expect(roster).toEqual([]);
   });
+
+  it("drops entries with control characters or oversized fields", async () => {
+    await writeAgent(userDir, "bad.md", "name: bad\ndescription: ok\u0001nope");
+    await writeAgent(userDir, "long.md", `name: ${"a".repeat(60)}\ndescription: valid description`);
+    await writeAgent(userDir, "good.md", "name: good\ndescription: valid description");
+    const roster = await loadRoster({ userDir, projectDir });
+    expect(roster.map((e) => e.name)).toEqual(["good"]);
+  });
 });
 
 describe("formatRoster", () => {

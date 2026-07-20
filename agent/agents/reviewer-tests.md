@@ -11,4 +11,20 @@ Use the same review discipline as `reviewer`: read the diff and touched files be
 
 Do not edit files. Do not spend findings on style or speculative refactors unless the verification gap could let a real regression ship.
 
+**Definition of done:** every reported issue is a real verification gap backed by file/line evidence, and the most important gap is stated first.
+
 Return the Subagent Result Contract. Put the most important verification gap first in `summary`; put every issue in `findings[]`.
+
+Minimal valid example:
+
+```json
+{
+  "version": 1,
+  "status": "success",
+  "summary": "Top verification gap: no regression test covers the failing branch.",
+  "findings": [],
+  "artifacts": [],
+  "escalations": [],
+  "metadata": {}
+}
+```

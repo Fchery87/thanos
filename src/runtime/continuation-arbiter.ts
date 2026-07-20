@@ -8,6 +8,12 @@ export type ContinuationDecision =
   | "retry_runtime"
   | "pause_budget";
 
+export interface ContinuationArbiterResult {
+  decision: ContinuationDecision;
+  selectedDriver: "none" | "goal" | "spec" | "budget";
+  rejectedDrivers: Array<"goal" | "spec" | "budget">;
+}
+
 export interface TurnCompletion {
   results: VerificationResult[];
   gateAttempts: number;
@@ -23,18 +29,22 @@ export interface TurnCompletion {
 const MAX_GATE_ATTEMPTS = 3;
 
 export class ContinuationArbiter {
-  decide(input: TurnCompletion): ContinuationDecision {
+  decide(input: TurnCompletion): ContinuationArbiterResult {
     // Abort always wins
-    if (input.aborted) return "stop";
+    if (input.aborted) return { decision: "stop", selectedDriver: "none", rejectedDrivers: ["goal", "spec", "budget"] };
 
     // Subagents don't get continuation
-    if (input.isSubagent) return "stop";
+    if (input.isSubagent) return { decision: "stop", selectedDriver: "none", rejectedDrivers: ["goal", "spec", "budget"] };
 
     // Budget exhaustion
-    if (input.turnCount >= input.maxTurns) return "pause_budget";
+    if (input.turnCount >= input.maxTurns) {
+      return { decision: "pause_budget", selectedDriver: "budget", rejectedDrivers: ["goal", "spec"] };
+    }
 
     // Goal loop is the sole continuation driver when active
-    if (input.goalActive) return "continue_goal";
+    if (input.goalActive) {
+      return { decision: "continue_goal", selectedDriver: "goal", rejectedDrivers: ["spec", "budget"] };
+    }
 
     // Spec gate: re-inject if there are failing criteria and budget remains
     if (
@@ -43,10 +53,10 @@ export class ContinuationArbiter {
       && input.gateAttempts < MAX_GATE_ATTEMPTS
       && input.results.some((r) => !r.passed)
     ) {
-      return "continue_spec";
+      return { decision: "continue_spec", selectedDriver: "spec", rejectedDrivers: ["goal", "budget"] };
     }
 
     // No spec or all criteria passed
-    return "stop";
+    return { decision: "stop", selectedDriver: "none", rejectedDrivers: ["goal", "spec", "budget"] };
   }
 }

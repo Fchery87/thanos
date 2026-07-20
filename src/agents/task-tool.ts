@@ -178,6 +178,7 @@ export async function executeTask(
       activeWorktrees.set(worktree.path, { repoDir, worktree });
     } catch {
       const errorContract: SubagentResultContract = {
+        version: 1,
         status: "error",
         summary: "worktree creation failed — writer isolation could not be established",
         findings: [],
@@ -220,11 +221,11 @@ export async function executeTask(
     });
     child.stderr.resume();
     let timedOut = false;
-    const timeoutId = agent.timeoutMs
+    const timeoutId = agent.maxExecutionTimeMs
       ? setTimeout(() => {
           timedOut = true;
           child.kill("SIGTERM");
-        }, agent.timeoutMs)
+        }, agent.maxExecutionTimeMs)
       : undefined;
 
     const abortHandler = () => child.kill("SIGTERM");
@@ -269,7 +270,7 @@ export async function executeTask(
         stdout,
         code,
         timedOut,
-        timeoutMs: agent.timeoutMs,
+        timeoutMs: agent.maxExecutionTimeMs,
       });
       const contract = parseSubagentResult(finalText);
       // The harness owns the authoritative run status; only override the

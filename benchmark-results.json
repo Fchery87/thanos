@@ -1,40 +1,40 @@
 {
-  "generatedAt": "2026-07-19T23:24:31.168Z",
+  "generatedAt": "2026-07-20T06:39:56.717Z",
   "results": [
     {
       "name": "src/index.ts line count",
       "durationMs": 7,
-      "timestamp": "2026-07-19T23:24:30.668Z"
+      "timestamp": "2026-07-20T06:39:55.504Z"
     },
     {
       "name": "src/index.ts import count",
       "durationMs": 2,
-      "timestamp": "2026-07-19T23:24:30.669Z"
+      "timestamp": "2026-07-20T06:39:55.505Z"
     },
     {
       "name": "architectural metrics capture",
-      "durationMs": 3.97,
-      "timestamp": "2026-07-19T23:24:30.671Z"
+      "durationMs": 9.79,
+      "timestamp": "2026-07-20T06:39:55.513Z"
     },
     {
       "name": "low-risk tool_call classification (100x)",
-      "durationMs": 101.91,
-      "timestamp": "2026-07-19T23:24:30.781Z"
+      "durationMs": 550.04,
+      "timestamp": "2026-07-20T06:39:56.065Z"
     },
     {
       "name": "critical bash tool_call classification (100x)",
-      "durationMs": 12.55,
-      "timestamp": "2026-07-19T23:24:30.804Z"
+      "durationMs": 18.08,
+      "timestamp": "2026-07-20T06:39:56.105Z"
     },
     {
       "name": "policy evaluation (50x)",
-      "durationMs": 254.57,
-      "timestamp": "2026-07-19T23:24:31.060Z"
+      "durationMs": 551.8,
+      "timestamp": "2026-07-20T06:39:56.665Z"
     },
     {
       "name": "session rule evaluation (3 capabilities)",
-      "durationMs": 36.25,
-      "timestamp": "2026-07-19T23:24:31.098Z"
+      "durationMs": 26.56,
+      "timestamp": "2026-07-20T06:39:56.703Z"
     }
   ]
 }

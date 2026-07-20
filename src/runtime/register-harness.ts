@@ -65,7 +65,7 @@ import { renderWelcomeHeader, formatTimeAgo, type WelcomeMcpSummary, type Welcom
 import { checkForUpdate } from "../welcome/update-check";
 import { checkPatchDrift, formatPatchDriftWarning } from "../welcome/patch-drift";
 import { MemoryStore, MAX_MEMORY_LENGTH } from "../memory/store";
-import { formatMemoriesForInjection } from "../memory/injector";
+import type { MemoryRecord } from "../memory/types";
 // Model router removed — use /models command or pi-subagents for model selection
 import { createSnapshot } from "../security/snapshot";
 import { evaluateGovernedToolCall } from "../governance/tool-call";
@@ -84,6 +84,8 @@ import { appendHarnessEvent } from "../observability/harness-ledger";
 import { detectChildRole, isSubagentProcess } from "../agents/child-role";
 import { roleNarrowingOverlay } from "../governance/role-overlay";
 import { GovernanceRuntime } from "./governance-runtime";
+import { assemblePrompt } from "../context/broker";
+import { consumeContinuation, issueContinuation } from "./continuation-auth";
 
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -1603,8 +1605,8 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     ctx.ui.setHeader(undefined);
     permissions.clearSessionRules();  // clear deny rules from any prior rejection
     const isHarnessContinuation =
-      event.prompt.includes(GATE_CONTINUE_SENTINEL) ||
-      event.prompt.includes(GOAL_DIRECTIVE_SENTINEL);
+      consumeContinuation(sessionId, "spec", event.prompt) ||
+      consumeContinuation(sessionId, "goal", event.prompt);
     if (!isHarnessContinuation) {
       spec.startTurn(event.prompt, pi.getFlag("spec") === true);
     }
@@ -1620,11 +1622,10 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     // reviewer", which caused reviewer→reviewer recursion in children.
     // Parent sessions only: a subagent's context is its task, not the
     // parent project's preference list.
-    let injected: string | null = null;
+    let memories: MemoryRecord[] = [];
     if (!isSubagent) {
       const { store, project } = projectMemory();
-      const memories = store.query({ project, limit: 10 });
-      injected = formatMemoriesForInjection(memories);
+      memories = store.query({ project, limit: 10 });
     }
 
     // Model router removed — /models command handles model selection
@@ -1635,26 +1636,20 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     // so the roster is injected here verbatim instead of instructing the model
     // to call `subagent {action:"list"}` — that instruction made it re-list the
     // roster on every prompt, burning ~700 transcript tokens per turn for
-    // information that is static within a session. If roster loading fails,
-    // fall back to the list-call instruction so routing still works.
-    const roster = isSubagent ? "" : formatRoster(await loadRoster());
-    const rosterBlock = roster
-      ? "These specialists are available (roster is current — do NOT call " +
-        "{action:\"list\"} to re-discover it):\n" + roster
-      : "Call `subagent` with {action:\"list\"} once to see the available " +
-        "specialists, then reuse that roster for the rest of the session.";
-    const delegationDirective = isSubagent ? "" :
-      "Specialist subagents are available via the `subagent` tool. " +
-      rosterBlock + "\n" +
-      "Before doing non-trivial work yourself, PROACTIVELY delegate matching " +
-      "work to the specialist whose description fits; prefer delegating to a " +
-      "specialist over doing specialist work inline; use the parallel/chain " +
-      "modes when tasks are independent or form a pipeline. " +
-      "Read-only specialists cannot edit or run commands by design. " +
-      "Do NOT pass timeoutMs/maxRuntimeMs when delegating — every agent has its " +
-      "own maxExecutionTimeMs budget, and short caller timeouts kill healthy runs " +
-      "mid-flight, wasting all their work. If you must bound a run, use at least " +
-      "600000 (10 minutes).";
+    // information that is static within a session.
+    const roster = isSubagent ? [] : await loadRoster();
+    const promptAssembly = assemblePrompt({
+      isSubagent,
+      memories,
+      roster,
+      goalCondition: goalController.snapshot()?.status === "active" ? goalController.snapshot()?.condition : undefined,
+      trustedInstructions: isSubagent ? [] : [
+        "Specialist subagents are available via the `subagent` tool.",
+        "Before doing non-trivial work yourself, PROACTIVELY delegate matching work to the specialist whose description fits; prefer delegating to a specialist over doing specialist work inline; use the parallel/chain modes when tasks are independent or form a pipeline.",
+        "Read-only specialists cannot edit or run commands by design.",
+        "Do NOT pass timeoutMs/maxRuntimeMs when delegating — every agent has its own maxExecutionTimeMs budget, and short caller timeouts kill healthy runs mid-flight, wasting all their work. If you must bound a run, use at least 600000 (10 minutes).",
+      ],
+    });
 
     // ── Auto-invoke: nudge the top-level agent to reach for skills ──
     // Pi core injects an <available_skills> block into the system prompt but
@@ -1682,7 +1677,12 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
       ? buildGoalSystemPrompt(goalSnap.condition)
       : "";
 
-    const systemPrompt = [injected, delegationDirective, skillsDirective, goalDirective]
+    const systemPrompt = [
+      promptAssembly.trustedInstructions,
+      skillsDirective,
+      goalDirective,
+      promptAssembly.contextMessage ?? "",
+    ]
       .filter(Boolean)
       .join("\n\n");
 
@@ -1824,6 +1824,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
           console.error("[harness][evolution]", err instanceof Error ? err.message : String(err));
         });
         spec.recordGateAttempt();
+        issueContinuation(sessionId, "spec", prompt);
         await pi.sendUserMessage(prompt, { deliverAs: "followUp" });
       }
     }
@@ -1837,6 +1838,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     await handleGoalAgentEnd({
       controller: goalController,
       sendDirective: async (directive) => { pi.sendUserMessage(directive, { deliverAs: "followUp" }); },
+      issueContinuation: (directive) => { issueContinuation(sessionId, "goal", directive); },
       notify: (message, level) => ctx.ui.notify(message, level ?? "info"),
       recordEvent: recordGoalEvent,
       getTokens: () => ctx.getContextUsage()?.tokens ?? 0,

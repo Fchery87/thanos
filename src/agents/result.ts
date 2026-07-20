@@ -31,6 +31,7 @@ export interface Escalation {
 }
 
 export interface SubagentResultContract {
+  version: 1;
   status: SubagentStatus;
   summary: string;
   findings: Finding[];
@@ -95,14 +96,14 @@ export function needsClarification(contract: SubagentResultContract): boolean {
 }
 
 function errorContract(reason: string): SubagentResultContract {
-  return { status: "error", summary: reason, findings: [], artifacts: [], escalations: [], metadata: { legacy: true } };
+  return { version: 1, status: "error", summary: reason, findings: [], artifacts: [], escalations: [], metadata: { legacy: true } };
 }
 
 function plainText(summary: string): SubagentResultContract {
-  return { status: "success", summary, findings: [], artifacts: [], escalations: [], metadata: { legacy: true } };
+  return { version: 1, status: "error", summary, findings: [], artifacts: [], escalations: [], metadata: { legacy: true } };
 }
 
-export function parseSubagentResult(text: string): SubagentResultContract {
+export function parseSubagentResult(text: string, opts?: { legacyAdapter?: boolean }): SubagentResultContract {
   if (text.length > MAX_RESULT_SIZE) {
     return errorContract(`result exceeds maximum size of ${MAX_RESULT_SIZE} bytes`);
   }
@@ -111,13 +112,17 @@ export function parseSubagentResult(text: string): SubagentResultContract {
   try {
     parsed = JSON.parse(text);
   } catch {
-    return plainText(text);
+    return opts?.legacyAdapter ? { ...plainText(text), status: "success" } : errorContract("invalid result contract format");
   }
 
   if (!parsed || typeof parsed !== "object") {
-    return plainText(typeof parsed === "string" ? parsed : text);
+    return opts?.legacyAdapter ? { ...plainText(typeof parsed === "string" ? parsed : text), status: "success" } : errorContract("invalid result contract format");
   }
   const obj = parsed as Record<string, unknown>;
+
+  if (obj.version !== 1) {
+    return errorContract("missing or unsupported result contract version");
+  }
 
   if (typeof obj.summary === "string") {
     const status = typeof obj.status === "string" && KNOWN_STATUSES.has(obj.status)
@@ -147,6 +152,7 @@ export function parseSubagentResult(text: string): SubagentResultContract {
     }
 
     const contract: SubagentResultContract = {
+      version: 1,
       status,
       summary,
       findings,
@@ -161,7 +167,8 @@ export function parseSubagentResult(text: string): SubagentResultContract {
   }
 
   if (typeof obj.text === "string") {
-    const contract = plainText(obj.text);
+    if (!opts?.legacyAdapter) return errorContract("legacy result format not allowed");
+    const contract = { ...plainText(obj.text), status: "success" as const };
     const meta = validateMetadata(obj.metadata);
     if (meta) contract.metadata = meta;
     return contract;

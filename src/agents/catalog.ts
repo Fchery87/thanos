@@ -12,7 +12,11 @@ export interface SpecialistProfile {
   contextModes: readonly ContextMode[];
   mayDelegate: readonly SpecialistId[];
   modelRoutable: boolean;
+  toolCeiling: readonly string[];
   requiredTools: readonly string[];
+  outputContractVersion: number;
+  promptTemplateId: string;
+  runtimeEngine: "live" | "legacy" | "disabled";
 }
 
 const READ_ONLY: readonly ContextMode[] = ["fresh"];
@@ -32,7 +36,11 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       contextModes: READ_ONLY,
       mayDelegate: NO_DELEGATION,
       modelRoutable: true,
+      toolCeiling: ["read", "ls", "find", "grep", "web_search", "fetch_content"],
       requiredTools: ["read", "ls", "find", "grep", "bash"],
+      outputContractVersion: 1,
+      promptTemplateId: "explore",
+      runtimeEngine: "live",
     },
   ],
   [
@@ -43,7 +51,11 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       contextModes: READ_ONLY,
       mayDelegate: NO_DELEGATION,
       modelRoutable: true,
+      toolCeiling: ["read", "ls", "find", "grep", "web_search", "fetch_content"],
       requiredTools: ["read", "ls", "find", "grep"],
+      outputContractVersion: 1,
+      promptTemplateId: "plan",
+      runtimeEngine: "live",
     },
   ],
   [
@@ -54,7 +66,11 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       contextModes: FRESH_OR_FORKED,
       mayDelegate: EXPLORE_DELEGATION,
       modelRoutable: true,
+      toolCeiling: ["read", "ls", "find", "grep", "write", "edit", "bash", "task"],
       requiredTools: ["read", "write", "edit", "bash", "task"],
+      outputContractVersion: 1,
+      promptTemplateId: "build",
+      runtimeEngine: "live",
     },
   ],
   [
@@ -65,7 +81,11 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       contextModes: READ_ONLY,
       mayDelegate: EXPLORE_DELEGATION,
       modelRoutable: true,
+      toolCeiling: ["read", "ls", "find", "grep", "report_finding", "task", "subagent"],
       requiredTools: ["read", "ls", "find", "grep", "report_finding", "task"],
+      outputContractVersion: 1,
+      promptTemplateId: "reviewer",
+      runtimeEngine: "live",
     },
   ],
   [
@@ -76,7 +96,11 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       contextModes: FRESH_OR_FORKED,
       mayDelegate: NO_DELEGATION,
       modelRoutable: true,
+      toolCeiling: ["read", "ls", "find", "grep", "write", "edit", "web_search", "fetch_content", "subagent"],
       requiredTools: ["read", "write", "edit"],
+      outputContractVersion: 1,
+      promptTemplateId: "designer",
+      runtimeEngine: "live",
     },
   ],
   [
@@ -87,7 +111,11 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       contextModes: READ_ONLY,
       mayDelegate: NO_DELEGATION,
       modelRoutable: true,
+      toolCeiling: ["read", "ls", "find", "grep", "web_search", "fetch_content"],
       requiredTools: ["read", "ls", "find", "grep"],
+      outputContractVersion: 1,
+      promptTemplateId: "oracle",
+      runtimeEngine: "live",
     },
   ],
   [
@@ -98,7 +126,11 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       contextModes: READ_ONLY,
       mayDelegate: NO_DELEGATION,
       modelRoutable: true,
-      requiredTools: ["read", "ls", "find", "grep", "bash"],
+      toolCeiling: ["read", "ls", "find", "grep", "web_search", "fetch_content"],
+      requiredTools: ["read", "ls", "find", "grep", "web_search", "fetch_content"],
+      outputContractVersion: 1,
+      promptTemplateId: "researcher",
+      runtimeEngine: "live",
     },
   ],
   [
@@ -109,7 +141,11 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       contextModes: READ_ONLY,
       mayDelegate: NO_DELEGATION,
       modelRoutable: true,
+      toolCeiling: ["read", "ls", "find", "grep", "bash", "report_finding"],
       requiredTools: ["read", "ls", "find", "grep", "bash"],
+      outputContractVersion: 1,
+      promptTemplateId: "evaluator",
+      runtimeEngine: "live",
     },
   ],
   [
@@ -120,7 +156,11 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       contextModes: READ_ONLY,
       mayDelegate: NO_DELEGATION,
       modelRoutable: false,
+      toolCeiling: ["read", "ls", "find", "grep"],
       requiredTools: ["read", "ls", "find", "grep"],
+      outputContractVersion: 1,
+      promptTemplateId: "scout",
+      runtimeEngine: "live",
     },
   ],
   [
@@ -131,7 +171,11 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       contextModes: FRESH_OR_FORKED,
       mayDelegate: NO_DELEGATION,
       modelRoutable: false,
+      toolCeiling: ["read", "write", "edit", "bash"],
       requiredTools: ["read", "write", "edit", "bash"],
+      outputContractVersion: 1,
+      promptTemplateId: "worker",
+      runtimeEngine: "live",
     },
   ],
   [
@@ -142,7 +186,11 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       contextModes: READ_ONLY,
       mayDelegate: EXPLORE_DELEGATION,
       modelRoutable: true,
+      toolCeiling: ["read", "ls", "find", "grep", "report_finding", "task", "subagent"],
       requiredTools: ["read", "ls", "find", "grep", "report_finding", "task"],
+      outputContractVersion: 1,
+      promptTemplateId: "reviewer-correctness",
+      runtimeEngine: "live",
     },
   ],
   [
@@ -153,7 +201,11 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       contextModes: READ_ONLY,
       mayDelegate: EXPLORE_DELEGATION,
       modelRoutable: true,
+      toolCeiling: ["read", "ls", "find", "grep", "report_finding", "task", "subagent"],
       requiredTools: ["read", "ls", "find", "grep", "report_finding", "task"],
+      outputContractVersion: 1,
+      promptTemplateId: "reviewer-security",
+      runtimeEngine: "live",
     },
   ],
   [
@@ -164,7 +216,11 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       contextModes: READ_ONLY,
       mayDelegate: EXPLORE_DELEGATION,
       modelRoutable: true,
+      toolCeiling: ["read", "ls", "find", "grep", "report_finding", "task"],
       requiredTools: ["read", "ls", "find", "grep", "report_finding", "task"],
+      outputContractVersion: 1,
+      promptTemplateId: "reviewer-tests",
+      runtimeEngine: "live",
     },
   ],
 ]);

@@ -98,7 +98,7 @@ async function executeAgentRun(
     args,
     cwd: worktreePath,
     env: buildSubagentEnv(request.type, request.parentPolicy, policyFile),
-    timeoutMs: agent.timeoutMs,
+    timeoutMs: agent.maxExecutionTimeMs,
     signal,
   });
 
@@ -106,7 +106,7 @@ async function executeAgentRun(
     stdout: processResult.stdout,
     code: processResult.exitCode,
     timedOut: processResult.outcome === "timeout",
-    timeoutMs: agent.timeoutMs,
+    timeoutMs: agent.maxExecutionTimeMs,
   });
 
   const contract = parseSubagentResult(finalText);
@@ -181,6 +181,7 @@ export async function startAgentRun(
   } catch (err) {
     await store.transition(runId, "failed").catch(() => {});
     const errorContract: SubagentResultContract = {
+      version: 1,
       status: "error",
       summary: err instanceof Error ? err.message : String(err),
       findings: [],

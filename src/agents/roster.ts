@@ -21,6 +21,10 @@ export interface RosterEntry {
   defaultContext?: string;
 }
 
+const MAX_NAME_LENGTH = 48;
+const MAX_DESCRIPTION_LENGTH = 240;
+const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
+
 /** User-scope agents dispatched by the pi-subagents engine (same dir as loader.ts). */
 export function userAgentsDir(): string {
   return join(process.env.HOME ?? "~", ".pi", "agent", "agents");
@@ -63,6 +67,14 @@ function parseRosterFrontmatter(raw: string): ParsedAgentFrontmatter | null {
   };
 }
 
+function normalizeField(value: string | undefined, maxLength: number): string | undefined {
+  if (value === undefined) return undefined;
+  if (value.trim() === "") return undefined;
+  if (CONTROL_CHARS.test(value)) return undefined;
+  if (value.length > maxLength) return undefined;
+  return value;
+}
+
 async function loadScope(dir: string, scope: "user" | "project"): Promise<RosterEntry[]> {
   let files: string[];
   try {
@@ -76,9 +88,12 @@ async function loadScope(dir: string, scope: "user" | "project"): Promise<Roster
     try {
       const parsed = parseRosterFrontmatter(await readFile(join(dir, file), "utf-8"));
       if (!parsed || parsed.disabled) continue;
+      const name = normalizeField(parsed.name ?? file.replace(/\.md$/, ""), MAX_NAME_LENGTH);
+      const description = normalizeField(parsed.description, MAX_DESCRIPTION_LENGTH);
+      if (!name || !description) continue;
       entries.push({
-        name: parsed.name ?? file.replace(/\.md$/, ""),
-        description: parsed.description ?? "",
+        name,
+        description,
         scope,
         defaultContext: parsed.defaultContext,
       });

@@ -70,7 +70,7 @@ describe("AgentOrchestrator — adversarial validation", () => {
     ]);
     orch.startTask("b1", "t1");
     orch.completeTask("b1", "t1", {
-      status: "success", summary: "done", findings: [], artifacts: [], escalations: [],
+      version: 1, status: "success", summary: "done", findings: [], artifacts: [], escalations: [],
     });
     expect(() => orch.startTask("b1", "t1")).toThrow(/already completed/);
   });
@@ -85,11 +85,11 @@ describe("AgentOrchestrator — adversarial validation", () => {
     orch.startTask("b1", "t2");
     expect(orch.isBatchComplete("b1")).toBe(false);
     orch.completeTask("b1", "t1", {
-      status: "success", summary: "", findings: [], artifacts: [], escalations: [],
+      version: 1, status: "success", summary: "", findings: [], artifacts: [], escalations: [],
     });
     expect(orch.isBatchComplete("b1")).toBe(false);
     orch.completeTask("b1", "t2", {
-      status: "success", summary: "", findings: [], artifacts: [], escalations: [],
+      version: 1, status: "success", summary: "", findings: [], artifacts: [], escalations: [],
     });
     expect(orch.isBatchComplete("b1")).toBe(true);
   });

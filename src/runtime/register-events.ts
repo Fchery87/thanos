@@ -82,7 +82,7 @@ export function setupRuntime(
       maxTurns: 100,
     });
 
-    if (decision === "continue_spec") {
+    if (decision.decision === "continue_spec") {
       spec.recordGateAttempt();
     }
   });

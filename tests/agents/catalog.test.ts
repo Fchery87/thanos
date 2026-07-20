@@ -24,6 +24,15 @@ describe("specialist catalog", () => {
   it("getSpecialist returns undefined for unknown ids", () => {
     expect(getSpecialist("nonexistent" as never)).toBeUndefined();
   });
+
+  it("every specialist declares a live prompt template and contract version", () => {
+    for (const specialist of allSpecialists()) {
+      expect(specialist.outputContractVersion).toBe(1);
+      expect(specialist.promptTemplateId.length).toBeGreaterThan(0);
+      expect(specialist.runtimeEngine).toBe("live");
+      expect(specialist.toolCeiling.length).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe("agentWrites", () => {

@@ -11,4 +11,20 @@ Use the same review discipline as `reviewer`: read the diff and touched files be
 
 Do not edit files. Do not spend findings on style, test coverage, or general security unless they create a concrete correctness bug.
 
+**Definition of done:** every reported issue is a concrete correctness risk backed by file/line evidence, and the highest-severity risk is stated first.
+
 Return the Subagent Result Contract. Put the highest-severity correctness risk first in `summary`; put every issue in `findings[]`.
+
+Minimal valid example:
+
+```json
+{
+  "version": 1,
+  "status": "success",
+  "summary": "P1 correctness risk: timeout handling drops the retry path.",
+  "findings": [],
+  "artifacts": [],
+  "escalations": [],
+  "metadata": {}
+}
+```

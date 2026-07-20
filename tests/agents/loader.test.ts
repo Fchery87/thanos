@@ -35,7 +35,7 @@ describe("loadAgent", () => {
         'tools: ["read", "write"]',
         'model: "gemini-3-pro"',
         "maxTurns: 4",
-        "timeoutMs: 120000",
+        "maxExecutionTimeMs: 120000",
         "---",
         "You are a build specialist.",
       ].join("\n"),
@@ -48,7 +48,7 @@ describe("loadAgent", () => {
     expect(agent.tools).toEqual(["read", "write"]);
     expect(agent.model).toBe("gemini-3-pro");
     expect(agent.maxTurns).toBe(4);
-    expect(agent.timeoutMs).toBe(120000);
+    expect(agent.maxExecutionTimeMs).toBe(120000);
   });
 
   it("loads tools from agent markdown frontmatter for explore type", async () => {
@@ -62,7 +62,6 @@ describe("loadAgent", () => {
   it("loads tools from agent markdown frontmatter for designer type", async () => {
     process.env.HOME = await repoHomeWithRealAgents();
     const def = await loadAgent("designer");
-    expect(def.tools).toBeDefined();
     expect(def.tools).toContain("edit");
     expect(def.tools).not.toContain("bash");
   });
@@ -71,7 +70,6 @@ describe("loadAgent", () => {
     process.env.HOME = await repoHomeWithRealAgents();
     const def = await loadAgent("evaluator");
 
-    expect(def.tools).toBeDefined();
     expect(def.tools).toEqual(expect.arrayContaining(["read", "ls", "find", "grep", "bash", "report_finding"]));
     expect(def.tools).not.toContain("edit");
     expect(def.tools).not.toContain("write");
@@ -109,11 +107,39 @@ describe("loadAgent", () => {
 
   it("every agent type has a definition file with a tools allowlist", async () => {
     process.env.HOME = await repoHomeWithRealAgents();
-    const types = ["explore", "plan", "build", "reviewer", "designer", "oracle", "researcher", "evaluator"] as const;
+    const types = ["build", "evaluator", "explore", "oracle", "plan", "reviewer", "researcher"] as const;
     for (const type of types) {
       const def = await loadAgent(type);
       expect(def.tools, `${type} should have tools defined`).toBeDefined();
       expect(def.tools!.length, `${type} tools should not be empty`).toBeGreaterThan(0);
     }
+  });
+
+  it("rejects manifests whose tools exceed the catalog ceiling", async () => {
+    const home = await mkdtemp(join(tmpdir(), "thanos-agent-"));
+    process.env.HOME = home;
+    const agentDir = join(home, ".pi", "agent", "agents");
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(
+      join(agentDir, "explore.md"),
+      ["---", "tools: read", "context: forked", "---", "You are Explore."].join("\n"),
+      "utf-8",
+    );
+
+    await expect(loadAgent("explore")).rejects.toThrow(/unsupported context mode/);
+  });
+
+  it("rejects manifests whose context mode exceeds the catalog ceiling", async () => {
+    const home = await mkdtemp(join(tmpdir(), "thanos-agent-"));
+    process.env.HOME = home;
+    const agentDir = join(home, ".pi", "agent", "agents");
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(
+      join(agentDir, "scout.md"),
+      ["---", "tools: read, bash", "---", "You are Scout."].join("\n"),
+      "utf-8",
+    );
+
+    await expect(loadAgent("scout" as never)).rejects.toThrow(/unsupported tool/);
   });
 });

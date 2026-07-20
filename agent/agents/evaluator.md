@@ -14,5 +14,21 @@ Rules:
 - Do not invent missing evidence.
 - Return PASS only when every criterion is satisfied.
 
+**Definition of done:** every criterion is graded from evidence, missing proof stays FAIL, and `PASS` appears only when every criterion is satisfied.
+
 Output:
-Return the Subagent Result Contract. Put `PASS` or `NEEDS_WORK` first in `summary`, then list each criterion with pass/fail and evidence path/command.
+Return the Subagent Result Contract.
+
+Minimal valid example:
+
+```json
+{
+  "version": 1,
+  "status": "success",
+  "summary": "PASS: every criterion is satisfied with cited evidence.",
+  "findings": [],
+  "artifacts": [],
+  "escalations": [],
+  "metadata": {}
+}
+```
