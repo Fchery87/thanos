@@ -32,6 +32,7 @@ async function makeOrigin(rootDir: string): Promise<string> {
   await execFileAsync("git", ["init", "-b", "master", origin]);
 
   await writeFile(join(origin, "package.json"), JSON.stringify({ name: "thanos", version: "0.1.0" }, null, 2), "utf-8");
+  await writeFile(join(origin, "bun.lock"), "# mock lockfile\n", "utf-8");
   await writeFile(join(origin, "mcp.example.json"), "{}\n", "utf-8");
   await writeFile(join(origin, "agent", "models.example.json"), '{"catalog":"v1"}\n', "utf-8");
   await writeExecutable(join(origin, "scripts", "install.sh"), "#!/usr/bin/env sh\nexit 0\n");
@@ -199,6 +200,7 @@ describe("install.sh git bootstrap", () => {
     const installDir = join(dir, ".pi");
     await mkdir(join(installDir, "scripts"), { recursive: true });
     await writeFile(join(installDir, "package.json"), JSON.stringify({ name: "local-thanos" }, null, 2), "utf-8");
+    await writeFile(join(installDir, "bun.lock"), "# mock lockfile\n", "utf-8");
     await writeExecutable(join(installDir, "scripts", "install.sh"), "#!/usr/bin/env sh\nexit 0\n");
     await writeExecutable(join(installDir, "scripts", "patch-pi-subagents.mjs"), "// noop\n");
     const bin = await makeFakeBin(dir, commandLog);

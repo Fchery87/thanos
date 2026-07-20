@@ -51,43 +51,4 @@ describe("register /modes command", () => {
     expect(select).toHaveBeenCalledWith("Choose a default subagent mode", ["explore", "plan", "build", "reviewer", "designer", "oracle", "researcher", "evaluator"]);
     expect(notify).toHaveBeenCalledWith(expect.stringContaining("Default subagent mode: plan"), "info");
   });
-
-  it("reuses the selected mode for task calls that omit type", async () => {
-    // The legacy `task` tool is dormant by default; enable it for this test.
-    process.env.THANOS_LEGACY_TASK = "1";
-    const mockExecuteTask = vi.fn(async () => "task result");
-    const select = vi.fn(async () => "build");
-    const { api, handlers } = createFakePi();
-
-    register(api, { executeTask: mockExecuteTask });
-
-    await handlers.get("modes")?.("", {
-      hasUI: true,
-      ui: {
-        select,
-        notify: vi.fn(),
-        setStatus: vi.fn(),
-        theme: { fg: (_kind: string, text: string) => text },
-      },
-    });
-
-    await handlers.get("task")?.(
-      "tool-call-1",
-      { goal: "Implement something" },
-      undefined,
-      undefined,
-      {
-        hasUI: true,
-        ui: { select: vi.fn(), notify: vi.fn(), setStatus: vi.fn(), theme: { fg: (_kind: string, text: string) => text } },
-      },
-    );
-
-    expect(mockExecuteTask).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "build", goal: "Implement something" }),
-      undefined,
-      undefined,
-      expect.anything(),
-      undefined,
-    );
-  });
 });

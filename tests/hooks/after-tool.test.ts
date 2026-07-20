@@ -12,7 +12,7 @@ describe("makeAfterToolHandler", () => {
       type: "tool_result",
       toolCallId: "call-1",
       toolName: "bash",
-      input: { command: "bun test tests/index.test.ts" },
+      input: { command: "vitest run tests/index.test.ts" },
       content: [{ type: "text", text: "3 pass\n" }],
       isError: false,
       details: undefined,
@@ -21,7 +21,7 @@ describe("makeAfterToolHandler", () => {
     const testResult = spec.verify().find((result) => /tests|verification/i.test(result.criterion.statement));
 
     expect(testResult?.passed).toBe(true);
-    expect(testResult?.evidence).toContain("bun test tests/index.test.ts passed");
+    expect(testResult?.evidence).toContain("vitest (exit 0)");
   });
 
   it("truncates oversized ctx tool results before they enter the transcript", async () => {
@@ -77,7 +77,7 @@ describe("makeAfterToolHandler", () => {
     const addResult = spec.verify().find((result) => /code change/i.test(result.criterion.statement));
 
     expect(addResult?.passed).toBe(true);
-    expect(addResult?.evidence).toContain("edit changed src/pagination.ts");
+    expect(addResult?.evidence[0]).toContain("src/pagination.ts");
   });
 });
 

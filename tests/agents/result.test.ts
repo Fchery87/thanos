@@ -10,6 +10,7 @@ describe("parseSubagentResult", () => {
       findings: [],
       artifacts: [],
       escalations: [],
+      metadata: { legacy: true },
     });
   });
 

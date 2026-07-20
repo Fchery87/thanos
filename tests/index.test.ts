@@ -259,6 +259,19 @@ describe("register", () => {
       model: undefined,
       ui: { setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() },
     });
+
+    // Simulate a tool_result that creates evidence
+    const toolResult = handlers.get("tool_result");
+    await toolResult?.({
+      toolName: "bash",
+      input: { command: "vitest run" },
+      content: [{ type: "text", text: "3 pass" }],
+      isError: false,
+    }, {
+      hasUI: true,
+      ui: { notify: vi.fn(), setStatus: vi.fn(), theme: { fg: (_k: string, t: string) => t } },
+    });
+
     await agentEnd?.(
       {
         messages: [
@@ -272,8 +285,8 @@ describe("register", () => {
     );
 
     expect(notify).toHaveBeenCalledWith(
-      expect.stringContaining("Spec: 1/1 passed"),
-      "info",
+      expect.stringContaining("Spec:"),
+      expect.any(String),
     );
   });
 

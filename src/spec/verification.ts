@@ -1,14 +1,35 @@
-import type { EvidenceRecord } from "./evidence";
+import type { EvidenceRecord } from "./claims";
 import type { FormalSpec, AcceptanceCriterion } from "./types";
 
 export interface VerificationResult {
   criterion: AcceptanceCriterion;
   passed: boolean;
   evidence: string[];
+  missingEvidence: string[];
 }
 
-function evidenceForCriterion(criterion: AcceptanceCriterion, evidence: EvidenceRecord[]): EvidenceRecord[] {
-  return evidence.filter((record) => record.passed && criterion.evidenceRequired.includes(record.type));
+function evidenceMatches(criterion: AcceptanceCriterion, record: EvidenceRecord): boolean {
+  if (!record.passed) return false;
+  for (const req of criterion.evidenceRequired) {
+    if (req === "diff" && record.kind === "diff") return true;
+    if (req === "test" && record.kind === "test") return true;
+    if (req === "command" && record.kind === "command") return true;
+    if (req === "manual" && record.kind === "manual") return true;
+  }
+  return false;
+}
+
+function evidenceSummary(record: EvidenceRecord): string {
+  switch (record.kind) {
+    case "diff":
+      return `diff: [${record.paths.join(", ")}]`;
+    case "test":
+      return `${record.runner} (exit ${record.exitCode})`;
+    case "command":
+      return `${record.argv.join(" ")} (exit ${record.exitCode})`;
+    case "manual":
+      return `manual: ${record.actor} — ${record.claim.slice(0, 80)}`;
+  }
 }
 
 export function verifyCriteria(spec: FormalSpec, evidence: EvidenceRecord[]): VerificationResult[] {
@@ -23,15 +44,25 @@ export function verifyCriteria(spec: FormalSpec, evidence: EvidenceRecord[]): Ve
         },
         passed: false,
         evidence: [],
+        missingEvidence: ["no criteria defined"],
       },
     ];
   }
 
   return spec.acceptanceCriteria.map((criterion) => {
-    const matchingEvidence = evidenceForCriterion(criterion, evidence);
-    const passed = criterion.evidenceRequired.every((type) =>
-      matchingEvidence.some((record) => record.type === type),
-    );
-    return { criterion, passed, evidence: matchingEvidence.map((record) => record.summary) };
+    const matchingEvidence = evidence.filter((record) => evidenceMatches(criterion, record));
+    const matchedTypes = new Set(matchingEvidence.map((e) => e.kind));
+
+    const missingEvidence = criterion.evidenceRequired
+      .filter((req) => !matchedTypes.has(req));
+
+    const passed = missingEvidence.length === 0;
+
+    return {
+      criterion,
+      passed,
+      evidence: matchingEvidence.map(evidenceSummary),
+      missingEvidence,
+    };
   });
 }

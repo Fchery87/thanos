@@ -93,9 +93,18 @@ ensure_git() {
 is_thanos_repo() {
   [ -d "$THANOS_DIR/.git" ] || return 1
   remote_url=$(git -C "$THANOS_DIR" remote get-url origin 2>/dev/null || true)
-  [ "$remote_url" = "$THANOS_REPO_URL" ] && return 0
-  case "$remote_url" in
-    *Fchery87/thanos*|*fchery87/thanos*) return 0 ;;
+  if [ -z "$remote_url" ]; then
+    return 1
+  fi
+  # Accept exact match with the configured THANOS_REPO_URL
+  if [ "$remote_url" = "$THANOS_REPO_URL" ]; then
+    return 0
+  fi
+  # Normalize: strip trailing .git, protocol, and user prefixes
+  normalized=$(printf '%s' "$remote_url" | sed -e 's|^https://||' -e 's|^git@||' -e 's|:|/|' -e 's|\.git$||')
+  case "$normalized" in
+    github.com/Fchery87/thanos) return 0 ;;
+    github.com/fchery87/thanos) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -121,8 +130,7 @@ resolve_target_ref() {
     RESOLVED_REF="$latest_tag"
     info "Resolved latest release: $RESOLVED_REF"
   else
-    RESOLVED_REF="master"
-    warn "No release tags found; falling back to master"
+    die "No release tags found in $THANOS_DIR. Either pass --ref <tag> or ensure the repository has release tags."
   fi
 }
 
@@ -196,11 +204,14 @@ report_pi_version() {
 install_harness() {
   old_cwd=$(pwd)
   cd "$THANOS_DIR"
-  info "Installing Thanos package dependencies..."
+  if [ ! -f "$THANOS_DIR/bun.lock" ]; then
+    die "bun.lock is missing from $THANOS_DIR. The repository must include a lockfile for reproducible installation."
+  fi
+  info "Installing Thanos package dependencies (frozen lockfile)..."
   if have_command bun; then
-    bun install
+    bun install --frozen-lockfile
   else
-    npm install
+    die "bun is required for reproducible Thanos installation. Install bun first (https://bun.sh)."
   fi
   info "Registering Thanos as a Pi package..."
   pi install .

@@ -49,7 +49,7 @@ describe("command presenters", () => {
 
   it("renders the spec verification panel", () => {
     const presentation = renderSpecVerificationPanel(noopTheme, spec, [
-      { criterion: spec.acceptanceCriteria[0], passed: true, evidence: ["manual ok"] },
+      { criterion: spec.acceptanceCriteria[0], passed: true, evidence: ["manual ok"], missingEvidence: [] },
     ]);
 
     expect(presentation.panel).toContain("Active Spec");

@@ -1,0 +1,39 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": true
+  },
+  "include": [
+    "src/agents/catalog.ts",
+    "src/agents/result.ts",
+    "src/agents/run-store.ts",
+    "src/agents/process.ts",
+    "src/agents/change-handoff.ts",
+    "src/agents/orchestrator.ts",
+    "src/governance/egress.ts",
+    "src/governance/headless.ts",
+    "src/governance/operation.ts",
+    "src/permissions/git-target.ts",
+    "src/spec/claims.ts",
+    "src/spec/diff-evidence.ts",
+    "src/evaluation/runtime.ts",
+    "src/runtime/governance-runtime.ts",
+    "src/runtime/session-runtime.ts",
+    "src/runtime/continuation-arbiter.ts",
+    "src/runtime/register-lifecycle.ts",
+    "src/review/jury-runtime.ts",
+    "src/waves/runtime.ts",
+    "src/mcp/trust.ts",
+    "src/mcp/validation.ts",
+    "src/observability/audit-queue.ts",
+    "src/observability/redaction.ts",
+    "src/goal/budget.ts",
+    "tests/agents/catalog.test.ts",
+    "tests/permissions/git-target.test.ts",
+    "tests/spec/claims.test.ts",
+    "tests/evaluation/runtime.test.ts",
+    "tests/governance/egress.test.ts",
+    "tests/observability/redaction.test.ts",
+    "tests/agents/orchestrator.test.ts"
+  ]
+}

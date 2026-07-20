@@ -177,7 +177,15 @@ export async function executeTask(
       registerExitHandlers();
       activeWorktrees.set(worktree.path, { repoDir, worktree });
     } catch {
-      /* fall back: run in process.cwd() */
+      const errorContract: SubagentResultContract = {
+        status: "error",
+        summary: "worktree creation failed — writer isolation could not be established",
+        findings: [],
+        artifacts: [],
+        escalations: [],
+        metadata: { contextMode, errorKind: "worktree_creation_failed" },
+      };
+      return contractReturnPayload(errorContract);
     }
   }
   const promptFile = path.join(tmp, `${params.type}.md`);

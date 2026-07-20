@@ -97,16 +97,25 @@ const CALLBACK_HTML_OK = `<!DOCTYPE html>
   <p>You can close this tab and return to the terminal.</p>
 </body></html>`;
 
+function htmlEscape(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 const CALLBACK_HTML_ERR = (msg: string) => `<!DOCTYPE html>
 <html><head><title>Auth Error</title></head>
 <body style="font-family:system-ui;max-width:480px;margin:80px auto;text-align:center">
   <h2 style="color:#dc2626">&#10007; Authorization failed</h2>
-  <p>${msg}</p>
+  <p>${htmlEscape(msg)}</p>
 </body></html>`;
 
 interface CallbackResult { code: string; state: string; }
 
-function startCallbackServer(): Promise<{ port: number; result: Promise<CallbackResult>; close(): void }> {
+function startCallbackServer(expectedState: string): Promise<{ port: number; result: Promise<CallbackResult>; close(): void }> {
   return new Promise((resolveSetup, rejectSetup) => {
     let resolveResult: (r: CallbackResult) => void;
     let rejectResult:  (e: Error) => void;
@@ -114,6 +123,13 @@ function startCallbackServer(): Promise<{ port: number; result: Promise<Callback
       resolveResult = res;
       rejectResult  = rej;
     });
+
+    let settled = false;
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      fn();
+    };
 
     const server: Server = createServer((req, res) => {
       try {
@@ -123,22 +139,44 @@ function startCallbackServer(): Promise<{ port: number; result: Promise<Callback
         const error = url.searchParams.get("error");
         const desc  = url.searchParams.get("error_description");
 
-        if (code && state) {
-          res.writeHead(200, { "Content-Type": "text/html" });
-          res.end(CALLBACK_HTML_OK);
+        if (settled) {
+          res.writeHead(400, { "Content-Type": "text/html" });
+          res.end(CALLBACK_HTML_ERR("Duplicate callback rejected"));
           server.close();
-          resolveResult!({ code, state });
+          return;
+        }
+
+        if (code && state) {
+          if (state !== expectedState) {
+            res.writeHead(400, { "Content-Type": "text/html" });
+            res.end(CALLBACK_HTML_ERR("State mismatch — possible CSRF attack"));
+            server.close();
+            rejectResult!(new Error("OAuth state mismatch"));
+            return;
+          }
+          settle(() => {
+            res.writeHead(200, { "Content-Type": "text/html" });
+            res.end(CALLBACK_HTML_OK);
+            server.close();
+            resolveResult!({ code, state });
+          });
         } else {
           const msg = desc ?? error ?? "No authorization code received.";
-          res.writeHead(400, { "Content-Type": "text/html" });
-          res.end(CALLBACK_HTML_ERR(msg));
-          server.close();
-          rejectResult!(new Error(`OAuth callback error: ${msg}`));
+          settle(() => {
+            res.writeHead(400, { "Content-Type": "text/html" });
+            res.end(CALLBACK_HTML_ERR(msg));
+            server.close();
+            rejectResult!(new Error(`OAuth callback error: ${msg}`));
+          });
         }
       } catch (err) {
+        if (!settled) {
+          settle(() => {
+            server.close();
+          });
+        }
         res.writeHead(500, { "Content-Type": "text/plain" });
         res.end("Internal error");
-        server.close();
         rejectResult!(err instanceof Error ? err : new Error(String(err)));
       }
     });
@@ -283,7 +321,10 @@ export async function runOAuthFlow(
   }
 
   // Spin up local callback server first so we know the port
-  const cb          = await startCallbackServer();
+  const { verifier, challenge } = generatePKCE();
+  const state = base64url(randomBytes(16));
+
+  const cb          = await startCallbackServer(state);
   const redirectUri = `http://127.0.0.1:${cb.port}/callback`;
 
   // Dynamic client registration if the server supports it
@@ -295,9 +336,6 @@ export async function runOAuthFlow(
       // Fall back to the provided clientId
     }
   }
-
-  const { verifier, challenge } = generatePKCE();
-  const state = base64url(randomBytes(16));
 
   const authUrl = new URL(meta.authorization_endpoint);
   authUrl.searchParams.set("response_type",         "code");

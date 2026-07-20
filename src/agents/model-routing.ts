@@ -38,21 +38,9 @@ export type SubagentModelsCommand =
   | { action: "set"; role: string; model: string; fallbackModels?: string[] };
 
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh"]);
-const DEFAULT_SUBAGENT_ROLES = [
-  "oracle",
-  "plan",
-  "reviewer",
-  "reviewer-correctness",
-  "reviewer-security",
-  "reviewer-tests",
-  "designer",
-  "build",
-  "worker",
-  "researcher",
-  "scout",
-  "explore",
-  "evaluator",
-];
+import { getAllIds } from "./catalog";
+
+const DEFAULT_SUBAGENT_ROLES: readonly string[] = getAllIds();
 
 const USAGE = [
   "Usage:",

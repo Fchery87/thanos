@@ -1,3 +1,5 @@
+import { redactSensitive } from "../observability/redaction";
+
 export interface SecretMatch {
   type: string;
   line: number;
@@ -28,7 +30,7 @@ export function scanContent(content: string): ScanResult {
     const line = lines[i]!;
     for (const { type, re } of SECRET_PATTERNS) {
       if (re.test(line)) {
-        matches.push({ type, line: i + 1, preview: line.trim().slice(0, 60) });
+        matches.push({ type, line: i + 1, preview: `[${type} at line ${i + 1}]` });
         break;
       }
     }
@@ -37,7 +39,11 @@ export function scanContent(content: string): ScanResult {
 }
 
 export function formatScanResult(matches: SecretMatch[]): string {
-  const shown = matches.slice(0, 5).map((m) => `  line ${m.line}: [${m.type}] ${m.preview}`);
-  if (matches.length > 5) shown.push(`  … and ${matches.length - 5} more`);
+  const shown = matches.slice(0, 5).map((m) => `  line ${m.line}: [${m.type}]`);
+  if (matches.length > 5) shown.push(`  ... and ${matches.length - 5} more`);
   return shown.join("\n");
+}
+
+export function redactedContent(content: string): string {
+  return redactSensitive(content);
 }

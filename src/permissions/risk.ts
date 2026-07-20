@@ -1,5 +1,6 @@
 import { splitShellClauses } from "../audit/target";
 import { matchesPattern } from "../governance/rule-match";
+import { extractGitFilePath } from "./git-target";
 import { BUILTIN_SENSITIVE_READ_RULES } from "../policy/presets";
 
 export type RiskTier = "low" | "medium" | "high" | "critical";
@@ -53,10 +54,18 @@ function stripQuotes(token: string): string {
   return token.replace(/^['"]+|['"]+$/g, "");
 }
 
+function tokenPathForSensitiveCheck(token: string): string | undefined {
+  if (token.length === 0 || token.startsWith("-")) return undefined;
+  const gitPath = extractGitFilePath(token);
+  if (gitPath !== undefined) return gitPath;
+  return token;
+}
+
 function isSensitiveToken(token: string): boolean {
-  if (token.length === 0 || token.startsWith("-")) return false;
+  const path = tokenPathForSensitiveCheck(token);
+  if (path === undefined) return false;
   return BUILTIN_SENSITIVE_READ_RULES.some((rule) =>
-    rule.pattern !== undefined && matchesPattern(rule.pattern, token),
+    rule.pattern !== undefined && matchesPattern(rule.pattern, path),
   );
 }
 
