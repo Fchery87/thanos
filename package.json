@@ -12,6 +12,12 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:unit": "vitest run tests/agents tests/audit tests/evaluation tests/goal tests/governance tests/interaction tests/memory tests/permissions tests/policy tests/spec tests/review tests/waves tests/welcome tests/web",
+    "test:prompts": "vitest run tests/prompt-system tests/evaluation/prompt-boundary.test.ts tests/goal/prompts.test.ts tests/goal/verdict.test.ts tests/review/jury.test.ts tests/waves/prompt.test.ts",
+    "test:integration": "vitest run tests/hooks tests/index.test.ts tests/index.modes.test.ts tests/index.models.test.ts tests/index.delivery-select.test.ts tests/index.subagent-delivery.test.ts tests/commands tests/observability tests/ui-utils.test.ts",
+    "test:security": "vitest run tests/security tests/permissions/yolo-lock.test.ts tests/permissions/yolo-config.test.ts tests/mcp/oauth.test.ts tests/mcp/client.test.ts tests/mcp/lifecycle.test.ts tests/mcp/state.test.ts tests/mcp",
+    "test:installer": "vitest run tests/scripts",
+    "test:perf": "vitest run tests/performance",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src tests",
     "ci": "bun run typecheck && bun run lint && bun run test"
