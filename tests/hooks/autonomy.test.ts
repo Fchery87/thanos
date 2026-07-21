@@ -212,6 +212,10 @@ describe("unattended autonomy gate", () => {
       status: "active",
       approvalStatus: "approved", // already approved — only scope restriction matters
       goal: "read-only task",
+      taskContract: {
+        objective: "read-only task",
+        criteria: [],
+      },
       allowedCapabilities: ["read"], // edit is NOT allowed
       constraints: [],
       acceptanceCriteria: [],

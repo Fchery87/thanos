@@ -5,10 +5,15 @@ import type { DiffEvidence } from "./claims";
 
 const execFileAsync = promisify(execFile);
 
+export function normalizeClaimedPaths(claimedPaths: string[]): string[] {
+  return Array.from(new Set(claimedPaths.map((path) => path.replace(/\/+$/, "")).filter(Boolean)));
+}
+
 export async function validateDiffEvidence(
   repoDir: string,
   evidence: { filePath?: string; claimedPaths: string[] },
 ): Promise<DiffEvidence | undefined> {
+  const claimedPaths = normalizeClaimedPaths(evidence.claimedPaths);
   let diff: string;
   try {
     const { stdout } = await execFileAsync("git", ["-C", repoDir, "diff", "HEAD", "--src-prefix=a/", "--dst-prefix=b/"]);
@@ -67,8 +72,8 @@ export async function validateDiffEvidence(
   }
 
   // Check if any claimed path intersects with actual changes
-  const hasRelevantChange = evidence.claimedPaths.length === 0
-    || evidence.claimedPaths.some((claimed) =>
+  const hasRelevantChange = claimedPaths.length === 0
+    || claimedPaths.some((claimed) =>
       actualPaths.some((actual) => actual === claimed || actual.startsWith(claimed + "/")),
     );
 

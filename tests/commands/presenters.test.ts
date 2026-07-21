@@ -20,6 +20,10 @@ const spec = {
   status: "active",
   approvalStatus: "not_required",
   goal: "Build the billing flow",
+  taskContract: {
+    objective: "Build the billing flow",
+    criteria: [{ id: "manual-primary", kind: "manual", statement: "Task completed", targets: [], evidence: ["manual"], expectedExecutables: [], expectedArgs: [], mustNot: [], source: "deterministic_fallback" }],
+  },
   allowedCapabilities: ["read", "edit"],
   constraints: ["Keep data safe"],
   acceptanceCriteria: [

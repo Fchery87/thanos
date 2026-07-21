@@ -17,6 +17,7 @@ export interface DiffEvidence {
 export interface TestEvidence {
   kind: "test";
   runner: string;
+  normalizedExecutable: string;
   args: string[];
   exitCode: number;
   suites?: number;
@@ -27,6 +28,7 @@ export interface TestEvidence {
 export interface CommandEvidence {
   kind: "command";
   family: string;
+  normalizedExecutable: string;
   argv: string[];
   exitCode: number;
   passed: boolean;

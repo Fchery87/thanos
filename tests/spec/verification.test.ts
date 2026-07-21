@@ -10,6 +10,10 @@ function makeSpec(): FormalSpec {
     status: "active",
     approvalStatus: "not_required",
     goal: "Build the billing flow",
+    taskContract: {
+      objective: "Build the billing flow",
+      criteria: [{ id: "manual-primary", kind: "manual", statement: "Task completed", targets: [], evidence: ["manual"], expectedExecutables: [], expectedArgs: [], mustNot: [], source: "deterministic_fallback" }],
+    },
     allowedCapabilities: ["read", "edit"],
     constraints: [],
     acceptanceCriteria: [
@@ -24,8 +28,8 @@ function makeSpec(): FormalSpec {
 
 const DIFF: EvidenceRecord = { kind: "diff", paths: ["src/index.ts"], base: "abc", patchHash: "hash123", passed: true };
 const DIFF_FAIL: EvidenceRecord = { kind: "diff", paths: ["src/index.ts"], base: "abc", patchHash: "hash123", passed: false };
-const TEST: EvidenceRecord = { kind: "test", runner: "vitest", args: ["run"], exitCode: 0, passed: true };
-const CMD: EvidenceRecord = { kind: "command", family: "", argv: ["ls"], exitCode: 0, passed: true };
+const TEST: EvidenceRecord = { kind: "test", runner: "vitest", normalizedExecutable: "vitest", args: ["run"], exitCode: 0, passed: true };
+const CMD: EvidenceRecord = { kind: "command", family: "", normalizedExecutable: "ls", argv: ["ls"], exitCode: 0, passed: true };
 const MANUAL: EvidenceRecord = { kind: "manual", actor: "user", claim: "looks good", passed: true };
 const MANUAL_FAIL: EvidenceRecord = { kind: "manual", actor: "user", claim: "nope", passed: false };
 
@@ -68,6 +72,18 @@ describe("verifyCriteria", () => {
     expect(results[0]?.missingEvidence).toContain("test");
   });
 
+  it("records deterministic failure reasons before any manual semantic evidence", () => {
+    const results = verifyCriteria(makeSpec(), [
+      DIFF,
+      { kind: "test", runner: "vitest", normalizedExecutable: "vitest", args: ["run"], exitCode: 1, passed: false },
+      MANUAL,
+    ]);
+
+    expect(results[0]?.passed).toBe(false);
+    expect(results[0]?.missingEvidence).toContain("test (failed)");
+    expect(results[0]?.evidence).toEqual([expect.stringContaining("src/index.ts")]);
+  });
+
   it("returns a single failed result when acceptanceCriteria is empty", () => {
     const emptySpec: FormalSpec = {
       id: "spec-empty",
@@ -75,6 +91,10 @@ describe("verifyCriteria", () => {
       status: "active",
       approvalStatus: "not_required",
       goal: "Some goal",
+      taskContract: {
+        objective: "Some goal",
+        criteria: [],
+      },
       allowedCapabilities: ["read"],
       constraints: [],
       acceptanceCriteria: [],

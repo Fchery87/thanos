@@ -9,6 +9,8 @@ export class SpecEngine {
   gateAttempts = 0;
   private evidence: EvidenceRecord[] = [];
 
+  constructor(private readonly extractContractCandidate?: (prompt: string, tier: SpecTier) => unknown) {}
+
   classify(prompt: string, explicitFlag: boolean): SpecTier {
     const lower = prompt.trim().toLowerCase();
     if (lower.length < 20 || /^(what|how|why|explain|show|list|describe|tell)/.test(lower)) {
@@ -21,13 +23,19 @@ export class SpecEngine {
   generate(prompt: string, tier: SpecTier): void {
     this.reset();
     if (tier === "instant") return;
-    this.activeSpec = generateSpec(prompt, tier);
+    this.activeSpec = generateSpec(prompt, tier, { extractContractCandidate: this.extractContractCandidate });
   }
 
   startTurn(prompt: string, explicitFlag: boolean): FormalSpec | undefined {
     const tier = this.classify(prompt, explicitFlag);
     this.generate(prompt, tier);
     return this.activeSpec;
+  }
+
+  preview(prompt: string, explicitFlag: boolean): FormalSpec | undefined {
+    const tier = this.classify(prompt, explicitFlag);
+    if (tier === "instant") return undefined;
+    return generateSpec(prompt, tier, { extractContractCandidate: this.extractContractCandidate });
   }
 
   reset(): void {

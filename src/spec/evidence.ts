@@ -57,6 +57,19 @@ function classifyTestCommand(argv: string[]): { isTest: boolean; runner?: string
   return { isTest: false };
 }
 
+function normalizeExecutable(argv: string[]): string {
+  if (argv.length === 0) return "unknown";
+  const cmd = argv[0] ?? "unknown";
+  const sub = argv[1] ?? "";
+  if ((cmd === "bun" || cmd === "node" || cmd === "cargo" || cmd === "go") && sub === "test") {
+    return `${cmd} test`;
+  }
+  if (cmd === "git" && sub === "grep") {
+    return "git grep";
+  }
+  return cmd;
+}
+
 export function evidenceFromToolResult(event: ToolResultEventLike): EvidenceRecord | undefined {
   const passed = event.isError !== true;
 
@@ -71,6 +84,7 @@ export function evidenceFromToolResult(event: ToolResultEventLike): EvidenceReco
       return {
         kind: "test",
         runner: runner ?? "unknown",
+        normalizedExecutable: normalizeExecutable(argv),
         args: argv.slice(1),
         exitCode: event.isError ? 1 : 0,
         passed,
@@ -80,6 +94,7 @@ export function evidenceFromToolResult(event: ToolResultEventLike): EvidenceReco
     return {
       kind: "command",
       family: "",
+      normalizedExecutable: normalizeExecutable(argv),
       argv,
       exitCode: event.isError ? 1 : 0,
       passed,
