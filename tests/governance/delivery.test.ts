@@ -59,6 +59,12 @@ describe("resolveDelivery", () => {
     expect(resolveDelivery({ registry: noMistakes, shipFile: null, repoId: { remote: "r4", path: "/x" }}).yoloAllowed).toBe(false);
   });
 
+  it("exposes yoloAllowed in the resolved delivery object", () => {
+    const registry = { version: 1, default: SAFE, projects: [{ match: "r1", mode: "direct-PR", autonomy: "attended", yolo: "allowed" }] } as any;
+    const r = resolveDelivery({ registry, shipFile: null, repoId: { remote: "r1", path: "/x" }});
+    expect(r.yoloAllowed).toBe(true);
+  });
+
   it("a registry whose default is more restrictive still wins safely", () => {
     // Registry default is local-only/attended; no project entry matches.
     // The ship file tries to smuggle a more permissive mode/autonomy — it must

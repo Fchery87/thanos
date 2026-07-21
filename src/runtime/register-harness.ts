@@ -515,6 +515,38 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
         return;
       }
 
+      const repoId = await readRepoId(process.cwd());
+
+      if (delivery?.mode === "direct-PR") {
+        if (!ctx.hasUI) {
+          ctx.ui.notify("Yolo in direct-PR mode requires an interactive UI.", "warning");
+          return;
+        }
+
+        const choice = await ctx.ui.select(
+          `Yolo for ${repoId.remote ?? repoId.path}`,
+          ["allow — mark this repo yolo-allowed", "deny — keep yolo blocked"],
+        );
+
+        if (!choice || choice.startsWith("deny")) {
+          ctx.ui.notify("Yolo remains blocked.", "info");
+          return;
+        }
+
+        const theme = ctx.ui.theme ?? noopTheme;
+        await saveRegistry(upsertRegistryEntry(await loadRegistry(), repoId, delivery.mode, delivery.autonomy, "allowed"));
+        const next = await resolveDeliveryState(process.cwd());
+        deliveryStatePromise = Promise.resolve(next);
+        deliveryOverlayPromise = Promise.resolve(deliveryPolicyOverlay(next.mode));
+        permissions.setYolo(true);
+        ctx.ui.setStatus("harness-yolo", theme.fg("error", "⚡ yolo"));
+        ctx.ui.notify(formatPanel(ctx.ui.theme, "Yolo Allowed", [
+          theme.fg("warning", "This repo is now marked yolo-allowed."),
+          theme.fg("dim", "Run /yolo again to restore normal permission behavior."),
+        ], "warning"), "warning");
+        return;
+      }
+
       if (!delivery?.yoloAllowed) {
         ctx.ui.notify(
           `Yolo is restricted to local-only or repos explicitly marked yolo-allowed. Current mode: ${delivery?.mode ?? "unknown"}.`,
