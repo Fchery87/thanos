@@ -45,6 +45,20 @@ describe("resolveDelivery", () => {
     expect(resolveDelivery({ registry: reg2, shipFile: null, repoId: { remote: null, path: "/x" }}).yoloLocked).toBe(true);
   });
 
+  it("allows yolo only for local-only or explicitly allowed direct-PR repos", () => {
+    const localOnly = { version: 1, default: SAFE, projects: [{ match: "r1", mode: "local-only", autonomy: "attended" }] } as any;
+    expect(resolveDelivery({ registry: localOnly, shipFile: null, repoId: { remote: "r1", path: "/x" }}).yoloAllowed).toBe(true);
+
+    const directPR = { version: 1, default: SAFE, projects: [{ match: "r2", mode: "direct-PR", autonomy: "attended" }] } as any;
+    expect(resolveDelivery({ registry: directPR, shipFile: null, repoId: { remote: "r2", path: "/x" }}).yoloAllowed).toBe(false);
+
+    const allowed = { version: 1, default: SAFE, projects: [{ match: "r3", mode: "direct-PR", autonomy: "attended", yolo: "allowed" }] } as any;
+    expect(resolveDelivery({ registry: allowed, shipFile: null, repoId: { remote: "r3", path: "/x" }}).yoloAllowed).toBe(true);
+
+    const noMistakes = { version: 1, default: SAFE, projects: [{ match: "r4", mode: "no-mistakes", autonomy: "attended", yolo: "allowed" }] } as any;
+    expect(resolveDelivery({ registry: noMistakes, shipFile: null, repoId: { remote: "r4", path: "/x" }}).yoloAllowed).toBe(false);
+  });
+
   it("a registry whose default is more restrictive still wins safely", () => {
     // Registry default is local-only/attended; no project entry matches.
     // The ship file tries to smuggle a more permissive mode/autonomy — it must

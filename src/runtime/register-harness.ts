@@ -519,9 +519,9 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
         return;
       }
 
-      if (delivery?.mode !== undefined && delivery.mode !== "local-only") {
+      if (!delivery?.yoloAllowed) {
         ctx.ui.notify(
-          `Yolo is restricted to personal (local-only) delivery mode. Current mode: ${delivery.mode}.`,
+          `Yolo is restricted to local-only or repos explicitly marked yolo-allowed. Current mode: ${delivery?.mode ?? "unknown"}.`,
           "warning",
         );
         return;
