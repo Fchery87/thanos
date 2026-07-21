@@ -2,6 +2,7 @@ import type { WavePlan, WaveSlice } from "./types";
 import { validateWavePlan } from "./plan";
 import { verifyWaveHandoffs, type WaveHandoff, type WaveHandoffVerification } from "./verify";
 import type { SubagentResultContract } from "../agents/result";
+import { AgentOrchestrator, type BatchTask } from "../agents/orchestrator";
 
 export interface WaveOutcome {
   status: "completed" | "partial" | "failed" | "cancelled";
@@ -172,5 +173,68 @@ export class WavesRuntime {
       synthesisNeeded: verification.requiresSynthesisReview || hasFailures,
       issues: allIssues,
     };
+  }
+
+  async run(input: {
+    plan: WavePlan;
+    execute: (task: BatchTask) => Promise<SubagentResultContract>;
+  }): Promise<WaveOutcome> {
+    const accepted = this.acceptPlan(input.plan);
+    if (!accepted.valid || !this.plan) {
+      return {
+        status: "failed",
+        plan: input.plan,
+        waves: [],
+        verification: { passed: false, requiresEscalation: true, requiresSynthesisReview: false, issues: [accepted.reason ?? "invalid plan"] },
+        synthesisNeeded: false,
+        issues: [accepted.reason ?? "invalid plan"],
+      };
+    }
+
+    const orchestrator = new AgentOrchestrator();
+    const waves: WaveExecutionWave[] = [];
+
+    for (let i = 0; i < input.plan.slices.length; i += input.plan.width) {
+      const waveSlices = input.plan.slices.slice(i, i + input.plan.width);
+      const tasks = waveSlices.map((slice) => ({ id: slice.id, type: slice.agent === "worker" ? "build" : slice.agent, goal: slice.goal, writeScope: slice.paths }));
+      const batch = await orchestrator.runBatch({
+        id: `waves:${i}`,
+        tasks,
+        execute: input.execute,
+      });
+
+      const executed: ExecutedSlice[] = waveSlices.map((slice) => {
+        const contract = batch.state.results.get(slice.id);
+        if (!contract) {
+          return { slice, status: "failed", error: "missing contract" };
+        }
+        const handoff: WaveHandoff = {
+          status: contract.status === "success" ? "success" : "blocked",
+          slice: slice.id,
+          keyFindings: contract.findings.map((finding) => finding.summary),
+          evidence: contract.summary.trim().length > 0 ? [contract.summary] : [],
+          openQuestions: contract.escalations.map((escalation) => escalation.question),
+          suggestedFollowUps: contract.findings.map((finding) => finding.suggestion).filter((value): value is string => typeof value === "string"),
+          confidence: contract.status === "success" ? "high" : "low",
+        };
+        return { slice, status: contract.status === "success" ? "completed" : "failed", handoff, contract };
+      });
+
+      const added = this.addWave(executed);
+      if (!added.valid) {
+        return {
+          status: "failed",
+          plan: this.plan,
+          waves: this.waves,
+          verification: { passed: false, requiresEscalation: true, requiresSynthesisReview: false, issues: [added.reason ?? "invalid wave"] },
+          synthesisNeeded: false,
+          issues: [added.reason ?? "invalid wave"],
+        };
+      }
+      if (this.shouldStopAfter(this.waves.length - 1)) {
+        break;
+      }
+    }
+    return this.complete();
   }
 }
