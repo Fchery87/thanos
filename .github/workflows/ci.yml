@@ -111,6 +111,7 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
+      - run: bun run benchmark:prompts
       - run: bun run test:perf
       - uses: actions/upload-artifact@v4
         if: always()
