@@ -65,7 +65,7 @@ describe("AgentOrchestrator — adversarial validation", () => {
 
   it("prevents starting a task that is already completed", () => {
     const orch = new AgentOrchestrator();
-    const batch = orch.createBatch("b1", [
+    orch.createBatch("b1", [
       { id: "t1", type: "explore", goal: "test" },
     ]);
     orch.startTask("b1", "t1");

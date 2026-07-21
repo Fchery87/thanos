@@ -5,7 +5,7 @@ import type {
   ApprovalStatus,
 } from "./types";
 import type { Capability } from "../permissions/rules";
-import { buildContractFromTaskContract, buildDefaultFailContract } from "./contract";
+import { buildContractFromTaskContract } from "./contract";
 import { extractTaskContract } from "./contract-extractor";
 
 export interface GenerateSpecOptions {

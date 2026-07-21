@@ -1,4 +1,4 @@
-import type { PolicyPreset, PolicyRule } from "../policy/types";
+import type { PolicyPreset } from "../policy/types";
 
 export type HeadlessBehavior = "deny" | "ask" | "allow";
 

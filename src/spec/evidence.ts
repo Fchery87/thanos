@@ -1,4 +1,3 @@
-import { redactSensitive } from "../observability/redaction";
 import type { EvidenceRecord } from "./claims";
 
 export type { EvidenceRecord } from "./claims";

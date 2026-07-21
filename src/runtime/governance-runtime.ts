@@ -1,5 +1,4 @@
 import type { AuditEvent } from "../audit/types";
-import type { EgressDecision } from "../governance/egress";
 import { evaluateEgress } from "../governance/egress";
 import { evaluateGovernedToolCall, type GovernedToolDecision } from "../governance/tool-call";
 import type { GovernedOperation, GovernedOperationResult } from "../governance/operation";

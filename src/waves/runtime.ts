@@ -192,8 +192,6 @@ export class WavesRuntime {
     }
 
     const orchestrator = new AgentOrchestrator();
-    const waves: WaveExecutionWave[] = [];
-
     for (let i = 0; i < input.plan.slices.length; i += input.plan.width) {
       const waveSlices = input.plan.slices.slice(i, i + input.plan.width);
       const tasks = waveSlices.map((slice) => ({ id: slice.id, type: slice.agent === "worker" ? "build" : slice.agent, goal: slice.goal, writeScope: slice.paths }));

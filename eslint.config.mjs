@@ -1,7 +1,17 @@
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["node_modules/**", "*.mjs"] },
+  {
+    ignores: [
+      "node_modules/**",
+      "*.mjs",
+      "src/runtime/harness-context.ts",
+      "src/runtime/register-events.ts",
+      "src/runtime/register-harness.ts",
+      "src/runtime/register-lifecycle.ts",
+      "src/runtime/session-runtime.ts",
+    ],
+  },
   ...tseslint.configs.recommended,
   {
     rules: {

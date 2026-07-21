@@ -1,22 +1,20 @@
-import { randomUUID } from "node:crypto";
 import * as fsp from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { HarnessPolicy } from "../policy/types";
 import type { AgentType } from "./registry";
-import type { SpecialistId } from "./catalog";
 import { resolveContextMode, buildContextArgs } from "./context-mode";
 import { agentWrites, narrowPolicyForAgent } from "./policy";
 import { parseSubagentResult } from "./result";
 import type { SubagentResultContract } from "./result";
-import { RunStore, type RunState } from "./run-store";
+import type { RunStore } from "./run-store";
+import { type RunState } from "./run-store";
 import { executeProcess, type ProcessResult, type RunOutcome } from "./process";
 import { createWorktree, removeWorktree, generateWorktreeId } from "./worktree";
 import {
   buildSubagentEnv,
   getPiInvocation,
   resolveFinalText,
-  extractLatestAssistantText,
 } from "./execution";
 import { captureChanges, writeHandoffPatch, type ChangeHandoff } from "./change-handoff";
 import { loadAgent } from "./loader";
@@ -53,7 +51,7 @@ async function executeAgentRun(
   request: Required<Pick<AgentRunRequest, "type" | "goal">> & Omit<AgentRunRequest, "type" | "goal">,
   store: RunStore,
   signal?: AbortSignal,
-  onUpdate?: (text: string) => void,
+  _onUpdate?: (text: string) => void,
 ): Promise<AgentRunResult> {
   const agent = await loadAgent(request.type);
   const contextMode = resolveContextMode(request.type, agent.context);
@@ -127,7 +125,7 @@ async function executeAgentRun(
     const capture = await captureChanges(repoDir, worktreePath, request.writeScope);
     if (capture.kind === "ok") {
       handoff = capture.handoff;
-      const patchPath = await writeHandoffPatch(store.runDir, runId, capture.handoff);
+      await writeHandoffPatch(store.runDir, runId, capture.handoff);
       handoff.patch = capture.handoff.patch;
     } else if (capture.kind === "failure") {
       contract.metadata = { ...(contract.metadata ?? {}), handoffFailure: capture.reason };

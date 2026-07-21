@@ -71,7 +71,7 @@ export function evaluateMcpTrust(
   };
 }
 
-export function environmentAllowlist(identity: McpServerIdentity): string[] {
+export function environmentAllowlist(_identity: McpServerIdentity): string[] {
   const base = ["PATH", "HOME", "USER", "TMPDIR", "TEMP", "TMP"];
   return base;
 }

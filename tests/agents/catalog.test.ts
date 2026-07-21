@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   getSpecialist,
   allSpecialists,
-  getAllIds,
   writingAgentIds,
   readOnlyAgentIds,
   agentWrites,

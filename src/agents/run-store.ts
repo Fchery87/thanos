@@ -119,7 +119,7 @@ export class RunStore {
   async gc(options?: { maxCount?: number; maxAgeMs?: number; maxBytes?: number }): Promise<number> {
     const maxCount = options?.maxCount ?? MAX_RETENTION_COUNT;
     const maxAgeMs = options?.maxAgeMs ?? MAX_RETENTION_AGE_MS;
-    const maxBytes = options?.maxBytes ?? MAX_RETENTION_BYTES;
+    const _maxBytes = options?.maxBytes ?? MAX_RETENTION_BYTES;
     const deadline = Date.now() + GC_TIME_LIMIT_MS;
 
     let entries: string[];

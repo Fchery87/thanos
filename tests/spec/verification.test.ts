@@ -29,7 +29,6 @@ function makeSpec(): FormalSpec {
 const DIFF: EvidenceRecord = { kind: "diff", paths: ["src/index.ts"], base: "abc", patchHash: "hash123", passed: true };
 const DIFF_FAIL: EvidenceRecord = { kind: "diff", paths: ["src/index.ts"], base: "abc", patchHash: "hash123", passed: false };
 const TEST: EvidenceRecord = { kind: "test", runner: "vitest", normalizedExecutable: "vitest", args: ["run"], exitCode: 0, passed: true };
-const CMD: EvidenceRecord = { kind: "command", family: "", normalizedExecutable: "ls", argv: ["ls"], exitCode: 0, passed: true };
 const MANUAL: EvidenceRecord = { kind: "manual", actor: "user", claim: "looks good", passed: true };
 const MANUAL_FAIL: EvidenceRecord = { kind: "manual", actor: "user", claim: "nope", passed: false };
 

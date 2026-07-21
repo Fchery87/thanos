@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { RunStore } from "../../src/agents/run-store";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { RunState } from "../../src/agents/run-store";
 
 describe("RunStore state transitions", () => {
   async function setup(): Promise<{ store: RunStore; dir: string; id: string }> {
@@ -13,15 +12,6 @@ describe("RunStore state transitions", () => {
     await store.create(id, { id, agentType: "build", goal: "test", contextMode: "fresh" });
     return { store, dir, id };
   }
-
-  const VALID_TRANSITIONS: Record<RunState, RunState[]> = {
-    pending: ["running", "cancelled"],
-    running: ["completed", "failed", "cancelled", "timeout"],
-    completed: [],
-    failed: [],
-    cancelled: [],
-    timeout: [],
-  };
 
   it("allows all valid transitions", async () => {
     const { store, id } = await setup();
@@ -80,7 +70,7 @@ describe("RunStore state transitions", () => {
   });
 
   it("garbage collection removes old terminal runs", async () => {
-    const { store, dir, id } = await setup();
+    const { store, id } = await setup();
     await store.transition(id, "running");
     await store.transition(id, "completed");
 

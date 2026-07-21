@@ -1,6 +1,5 @@
-import type { AgentType } from "./registry";
 import type { SpecialistId } from "./catalog";
-import { mayDelegateTo, type SpecialistProfile } from "./catalog";
+import { mayDelegateTo } from "./catalog";
 import type { SubagentResultContract } from "./result";
 
 export interface BatchTask {
@@ -31,8 +30,6 @@ export interface AgentBatchResult {
 }
 
 const MAX_WIDTH = 8;
-const MAX_DEPTH = 1;
-
 export class AgentOrchestrator {
   private activeBatches = new Map<string, BatchState>();
   private activeRunIds = new Set<string>();

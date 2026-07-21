@@ -3,7 +3,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { GovernanceRuntime, type GovernanceContext } from "./governance-runtime";
 import { ContinuationArbiter } from "./continuation-arbiter";
-import { SessionRuntime } from "./session-runtime";
+import type { SessionRuntime } from "./session-runtime";
 import { AuditLogger } from "../audit/logger";
 
 export function setupRuntime(
