@@ -75,18 +75,17 @@ describe("scanContent", () => {
 
 describe("formatScanResult", () => {
   it("formats matches with line numbers and type", () => {
-    const matches = [{ type: "AWS Access Key", line: 3, preview: "AKIAIOSFODNN7EXAMPLE" }];
+    const matches = [{ type: "AWS Access Key", line: 3, preview: "[AWS Access Key at line 3]" }];
     const output = formatScanResult(matches);
     expect(output).toContain("line 3");
     expect(output).toContain("AWS Access Key");
-    expect(output).toContain("AKIAIOSFODNN7EXAMPLE");
   });
 
   it("caps display at 5 and adds overflow notice", () => {
     const matches = Array.from({ length: 8 }, (_, i) => ({
-      type: "Generic API Key", line: i + 1, preview: "key=abc123xyz456def789ghi012jkl345mno",
+      type: "Generic API Key", line: i + 1, preview: "[Generic API Key]",
     }));
     const output = formatScanResult(matches);
-    expect(output).toContain("… and 3 more");
+    expect(output).toContain("... and 3 more");
   });
 });

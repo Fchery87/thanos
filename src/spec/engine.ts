@@ -1,34 +1,15 @@
 import { generateSpec } from "./generator";
-import { evidenceFromToolResult, type EvidenceRecord, type ToolResultEventLike } from "./evidence";
+import { evidenceFromToolResult, type ToolResultEventLike } from "./evidence";
+import type { EvidenceRecord } from "./claims";
 import { verifyCriteria, type VerificationResult } from "./verification";
 import type { FormalSpec, SpecTier } from "./types";
-
-function assistantTexts(messages: unknown): string[] {
-  if (!Array.isArray(messages)) return [];
-  const text: string[] = [];
-
-  for (const message of messages) {
-    if (typeof message !== "object" || message === null) continue;
-    if ((message as { role?: unknown }).role !== "assistant") continue;
-    const content = (message as { content?: unknown }).content;
-    if (!Array.isArray(content)) continue;
-
-    const summary = content
-      .filter((part): part is { type: string; text?: string } => Boolean(part) && part.type === "text" && typeof part.text === "string")
-      .map((part) => part.text)
-      .join("\n")
-      .trim();
-
-    if (summary) text.push(summary);
-  }
-
-  return text;
-}
 
 export class SpecEngine {
   activeSpec: FormalSpec | undefined;
   gateAttempts = 0;
   private evidence: EvidenceRecord[] = [];
+
+  constructor(private readonly extractContractCandidate?: (prompt: string, tier: SpecTier) => unknown) {}
 
   classify(prompt: string, explicitFlag: boolean): SpecTier {
     const lower = prompt.trim().toLowerCase();
@@ -42,13 +23,19 @@ export class SpecEngine {
   generate(prompt: string, tier: SpecTier): void {
     this.reset();
     if (tier === "instant") return;
-    this.activeSpec = generateSpec(prompt, tier);
+    this.activeSpec = generateSpec(prompt, tier, { extractContractCandidate: this.extractContractCandidate });
   }
 
   startTurn(prompt: string, explicitFlag: boolean): FormalSpec | undefined {
     const tier = this.classify(prompt, explicitFlag);
     this.generate(prompt, tier);
     return this.activeSpec;
+  }
+
+  preview(prompt: string, explicitFlag: boolean): FormalSpec | undefined {
+    const tier = this.classify(prompt, explicitFlag);
+    if (tier === "instant") return undefined;
+    return generateSpec(prompt, tier, { extractContractCandidate: this.extractContractCandidate });
   }
 
   reset(): void {
@@ -59,13 +46,6 @@ export class SpecEngine {
 
   recordGateAttempt(): void {
     this.gateAttempts += 1;
-  }
-
-  collectOutput(text: string): void {
-    if (!this.activeSpec) return;
-    const summary = text.trim();
-    if (!summary) return;
-    this.recordEvidence({ type: "manual", source: "assistant", summary, passed: true });
   }
 
   recordToolResult(event: ToolResultEventLike): void {
@@ -79,13 +59,9 @@ export class SpecEngine {
     this.evidence.push(evidence);
   }
 
-  finishTurn(messages: unknown, opts?: { aborted?: boolean }): VerificationResult[] {
-    // An ESC-aborted turn must not contribute its partial assistant claims as
-    // passing evidence; verify against whatever evidence already exists.
-    if (!opts?.aborted) {
-      for (const text of assistantTexts(messages)) {
-        this.collectOutput(text);
-      }
+  finishTurn(_messages: unknown, opts?: { aborted?: boolean }): VerificationResult[] {
+    if (opts?.aborted) {
+      return this.verify();
     }
     return this.verify();
   }

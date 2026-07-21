@@ -1,4 +1,6 @@
 import type { Context } from "@earendil-works/pi-ai";
+import { buildEvaluatorEvidenceMessage, EVALUATOR_RUBRIC } from "../evaluation/prompt-boundary";
+import { buildPromptSections, renderCompletionCriteria, renderContextEnvelope } from "../prompts/style";
 
 /**
  * Marks every goal-injected user message. before_agent_start treats this like
@@ -7,14 +9,7 @@ import type { Context } from "@earendil-works/pi-ai";
  */
 export const GOAL_DIRECTIVE_SENTINEL = "[harness:goal-directive]";
 
-export const EVALUATOR_SYSTEM = [
-  "You are a fresh completion checker. You did NOT do the work.",
-  "Decide ONLY from the evidence surfaced below whether the condition is met.",
-  "You cannot run tools; if the evidence does not prove the condition, it is NOT met.",
-  "Reply in exactly this format and nothing else:",
-  "VERDICT: MET|NOT_MET",
-  "REASON: <one short line>",
-].join("\n");
+export const EVALUATOR_SYSTEM = EVALUATOR_RUBRIC;
 
 /**
  * The worker must know how it is judged. The checker runs ONLY when the agent
@@ -52,25 +47,26 @@ const COMPLETION_CONTRACT = [
  * the judge is tool-less: unsurfaced work reads as no progress.
  */
 export function buildGoalSystemPrompt(condition: string): string {
-  return [
-    "A /goal is active. Work autonomously toward it until it is fully resolved:",
-    "",
-    `<goal_condition>\n${condition}\n</goal_condition>`,
-    "",
-    "Goal-mode rules:",
-    "- Keep going until the condition is completely met end-to-end. Do not stop at",
-    "  analysis, a plan, a TODO list, partial fixes, or suggested next steps.",
-    "- Do not redefine the goal into a smaller task; satisfy every requirement.",
-    "- Batch the work: carry each turn as far as you can rather than pausing after a",
-    "  single step — you are re-prompted automatically each turn until you signal done.",
-    "- Treat the current worktree, command output, tests, and external state as",
-    "  authoritative; re-check them rather than assuming.",
-    "- Persevere through recoverable tool failures by trying reasonable alternatives.",
-    "",
-    COMPLETION_CONTRACT,
-    "",
-    EVIDENCE_CONTRACT,
-  ].join("\n");
+  return buildPromptSections([
+    { heading: "Question", body: "What should the worker do when a /goal is active?" },
+    {
+      heading: "Mental model",
+      body: "Keep working until the goal is fully resolved. Runtime state and evidence govern; the prompt only explains the rule.",
+    },
+    {
+      heading: "Goal condition",
+      body: renderContextEnvelope({ origin: "goal", trusted: false, content: condition }),
+    },
+    {
+      heading: "Action",
+      body: [
+        "- Keep going until the condition is completely met end-to-end.",
+        "- Do not stop at analysis, a plan, a TODO list, partial fixes, or suggested next steps.",
+        "- Treat the current worktree, command output, tests, and external state as authoritative.",
+      ].join("\n"),
+    },
+    { heading: "Check", body: [COMPLETION_CONTRACT, EVIDENCE_CONTRACT].join("\n\n") },
+  ]);
 }
 
 export function buildFirstDirective(condition: string): string {
@@ -78,6 +74,8 @@ export function buildFirstDirective(condition: string): string {
     `${GOAL_DIRECTIVE_SENTINEL} Work toward this goal until it is met:`,
     "",
     condition,
+    "",
+    renderCompletionCriteria(["call goal_complete only when every requirement is verified"]),
     "",
     COMPLETION_CONTRACT,
     "",
@@ -102,17 +100,17 @@ export function buildContinueDirective(): string {
 
 export interface EvaluatorInput {
   condition: string;
-  lastAssistantText: string;
+  assistantClaim: string;
   toolResultsText: string;
   previousReason?: string;
 }
 
 export function buildEvaluatorContext(input: EvaluatorInput): Context {
-  const body = [
-    `CONDITION:\n${input.condition}`,
-    input.previousReason ? `\nPREVIOUS CHECK:\n${input.previousReason}` : "",
-    `\nLAST ASSISTANT MESSAGE:\n${input.lastAssistantText || "(empty)"}`,
-    `\nLAST TOOL RESULTS:\n${input.toolResultsText || "(none)"}`,
-  ].join("\n");
+  const body = buildEvaluatorEvidenceMessage({
+    condition: input.condition,
+    previousReason: input.previousReason,
+    assistantClaim: input.assistantClaim,
+    toolResultsText: input.toolResultsText,
+  });
   return { systemPrompt: EVALUATOR_SYSTEM, messages: [{ role: "user", content: body, timestamp: Date.now() }] };
 }

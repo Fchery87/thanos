@@ -20,6 +20,10 @@ const spec = {
   status: "active",
   approvalStatus: "not_required",
   goal: "Build the billing flow",
+  taskContract: {
+    objective: "Build the billing flow",
+    criteria: [{ id: "manual-primary", kind: "manual", statement: "Task completed", targets: [], evidence: ["manual"], expectedExecutables: [], expectedArgs: [], mustNot: [], source: "deterministic_fallback" }],
+  },
   allowedCapabilities: ["read", "edit"],
   constraints: ["Keep data safe"],
   acceptanceCriteria: [
@@ -49,7 +53,7 @@ describe("command presenters", () => {
 
   it("renders the spec verification panel", () => {
     const presentation = renderSpecVerificationPanel(noopTheme, spec, [
-      { criterion: spec.acceptanceCriteria[0], passed: true, evidence: ["manual ok"] },
+      { criterion: spec.acceptanceCriteria[0], passed: true, evidence: ["manual ok"], missingEvidence: [] },
     ]);
 
     expect(presentation.panel).toContain("Active Spec");

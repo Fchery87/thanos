@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -6,8 +7,15 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 const execFileAsync = promisify(execFile);
-const root = new URL("../..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("../..", import.meta.url));
 const installer = join(root, "scripts", "install.sh");
+const shellExecutable = process.platform === "win32" ? "sh" : "/bin/sh";
+const pathSeparator = process.platform === "win32" ? ";" : ":";
+
+function withSystemPath(bin: string): string {
+  const base = process.env.PATH ?? "";
+  return base.length > 0 ? `${bin}${pathSeparator}${base}` : bin;
+}
 
 async function writeExecutable(path: string, content: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
@@ -32,6 +40,7 @@ async function makeOrigin(rootDir: string): Promise<string> {
   await execFileAsync("git", ["init", "-b", "master", origin]);
 
   await writeFile(join(origin, "package.json"), JSON.stringify({ name: "thanos", version: "0.1.0" }, null, 2), "utf-8");
+  await writeFile(join(origin, "bun.lock"), "# mock lockfile\n", "utf-8");
   await writeFile(join(origin, "mcp.example.json"), "{}\n", "utf-8");
   await writeFile(join(origin, "agent", "models.example.json"), '{"catalog":"v1"}\n', "utf-8");
   await writeExecutable(join(origin, "scripts", "install.sh"), "#!/usr/bin/env sh\nexit 0\n");
@@ -75,7 +84,7 @@ interface InstallEnv {
 }
 
 async function runInstaller(env: InstallEnv, pathPrefix: string, args: string[] = []) {
-  return execFileAsync("/bin/sh", [installer, ...args], {
+  return execFileAsync(shellExecutable, [installer, ...args], {
     env: {
       HOME: env.HOME,
       PATH: pathPrefix,
@@ -97,7 +106,7 @@ describe("install.sh git bootstrap", () => {
 
     const result = await runInstaller(
       { HOME: dir, THANOS_DIR: installDir, BIN_DIR: join(dir, "bin-out"), THANOS_REPO_URL: origin },
-      `${bin}:/usr/bin:/bin`,
+      withSystemPath(bin),
     );
 
     expect(result.stdout).toContain("Resolved latest release: v0.2.0");
@@ -115,8 +124,8 @@ describe("install.sh git bootstrap", () => {
     expect(wrapper).not.toContain("--ref");
 
     // `thanos version` reports the checked-out tag without launching pi
-    const versionOut = await execFileAsync("/bin/sh", [join(dir, "bin-out", "thanos"), "version"], {
-      env: { HOME: dir, THANOS_DIR: installDir, PATH: `${bin}:/usr/bin:/bin` },
+    const versionOut = await execFileAsync(shellExecutable, [join(dir, "bin-out", "thanos"), "version"], {
+      env: { HOME: dir, THANOS_DIR: installDir, PATH: withSystemPath(bin) },
     });
     expect(versionOut.stdout).toContain("thanos v0.2.0");
     expect(versionOut.stdout).toContain("pi 0.80.6");
@@ -134,14 +143,14 @@ describe("install.sh git bootstrap", () => {
     const installDir = join(dir, ".pi");
     const env = { HOME: dir, THANOS_DIR: installDir, BIN_DIR: join(dir, "bin-out"), THANOS_REPO_URL: origin };
 
-    await runInstaller(env, `${bin}:/usr/bin:/bin`);
+    await runInstaller(env, withSystemPath(bin));
 
     // user customizes gitignored config and adds credentials after install
     await writeFile(join(installDir, "agent", "models.json"), '{"catalog":"user-edited"}\n', "utf-8");
     await writeFile(join(installDir, "agent", "auth.json"), '{"secret":"keep-me"}\n', "utf-8");
 
     await cutRelease(origin, "v0.3.0");
-    const result = await runInstaller(env, `${bin}:/usr/bin:/bin`);
+    const result = await runInstaller(env, withSystemPath(bin));
 
     expect(result.stdout).toContain("Updating existing Thanos checkout");
     expect(result.stdout).toContain("Resolved latest release: v0.3.0");
@@ -163,7 +172,7 @@ describe("install.sh git bootstrap", () => {
 
     const result = await runInstaller(
       { HOME: dir, THANOS_DIR: installDir, BIN_DIR: join(dir, "bin-out"), THANOS_REPO_URL: origin },
-      `${bin}:/usr/bin:/bin`,
+      withSystemPath(bin),
       ["--ref", "v0.1.0"],
     );
 
@@ -183,7 +192,7 @@ describe("install.sh git bootstrap", () => {
 
     await expect(runInstaller(
       { HOME: dir, THANOS_DIR: installDir, BIN_DIR: join(dir, "bin-out"), THANOS_REPO_URL: origin },
-      `${bin}:/usr/bin:/bin`,
+      withSystemPath(bin),
     )).rejects.toMatchObject({
       stderr: expect.stringContaining("already exists and is not the Thanos repository"),
     });
@@ -199,13 +208,14 @@ describe("install.sh git bootstrap", () => {
     const installDir = join(dir, ".pi");
     await mkdir(join(installDir, "scripts"), { recursive: true });
     await writeFile(join(installDir, "package.json"), JSON.stringify({ name: "local-thanos" }, null, 2), "utf-8");
+    await writeFile(join(installDir, "bun.lock"), "# mock lockfile\n", "utf-8");
     await writeExecutable(join(installDir, "scripts", "install.sh"), "#!/usr/bin/env sh\nexit 0\n");
     await writeExecutable(join(installDir, "scripts", "patch-pi-subagents.mjs"), "// noop\n");
     const bin = await makeFakeBin(dir, commandLog);
 
     const result = await runInstaller(
       { HOME: dir, THANOS_DIR: installDir, BIN_DIR: join(dir, "bin-out"), THANOS_REPO_URL: join(dir, "nonexistent-origin") },
-      `${bin}:/usr/bin:/bin`,
+      withSystemPath(bin),
       ["--skip-clone"],
     );
 

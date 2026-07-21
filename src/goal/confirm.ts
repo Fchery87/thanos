@@ -17,6 +17,13 @@ export interface ConfirmInput {
 
 type RunEvaluator = (input: EvaluatorInput) => Promise<Verdict>;
 
+function hasFailedDeterministicEvidence(text: string): boolean {
+  return /\bexit\s+1\b/i.test(text)
+    || /\b(?:command|test|verification)\s+failed\b/i.test(text)
+    || /\b(?:error|error)\b[:\-]/i.test(text)
+    || /\[ERROR\]/i.test(text);
+}
+
 /**
  * Judge an agent-signaled `goal_complete`. Fails CLOSED, never open — a goal
  * only ever closes on a MET verdict backed by real turn evidence:
@@ -51,11 +58,18 @@ export async function confirmGoalCompletion(
     };
   }
 
+  if (hasFailedDeterministicEvidence(toolResultsText)) {
+    return {
+      met: false,
+      reason: "required command failed — deterministic evidence outranks any MET verdict",
+    };
+  }
+
   const summary = (input.summary ?? "").trim();
   const claim = summary ? `AGENT COMPLETION CLAIM:\n${summary}\n\n${lastAssistantText}` : lastAssistantText;
   const evalInput: EvaluatorInput = {
     condition: input.condition,
-    lastAssistantText: claim,
+    assistantClaim: claim,
     toolResultsText,
     previousReason: input.previousReason,
   };

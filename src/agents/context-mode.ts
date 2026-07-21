@@ -1,18 +1,16 @@
 import type { AgentType } from "./registry";
+import { allowedContextModes, type ContextMode } from "./catalog";
 
-export type ContextMode = "fresh" | "forked";
-
-// Continuity roles may inherit the parent's context; everything else is
-// adversarial/read-only and must run fresh to stay unbiased (see ADR 0004).
-const CONTINUITY_ROLES: AgentType[] = ["build", "designer"];
+export type { ContextMode } from "./catalog";
 
 export function resolveContextMode(type: AgentType, requested: ContextMode | undefined): ContextMode {
   if (requested === undefined) return "fresh";
   if (requested === "fresh") return "fresh";
   // requested === "forked"
-  if (!CONTINUITY_ROLES.includes(type)) {
+  const allowed = allowedContextModes(type);
+  if (!allowed.includes("forked")) {
     throw new Error(
-      `Agent "${type}" may not run in forked context: forked is limited to continuity roles (${CONTINUITY_ROLES.join(", ")}). See ADR 0004.`,
+      `Agent "${type}" may not run in forked context. See ADR 0004.`,
     );
   }
   return "forked";
@@ -20,6 +18,5 @@ export function resolveContextMode(type: AgentType, requested: ContextMode | und
 
 export function buildContextArgs(mode: ContextMode, parentSessionRef?: string): string[] {
   if (mode === "forked" && parentSessionRef) return ["--fork", parentSessionRef];
-  // Fresh, or forked without a resolvable parent session → stay ephemeral.
   return ["--no-session"];
 }

@@ -19,6 +19,7 @@ export interface LoopDeps {
   recordEvent: (event: GoalEventRecord) => Promise<void>;
   getTokens: () => number;
   isSubagent: boolean;
+  issueContinuation?: (directive: string) => void;
 }
 
 /**
@@ -44,9 +45,10 @@ export async function handleAgentEnd(deps: LoopDeps, info: AgentEndInfo): Promis
     return;
   }
 
-  const action = controller.onTurnEnd(deps.getTokens());
+    const action = controller.onTurnEnd(deps.getTokens());
   switch (action.kind) {
     case "continue":
+      deps.issueContinuation?.(action.directive);
       await deps.sendDirective(action.directive);
       break;
     case "paused":

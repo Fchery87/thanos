@@ -1,0 +1,40 @@
+{
+  "generatedAt": "2026-07-20T06:39:56.717Z",
+  "results": [
+    {
+      "name": "src/index.ts line count",
+      "durationMs": 7,
+      "timestamp": "2026-07-20T06:39:55.504Z"
+    },
+    {
+      "name": "src/index.ts import count",
+      "durationMs": 2,
+      "timestamp": "2026-07-20T06:39:55.505Z"
+    },
+    {
+      "name": "architectural metrics capture",
+      "durationMs": 9.79,
+      "timestamp": "2026-07-20T06:39:55.513Z"
+    },
+    {
+      "name": "low-risk tool_call classification (100x)",
+      "durationMs": 550.04,
+      "timestamp": "2026-07-20T06:39:56.065Z"
+    },
+    {
+      "name": "critical bash tool_call classification (100x)",
+      "durationMs": 18.08,
+      "timestamp": "2026-07-20T06:39:56.105Z"
+    },
+    {
+      "name": "policy evaluation (50x)",
+      "durationMs": 551.8,
+      "timestamp": "2026-07-20T06:39:56.665Z"
+    },
+    {
+      "name": "session rule evaluation (3 capabilities)",
+      "durationMs": 26.56,
+      "timestamp": "2026-07-20T06:39:56.703Z"
+    }
+  ]
+}

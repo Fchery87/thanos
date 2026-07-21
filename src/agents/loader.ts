@@ -1,13 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentType } from "./registry";
+import { validateManifest } from "./manifest";
 
 export interface AgentDefinition {
   body: string;
   tools?: string[];
   model?: string;
   maxTurns?: number;
-  timeoutMs?: number;
+  maxExecutionTimeMs?: number;
   context?: "fresh" | "forked";
 }
 
@@ -114,8 +115,8 @@ function parseFrontmatter(raw: string): Partial<AgentDefinition> & { body: strin
       continue;
     }
 
-    if (key === "timeoutMs") {
-      parsed.timeoutMs = parsePositiveInteger(rawValue, key);
+    if (key === "maxExecutionTimeMs") {
+      parsed.maxExecutionTimeMs = parsePositiveInteger(rawValue, key);
       continue;
     }
   }
@@ -124,13 +125,17 @@ function parseFrontmatter(raw: string): Partial<AgentDefinition> & { body: strin
 }
 
 export async function loadAgent(type: AgentType): Promise<AgentDefinition> {
+  let raw: string;
   try {
-    const raw = await readFile(join(agentDir(), `${type}.md`), "utf-8");
-    return parseFrontmatter(raw);
+    raw = await readFile(join(agentDir(), `${type}.md`), "utf-8");
   } catch {
     process.stderr.write(
       `[harness] No agent definition found for type "${type}" — falling back to generic prompt. Create agent/agents/${type}.md to define capability ceiling.\n`,
     );
     return { body: `You are a ${type} specialist. Complete the task given to you.` };
   }
+
+  const parsed = parseFrontmatter(raw);
+  validateManifest(type, parsed);
+  return parsed;
 }

@@ -28,8 +28,10 @@ export function buildContinuationPrompt(results: VerificationResult[], attempts:
   const unmet = results
     .filter((result) => !result.passed)
     .map((result) => {
-      const evidence = result.criterion.evidenceRequired.join(", ") || "none";
-      return `- ${result.criterion.statement} (needs evidence: ${evidence})`;
+      const missing = result.missingEvidence.length > 0
+        ? ` (missing: ${result.missingEvidence.join(", ")})`
+        : "";
+      return `- ${result.criterion.statement}${missing}`;
     });
 
   return [

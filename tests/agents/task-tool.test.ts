@@ -63,7 +63,7 @@ describe("task params schema", () => {
 
 describe("task-tool contract helpers", () => {
   const base: SubagentResultContract = {
-    status: "success", summary: "ok", findings: [], artifacts: [], escalations: [],
+    version: 1, status: "success", summary: "ok", findings: [], artifacts: [], escalations: [],
   };
 
   it("maps contract status to a transcript status", () => {
@@ -82,13 +82,13 @@ describe("task-tool contract helpers", () => {
 describe("renderContractForDisplay", () => {
   it("shows the summary as prose", () => {
     expect(renderContractForDisplay(JSON.stringify({
-      status: "success", summary: "all good", findings: [], artifacts: [], escalations: [],
+      version: 1, status: "success", summary: "all good", findings: [], artifacts: [], escalations: [],
     }))).toBe("all good");
   });
 
   it("appends a findings count when present", () => {
     const out = renderContractForDisplay(JSON.stringify({
-      status: "success", summary: "review done",
+      version: 1, status: "success", summary: "review done",
       findings: [{ priority: "P1", summary: "x" }, { priority: "P2", summary: "y" }],
       artifacts: [], escalations: [],
     }));
@@ -98,19 +98,19 @@ describe("renderContractForDisplay", () => {
 
   it("surfaces escalation questions", () => {
     const out = renderContractForDisplay(JSON.stringify({
-      status: "escalated", summary: "blocked", findings: [], artifacts: [],
+      version: 1, status: "escalated", summary: "blocked", findings: [], artifacts: [],
       escalations: [{ question: "which db?" }],
     }));
     expect(out).toContain("Needs input: which db?");
   });
 
-  it("renders plain (non-JSON) text as its own summary", () => {
-    expect(renderContractForDisplay("just prose")).toBe("just prose");
+  it("renders plain (non-JSON) text as an invalid live contract", () => {
+    expect(renderContractForDisplay("just prose")).toBe("invalid result contract format");
   });
 });
 
 describe("applyHarnessStatus", () => {
-  const mk = () => ({ status: "success" as const, summary: "", findings: [], artifacts: [], escalations: [] });
+  const mk = () => ({ version: 1 as const, status: "success" as const, summary: "", findings: [], artifacts: [], escalations: [] });
 
   it("forces timeout when timedOut, even with exit code", () => {
     expect(applyHarnessStatus(mk(), { timedOut: true, code: 1 }).status).toBe("timeout");

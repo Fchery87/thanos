@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { modelForRef, type ModelCatalog } from "./model-catalog-helpers";
+import { validateManifest } from "../../src/agents/manifest";
 
 const AGENTS_DIR = join("agent", "agents");
 
@@ -12,6 +13,11 @@ interface RosterAgentDefinition {
   maxTurns?: number;
   maxExecutionTimeMs?: number;
   maxSubagentDepth?: number;
+  systemPromptMode?: string;
+  inheritProjectContext?: boolean;
+  defaultContext?: string;
+  defaultReads?: string[];
+  defaultProgress?: boolean;
 }
 
 /** Minimal frontmatter reader — every live agent .md uses single-line `key: value` fields, no YAML lists. */
@@ -35,6 +41,14 @@ function parseFrontmatter(file: string, raw: string): RosterAgentDefinition {
     return parsed;
   };
 
+  const boolean = (key: string): boolean | undefined => {
+    const raw = fields[key];
+    if (raw === undefined || raw === "") return undefined;
+    if (raw === "true") return true;
+    if (raw === "false") return false;
+    throw new Error(`${file}: ${key} is not a boolean (got "${raw}")`);
+  };
+
   return {
     file,
     name: fields.name ?? "",
@@ -42,6 +56,11 @@ function parseFrontmatter(file: string, raw: string): RosterAgentDefinition {
     maxTurns: numeric("maxTurns"),
     maxExecutionTimeMs: numeric("maxExecutionTimeMs"),
     maxSubagentDepth: numeric("maxSubagentDepth"),
+    systemPromptMode: fields.systemPromptMode,
+    inheritProjectContext: boolean("inheritProjectContext"),
+    defaultContext: fields.defaultContext,
+    defaultReads: (fields.defaultReads ?? "").split(",").map((t) => t.trim()).filter(Boolean),
+    defaultProgress: boolean("defaultProgress"),
   };
 }
 
@@ -129,6 +148,25 @@ describe("live agent roster contract", () => {
     const roster = await loadRoster();
     for (const agent of roster) {
       expect(agent.tools.length, `${agent.file} has no tools`).toBeGreaterThan(0);
+    }
+  });
+
+  it("validates every shipped frontmatter manifest against the catalog-backed contract", async () => {
+    const roster = await loadRoster();
+    expect(roster.length).toBeGreaterThan(0);
+
+    for (const agent of roster) {
+      expect(() => validateManifest(agent.name, {
+        tools: agent.tools,
+        maxTurns: agent.maxTurns,
+        maxExecutionTimeMs: agent.maxExecutionTimeMs,
+        maxSubagentDepth: agent.maxSubagentDepth,
+        systemPromptMode: agent.systemPromptMode,
+        inheritProjectContext: agent.inheritProjectContext,
+        defaultContext: agent.defaultContext,
+        defaultReads: agent.defaultReads,
+        defaultProgress: agent.defaultProgress,
+      })).not.toThrow();
     }
   });
 });

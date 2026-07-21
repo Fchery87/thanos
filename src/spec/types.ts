@@ -1,4 +1,5 @@
 import type { Capability } from "../permissions/rules";
+import type { TaskContract } from "./task-contract";
 
 export type SpecTier = "instant" | "ambient" | "explicit";
 export type ApprovalStatus = "not_required" | "pending" | "approved" | "rejected";
@@ -17,6 +18,7 @@ export interface FormalSpec {
   status: SpecStatus;
   approvalStatus: ApprovalStatus;
   goal: string;
+  taskContract: TaskContract;
   allowedCapabilities: Capability[];
   constraints: string[];
   acceptanceCriteria: AcceptanceCriterion[];

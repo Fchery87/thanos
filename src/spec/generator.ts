@@ -5,7 +5,12 @@ import type {
   ApprovalStatus,
 } from "./types";
 import type { Capability } from "../permissions/rules";
-import { buildDefaultFailContract } from "./contract";
+import { buildContractFromTaskContract } from "./contract";
+import { extractTaskContract } from "./contract-extractor";
+
+export interface GenerateSpecOptions {
+  extractContractCandidate?: (prompt: string, tier: SpecTier) => unknown;
+}
 
 let counter = 0;
 const newId = () => `spec-${Date.now()}-${++counter}`;
@@ -28,8 +33,12 @@ function approvalFor(tier: SpecTier): ApprovalStatus {
   return tier === "explicit" ? "pending" : "not_required";
 }
 
-export function generateSpec(message: string, tier: SpecTier): FormalSpec {
-  const contract = buildDefaultFailContract(message);
+export function generateSpec(message: string, tier: SpecTier, options?: GenerateSpecOptions): FormalSpec {
+  const taskContract = extractTaskContract(message, {
+    tier,
+    extractCandidate: options?.extractContractCandidate,
+  });
+  const contract = buildContractFromTaskContract(taskContract);
 
   return {
     id: newId(),
@@ -37,6 +46,7 @@ export function generateSpec(message: string, tier: SpecTier): FormalSpec {
     status: "active",
     approvalStatus: approvalFor(tier),
     goal: message,
+    taskContract,
     allowedCapabilities: inferAllowedCapabilities(message),
     constraints: [],
     acceptanceCriteria: contract.acceptanceCriteria,

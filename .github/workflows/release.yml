@@ -54,6 +54,18 @@ jobs:
       - name: Run tests
         run: bun run test
 
+      - name: Run security tests
+        run: bun run test:security
+
+      - name: Run integration tests
+        run: bun run test:integration
+
+      - name: Run prompt tests
+        run: bun run test:prompts
+
+      - name: Run prompt evaluations
+        run: bun run eval:prompts
+
       - name: Package release tarball and checksum
         env:
           TAG_VERSION: ${{ github.ref_name }}

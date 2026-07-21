@@ -152,3 +152,37 @@ describe("classifyRisk — sensitive targets never downgrade", () => {
     expect(classifyRisk("bash", { command: "ls && cat .env" })).toBe("critical");
   });
 });
+
+describe("classifyRisk — git revision/path sensitive reads", () => {
+  it("keeps git show HEAD:.env critical", () => {
+    expect(classifyRisk("bash", { command: "git show HEAD:.env" })).toBe("critical");
+  });
+
+  it("keeps git show main:.env critical", () => {
+    expect(classifyRisk("bash", { command: "git show main:.env" })).toBe("critical");
+  });
+
+  it("keeps git show main:config/server.key critical", () => {
+    expect(classifyRisk("bash", { command: "git show main:config/server.key" })).toBe("critical");
+  });
+
+  it("keeps git cat-file with sensitive path critical", () => {
+    expect(classifyRisk("bash", { command: "git cat-file -p HEAD:.env" })).toBe("critical");
+  });
+
+  it("keeps git show HEAD:src/index.ts low risk", () => {
+    expect(classifyRisk("bash", { command: "git show HEAD:src/index.ts" })).toBe("low");
+  });
+
+  it("keeps quoted git rev/path forms critical for sensitive paths", () => {
+    expect(classifyRisk("bash", { command: "git show 'HEAD:.env'" })).toBe("critical");
+  });
+
+  it("keeps git show with stage path to sensitive file critical", () => {
+    expect(classifyRisk("bash", { command: "git show :0:.env" })).toBe("critical");
+  });
+
+  it("keeps ambiguous revision syntax fail-safe (critical)", () => {
+    expect(classifyRisk("bash", { command: "git show not~a~real~rev:.env" })).toBe("critical");
+  });
+});

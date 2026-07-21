@@ -1,4 +1,5 @@
 import type { AcceptanceCriterion } from "./types";
+import { buildPromptSections, renderCompletionCriteria } from "../prompts/style";
 
 export interface EvaluatorPromptInput {
   goal: string;
@@ -13,15 +14,11 @@ export function buildEvaluatorPrompt(input: EvaluatorPromptInput): string {
     })
     .join("\n");
 
-  return [
-    "Use the subagent tool to run the evaluator agent.",
-    "The evaluator must grade this from a fresh context and must not rely on builder claims.",
-    "",
-    `Goal: ${input.goal}`,
-    "",
-    "Criteria:",
-    criteria || "1. No criteria supplied. Return NEEDS_WORK and request a concrete contract.",
-    "",
-    "Require the evaluator to return PASS or NEEDS_WORK first, followed by per-criterion evidence.",
-  ].join("\n");
+  return buildPromptSections([
+    { heading: "Question", body: "How should the evaluator grade this change?" },
+    { heading: "Mental model", body: "Grade from a fresh context and trust only supplied evidence." },
+    { heading: "Goal", body: input.goal },
+    { heading: "Criteria", body: criteria || "1. No criteria supplied. Return NEEDS_WORK and request a concrete contract." },
+    { heading: "Check", body: renderCompletionCriteria(["return PASS or NEEDS_WORK first", "include per-criterion evidence"]) },
+  ]);
 }

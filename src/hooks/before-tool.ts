@@ -6,6 +6,8 @@ import type { HarnessPolicy } from "../policy/types";
 import type { SpecEngine } from "../spec/engine";
 import type { FormalSpec } from "../spec/types";
 import { evaluateGovernedToolCall, type GovernedToolDecision } from "../governance/tool-call";
+import { evaluateEgress } from "../governance/egress";
+import type { DeliveryMode } from "../governance/delivery";
 
 export interface BlockResult { block: true; reason: string; }
 type PromptUser = (message: string) => Promise<boolean>;
@@ -26,6 +28,7 @@ export function makeBeforeToolHandler(
   auditLogger?: AuditLogger,
   auditContext?: AuditContext,
   autonomy: "attended" | "unattended" = "attended",
+  deliveryMode?: DeliveryMode,
 ) {
   return async (
     event: { toolName: string; input: Record<string, unknown> },
@@ -51,6 +54,16 @@ export function makeBeforeToolHandler(
         target: auditTarget,
       });
     };
+
+    // ── Egress enforcement: local-only mode denies remote egress ───────
+    // This runs BEFORE yolo — yolo does not bypass immutable delivery denies.
+    if (deliveryMode === "local-only") {
+      const egress = evaluateEgress(call.egressClass, deliveryMode, false);
+      if (!egress.allowed) {
+        await recordAudit("deny", "egress:local-only");
+        return { block: true, reason: egress.reason ?? "egress blocked by local-only delivery mode" };
+      }
+    }
 
     // ── Yolo mode: skip all checks, allow everything ──────────────────
     if (permissions.isYolo) {

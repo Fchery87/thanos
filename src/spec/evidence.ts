@@ -1,15 +1,16 @@
-import type { EvidenceRequirement } from "./types";
+import type { EvidenceRecord } from "./claims";
 
-export type EvidenceType = EvidenceRequirement;
+export type { EvidenceRecord } from "./claims";
 
-export interface EvidenceRecord {
-  type: EvidenceType;
-  source: string;
-  summary: string;
-  passed: boolean;
-  filePath?: string;
-  commandFamily?: string;
-}
+const KNOWN_TEST_RUNNERS = new Set([
+  "vitest", "jest", "mocha", "bats", "pytest", "playwright",
+  "cargo test", "go test", "bun test", "node --test",
+]);
+
+const KNOWN_RUNNER_BINARIES = new Set([
+  "vitest", "jest", "mocha", "pytest", "playwright", "bats",
+  "cargo", "go", "bun", "node",
+]);
 
 type TextPart = { type: string; text?: string };
 
@@ -33,12 +34,85 @@ function textFromContent(content: TextPart[] | undefined): string {
 }
 
 function pathFromInput(input: Record<string, unknown> | undefined): string | undefined {
-  const path = input?.path ?? input?.file_path;
-  return typeof path === "string" ? path : undefined;
+  const p = input?.path ?? input?.file_path;
+  return typeof p === "string" ? p : undefined;
 }
 
-function commandFamily(command: string): EvidenceType {
-  return /\b(test|vitest|pytest|playwright|bats)\b/.test(command) ? "test" : "command";
+function classifyTestCommand(argv: string[]): { isTest: boolean; runner?: string } {
+  if (argv.length === 0) return { isTest: false };
+  const cmd = argv[0] ?? "";
+
+  if (KNOWN_TEST_RUNNERS.has(cmd)) {
+    return { isTest: true, runner: cmd };
+  }
+
+  if (KNOWN_RUNNER_BINARIES.has(cmd)) {
+    const subCmd = argv[1] ?? "";
+    if (subCmd === "test") {
+      return { isTest: true, runner: `${cmd} test` };
+    }
+  }
+
+  return { isTest: false };
+}
+
+function normalizeExecutable(argv: string[]): string {
+  if (argv.length === 0) return "unknown";
+  const cmd = argv[0] ?? "unknown";
+  const sub = argv[1] ?? "";
+  if ((cmd === "bun" || cmd === "node" || cmd === "cargo" || cmd === "go") && sub === "test") {
+    return `${cmd} test`;
+  }
+  if (cmd === "git" && sub === "grep") {
+    return "git grep";
+  }
+  return cmd;
+}
+
+export function evidenceFromToolResult(event: ToolResultEventLike): EvidenceRecord | undefined {
+  const passed = event.isError !== true;
+
+  if (event.toolName === "bash") {
+    const command = typeof event.input?.command === "string" ? event.input.command : "";
+    if (!command) return undefined;
+
+    const argv = command.trim().split(/\s+/);
+    const { isTest, runner } = classifyTestCommand(argv);
+
+    if (isTest) {
+      return {
+        kind: "test",
+        runner: runner ?? "unknown",
+        normalizedExecutable: normalizeExecutable(argv),
+        args: argv.slice(1),
+        exitCode: event.isError ? 1 : 0,
+        passed,
+      };
+    }
+
+    return {
+      kind: "command",
+      family: "",
+      normalizedExecutable: normalizeExecutable(argv),
+      argv,
+      exitCode: event.isError ? 1 : 0,
+      passed,
+    };
+  }
+
+  if (event.toolName === "edit" || event.toolName === "write") {
+    const filePath = pathFromInput(event.input);
+    if (!filePath) return undefined;
+    return {
+      kind: "diff",
+      paths: [filePath],
+      base: "",
+      patchHash: "",
+      passed,
+    };
+  }
+
+  return undefined;
 }
 
 export function safeInteractionMetadata(event: ToolResultEventLike): Record<string, unknown> | undefined {
@@ -70,35 +144,4 @@ export function safeInteractionMetadata(event: ToolResultEventLike): Record<stri
   }
 
   return undefined;
-}
-
-export function evidenceFromToolResult(event: ToolResultEventLike): EvidenceRecord | undefined {
-  const passed = event.isError !== true;
-  const output = textFromContent(event.content) || event.output?.trim() || "";
-
-  if (event.toolName === "bash") {
-    const command = String(event.input?.command ?? "bash");
-    const type = commandFamily(command);
-    return {
-      type,
-      source: "bash",
-      summary: `${command} ${passed ? "passed" : "failed"}`,
-      passed,
-      commandFamily: type,
-    };
-  }
-
-  if (event.toolName === "edit" || event.toolName === "write") {
-    const filePath = pathFromInput(event.input) ?? event.toolName;
-    return {
-      type: "diff",
-      source: event.toolName,
-      summary: `${event.toolName} changed ${filePath}`,
-      passed,
-      filePath,
-    };
-  }
-
-  if (!output) return undefined;
-  return { type: "manual", source: event.toolName, summary: output.slice(0, 200), passed };
 }
