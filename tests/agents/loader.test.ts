@@ -142,4 +142,18 @@ describe("loadAgent", () => {
 
     await expect(loadAgent("scout" as never)).rejects.toThrow(/unsupported tool/);
   });
+
+  it("rejects designer subagent delegation because the catalog forbids it", async () => {
+    const home = await mkdtemp(join(tmpdir(), "thanos-agent-"));
+    process.env.HOME = home;
+    const agentDir = join(home, ".pi", "agent", "agents");
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(
+      join(agentDir, "designer.md"),
+      ["---", "tools: read, edit, subagent", "---", "You are Designer."].join("\n"),
+      "utf-8",
+    );
+
+    await expect(loadAgent("designer")).rejects.toThrow(/unsupported delegation tool/);
+  });
 });

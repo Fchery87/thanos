@@ -15,6 +15,9 @@ export function validateManifest(role: string, manifest: AgentManifest): void {
     if (!profile.toolCeiling.includes(tool)) {
       throw new Error(`${role} declares unsupported tool \"${tool}\"`);
     }
+    if (tool === "subagent" && profile.mayDelegate.length === 0) {
+      throw new Error(`${role} declares unsupported delegation tool \"subagent\"`);
+    }
   }
 
   if (manifest.context && !profile.contextModes.includes(manifest.context)) {
