@@ -11,12 +11,20 @@ export interface SpecialistProfile {
   executes: boolean;
   contextModes: readonly ContextMode[];
   mayDelegate: readonly SpecialistId[];
+  maxSubagentDepth?: number;
   modelRoutable: boolean;
   toolCeiling: readonly string[];
   requiredTools: readonly string[];
   outputContractVersion: number;
   promptTemplateId: string;
   runtimeEngine: "live" | "legacy" | "disabled";
+  manifest: {
+    systemPromptMode?: "replace";
+    inheritProjectContext?: boolean;
+    defaultContext?: "fork";
+    defaultReads?: readonly string[];
+    defaultProgress?: boolean;
+  };
 }
 
 const READ_ONLY: readonly ContextMode[] = ["fresh"];
@@ -35,12 +43,14 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       executes: false,
       contextModes: READ_ONLY,
       mayDelegate: NO_DELEGATION,
+      maxSubagentDepth: 0,
       modelRoutable: true,
       toolCeiling: ["read", "ls", "find", "grep", "web_search", "fetch_content"],
       requiredTools: ["read", "ls", "find", "grep", "bash"],
       outputContractVersion: 1,
       promptTemplateId: "explore",
       runtimeEngine: "live",
+      manifest: {},
     },
   ],
   [
@@ -50,12 +60,14 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       executes: false,
       contextModes: READ_ONLY,
       mayDelegate: NO_DELEGATION,
+      maxSubagentDepth: 0,
       modelRoutable: true,
       toolCeiling: ["read", "ls", "find", "grep", "web_search", "fetch_content"],
       requiredTools: ["read", "ls", "find", "grep"],
       outputContractVersion: 1,
       promptTemplateId: "plan",
       runtimeEngine: "live",
+      manifest: {},
     },
   ],
   [
@@ -65,12 +77,14 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       executes: true,
       contextModes: FRESH_OR_FORKED,
       mayDelegate: EXPLORE_DELEGATION,
+      maxSubagentDepth: 1,
       modelRoutable: true,
       toolCeiling: ["read", "ls", "find", "grep", "write", "edit", "bash", "task"],
       requiredTools: ["read", "write", "edit", "bash", "task"],
       outputContractVersion: 1,
       promptTemplateId: "build",
       runtimeEngine: "live",
+      manifest: {},
     },
   ],
   [
@@ -80,12 +94,14 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       executes: false,
       contextModes: READ_ONLY,
       mayDelegate: EXPLORE_DELEGATION,
+      maxSubagentDepth: 1,
       modelRoutable: true,
       toolCeiling: ["read", "ls", "find", "grep", "report_finding", "task", "subagent"],
       requiredTools: ["read", "ls", "find", "grep", "report_finding", "task"],
       outputContractVersion: 1,
       promptTemplateId: "reviewer",
       runtimeEngine: "live",
+      manifest: {},
     },
   ],
   [
@@ -95,12 +111,16 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       executes: false,
       contextModes: FRESH_OR_FORKED,
       mayDelegate: NO_DELEGATION,
+      maxSubagentDepth: 2,
       modelRoutable: true,
       toolCeiling: ["read", "ls", "find", "grep", "write", "edit", "web_search", "fetch_content", "subagent"],
       requiredTools: ["read", "write", "edit"],
       outputContractVersion: 1,
       promptTemplateId: "designer",
       runtimeEngine: "live",
+      manifest: {
+        inheritProjectContext: true,
+      },
     },
   ],
   [
@@ -110,12 +130,14 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       executes: false,
       contextModes: READ_ONLY,
       mayDelegate: NO_DELEGATION,
+      maxSubagentDepth: 0,
       modelRoutable: true,
       toolCeiling: ["read", "ls", "find", "grep", "web_search", "fetch_content"],
       requiredTools: ["read", "ls", "find", "grep"],
       outputContractVersion: 1,
       promptTemplateId: "oracle",
       runtimeEngine: "live",
+      manifest: {},
     },
   ],
   [
@@ -125,12 +147,14 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       executes: false,
       contextModes: READ_ONLY,
       mayDelegate: NO_DELEGATION,
+      maxSubagentDepth: 0,
       modelRoutable: true,
       toolCeiling: ["read", "ls", "find", "grep", "web_search", "fetch_content"],
       requiredTools: ["read", "ls", "find", "grep", "web_search", "fetch_content"],
       outputContractVersion: 1,
       promptTemplateId: "researcher",
       runtimeEngine: "live",
+      manifest: {},
     },
   ],
   [
@@ -140,12 +164,14 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       executes: true,
       contextModes: READ_ONLY,
       mayDelegate: NO_DELEGATION,
+      maxSubagentDepth: 0,
       modelRoutable: true,
       toolCeiling: ["read", "ls", "find", "grep", "bash", "report_finding"],
       requiredTools: ["read", "ls", "find", "grep", "bash"],
       outputContractVersion: 1,
       promptTemplateId: "evaluator",
       runtimeEngine: "live",
+      manifest: {},
     },
   ],
   [
@@ -155,12 +181,18 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       executes: false,
       contextModes: READ_ONLY,
       mayDelegate: NO_DELEGATION,
+      maxSubagentDepth: 0,
       modelRoutable: false,
       toolCeiling: ["read", "ls", "find", "grep"],
       requiredTools: ["read", "ls", "find", "grep"],
       outputContractVersion: 1,
       promptTemplateId: "scout",
       runtimeEngine: "live",
+      manifest: {
+        systemPromptMode: "replace",
+        inheritProjectContext: true,
+        defaultProgress: true,
+      },
     },
   ],
   [
@@ -170,12 +202,20 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       executes: true,
       contextModes: FRESH_OR_FORKED,
       mayDelegate: NO_DELEGATION,
+      maxSubagentDepth: 0,
       modelRoutable: false,
-      toolCeiling: ["read", "write", "edit", "bash"],
-      requiredTools: ["read", "write", "edit", "bash"],
+      toolCeiling: ["read", "ls", "find", "grep", "write", "edit", "bash"],
+      requiredTools: ["read", "ls", "find", "grep", "write", "edit", "bash"],
       outputContractVersion: 1,
       promptTemplateId: "worker",
       runtimeEngine: "live",
+      manifest: {
+        systemPromptMode: "replace",
+        inheritProjectContext: true,
+        defaultContext: "fork",
+        defaultReads: ["context.md", "plan.md"],
+        defaultProgress: true,
+      },
     },
   ],
   [
@@ -185,12 +225,14 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       executes: false,
       contextModes: READ_ONLY,
       mayDelegate: EXPLORE_DELEGATION,
+      maxSubagentDepth: 1,
       modelRoutable: true,
       toolCeiling: ["read", "ls", "find", "grep", "report_finding", "task", "subagent"],
       requiredTools: ["read", "ls", "find", "grep", "report_finding", "task"],
       outputContractVersion: 1,
       promptTemplateId: "reviewer-correctness",
       runtimeEngine: "live",
+      manifest: {},
     },
   ],
   [
@@ -200,12 +242,14 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       executes: false,
       contextModes: READ_ONLY,
       mayDelegate: EXPLORE_DELEGATION,
+      maxSubagentDepth: 1,
       modelRoutable: true,
       toolCeiling: ["read", "ls", "find", "grep", "report_finding", "task", "subagent"],
       requiredTools: ["read", "ls", "find", "grep", "report_finding", "task"],
       outputContractVersion: 1,
       promptTemplateId: "reviewer-security",
       runtimeEngine: "live",
+      manifest: {},
     },
   ],
   [
@@ -215,12 +259,14 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       executes: false,
       contextModes: READ_ONLY,
       mayDelegate: EXPLORE_DELEGATION,
+      maxSubagentDepth: 1,
       modelRoutable: true,
-      toolCeiling: ["read", "ls", "find", "grep", "report_finding", "task"],
+      toolCeiling: ["read", "ls", "find", "grep", "report_finding", "task", "subagent"],
       requiredTools: ["read", "ls", "find", "grep", "report_finding", "task"],
       outputContractVersion: 1,
       promptTemplateId: "reviewer-tests",
       runtimeEngine: "live",
+      manifest: {},
     },
   ],
 ]);
