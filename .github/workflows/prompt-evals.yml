@@ -30,4 +30,9 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
-      - run: bun scripts/eval-prompts.mjs
+      - run: mkdir -p .harness/evals
+      - run: bun run eval:prompts > .harness/evals/prompt-evals.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prompt-evals
+          path: .harness/evals/prompt-evals.json

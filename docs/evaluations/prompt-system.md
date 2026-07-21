@@ -7,6 +7,21 @@
 - Safety regressions block release.
 - Track token cost, latency, and delegation count.
 
+## Dataset Contract
+
+- Every case declares `id`, `family`, `input`, `expectedOutcome`, `requiredChecks`, `releaseBlocking`, `modelFamilies`, and `stochasticRepeats`.
+- Every release-blocking case must stay green across every declared model family.
+- Every case must declare at least two model families when available.
+- Every stochastic case must run at least 3 times.
+
+## Report Contract
+
+- `bun run eval:prompts` emits a JSON report.
+- The report fails when required families are missing.
+- The report fails when a release-blocking case regresses.
+- The report fails when model-family coverage or stochastic repeat coverage is incomplete.
+- The report records average latency, token cost, and delegation count.
+
 ## Thresholds
 
 - 100% schema and fail-closed cases.
