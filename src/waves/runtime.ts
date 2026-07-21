@@ -1,4 +1,4 @@
-import type { WavePlan, WaveSlice, WaveSliceMode } from "./types";
+import type { WavePlan, WaveSlice } from "./types";
 import { validateWavePlan } from "./plan";
 import { verifyWaveHandoffs, type WaveHandoff, type WaveHandoffVerification } from "./verify";
 import type { SubagentResultContract } from "../agents/result";
@@ -27,6 +27,16 @@ export interface ExecutedSlice {
 
 const MAX_PLAN_SIZE = 16;
 const MAX_WAVES = 3;
+
+function normalizePath(path: string): string {
+  return path.replace(/\/+$/, "");
+}
+
+function pathsOverlap(a: string, b: string): boolean {
+  const left = normalizePath(a);
+  const right = normalizePath(b);
+  return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
+}
 
 export class WavesRuntime {
   private plan: WavePlan | undefined;
@@ -64,6 +74,21 @@ export class WavesRuntime {
     for (const s of slices) {
       if (!planSliceIds.has(s.slice.id)) {
         return { valid: false, reason: `slice "${s.slice.id}" not in plan` };
+      }
+    }
+
+    const writeSlices = slices.filter((slice) => slice.slice.mode === "write");
+    for (let i = 0; i < writeSlices.length; i++) {
+      const current = writeSlices[i]!;
+      for (let j = i + 1; j < writeSlices.length; j++) {
+        const next = writeSlices[j]!;
+        for (const currentPath of current.slice.paths) {
+          for (const nextPath of next.slice.paths) {
+            if (pathsOverlap(currentPath, nextPath)) {
+              return { valid: false, reason: `overlapping write slices: "${current.slice.id}" and "${next.slice.id}"` };
+            }
+          }
+        }
       }
     }
 

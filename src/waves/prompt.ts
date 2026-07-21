@@ -6,8 +6,7 @@ export function buildWaveWorkerPrompt(slice: WaveSlice, overallGoal: string): st
         "",
         "Write-slice ownership:",
         "- Own only these paths.",
-        "- Do not revert sibling work.",
-        "- Do not spawn subagents.",
+        "- Return one handoff only.",
       ]
     : [];
 

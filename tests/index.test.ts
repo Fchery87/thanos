@@ -173,11 +173,8 @@ describe("register", () => {
     const { api, handlers } = createFakePi();
     register(api);
 
+    let continuation: string | undefined;
     await handlers.get("before_agent_start")?.({ prompt: "Add pagination with tests" }, {
-      model: undefined,
-      ui: { setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() },
-    });
-    await handlers.get("before_agent_start")?.({ prompt: "[harness:verify-continue] keep going" }, {
       model: undefined,
       ui: { setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() },
     });
@@ -185,9 +182,21 @@ describe("register", () => {
       { messages: [] },
       {
         hasUI: true,
-        ui: { notify, setStatus: vi.fn(), theme: noopTheme },
+        ui: {
+          notify,
+          setStatus: vi.fn(),
+          theme: noopTheme,
+        },
       },
     );
+
+    continuation = (api.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as string | undefined;
+    expect(continuation).toContain("[harness:verify-continue]");
+
+    await handlers.get("before_agent_start")?.({ prompt: continuation ?? "" }, {
+      model: undefined,
+      ui: { setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() },
+    });
 
     expect(notify).toHaveBeenCalledWith(expect.stringContaining("Relevant tests or verification commands pass"), "warning");
   });

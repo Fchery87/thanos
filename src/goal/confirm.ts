@@ -17,6 +17,13 @@ export interface ConfirmInput {
 
 type RunEvaluator = (input: EvaluatorInput) => Promise<Verdict>;
 
+function hasFailedDeterministicEvidence(text: string): boolean {
+  return /\bexit\s+1\b/i.test(text)
+    || /\b(?:command|test|verification)\s+failed\b/i.test(text)
+    || /\b(?:error|error)\b[:\-]/i.test(text)
+    || /\[ERROR\]/i.test(text);
+}
+
 /**
  * Judge an agent-signaled `goal_complete`. Fails CLOSED, never open — a goal
  * only ever closes on a MET verdict backed by real turn evidence:
@@ -48,6 +55,13 @@ export async function confirmGoalCompletion(
         "no verifiable evidence in this turn — a tool-less checker judges only your final " +
         "message and last tool outputs, so surface the proof (test output, exit codes, git " +
         "status) in the same turn as goal_complete, then call it again",
+    };
+  }
+
+  if (hasFailedDeterministicEvidence(toolResultsText)) {
+    return {
+      met: false,
+      reason: "required command failed — deterministic evidence outranks any MET verdict",
     };
   }
 

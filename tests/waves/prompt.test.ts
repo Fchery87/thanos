@@ -37,7 +37,6 @@ describe("buildWaveWorkerPrompt", () => {
     const prompt = buildWaveWorkerPrompt(slice, "Standardize ledgers");
 
     expect(prompt).toContain("Own only these paths");
-    expect(prompt).toContain("Do not revert sibling work");
-    expect(prompt).toContain("Do not spawn subagents");
+    expect(prompt).toContain("Return one handoff only");
   });
 });

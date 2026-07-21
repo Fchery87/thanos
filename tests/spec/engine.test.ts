@@ -41,8 +41,12 @@ describe("SpecEngine lifecycle", () => {
     expect(active?.taskContract.criteria.some((criterion) => criterion.kind === "build")).toBe(true);
     expect(active?.acceptanceCriteria.map((c) => c.statement)).toEqual([
       "Requested code change is implemented in the relevant files",
+      "Relevant tests or verification commands pass",
+      "Requested documentation is updated",
     ]);
-    expect(active?.acceptanceCriteria[0]?.evidenceRequired).toEqual(expect.arrayContaining(["diff", "test", "manual"]));
+    expect(active?.acceptanceCriteria[0]?.evidenceRequired).toEqual(["diff"]);
+    expect(active?.acceptanceCriteria[1]?.evidenceRequired).toEqual(["test"]);
+    expect(active?.acceptanceCriteria[2]?.evidenceRequired).toEqual(["manual"]);
   });
 
   it("derives acceptance criteria from the task contract for rename requests", () => {
@@ -140,9 +144,11 @@ describe("SpecEngine lifecycle", () => {
 
     const results = spec.finishTurn([]);
 
-    // build criterion requires the contract-derived evidence set
+    expect(results).toHaveLength(2);
     expect(results[0]?.passed).toBe(true);
-    expect(results[0]?.evidence).toHaveLength(2);
+    expect(results[0]?.evidence).toEqual(["diff: [src/billing/index.ts]"]);
+    expect(results[1]?.passed).toBe(true);
+    expect(results[1]?.evidence[0]).toContain("vitest");
   });
 
   it("does not record assistant text from an aborted turn as evidence", () => {

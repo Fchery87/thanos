@@ -125,22 +125,49 @@ export function buildTaskContract(request: string): TaskContract {
   }
 
   if (/\b(add|build|create|implement|update|remove|migrate)\b/.test(lower)) {
-    const evidence: TaskEvidenceIdentity[] = ["diff"];
-    if (/\b(tests?|verify|verification|regression|coverage)\b/.test(lower)) evidence.push("test");
-    if (/\b(docs?|readme|adr|plan)\b/.test(lower)) evidence.push("manual");
-    return {
-      objective: request,
-      criteria: [{
-        id: "build-primary",
+    const criteria: TaskCriterion[] = [{
+      id: "build-primary",
+      kind: "build",
+      statement: "Requested code change is implemented in the relevant files",
+      targets: inferTargets(lower),
+      evidence: ["diff"],
+      expectedExecutables: [],
+      expectedArgs: inferExpectedArgs(lower),
+      mustNot: inferMustNot(lower),
+      source: "deterministic_fallback",
+    }];
+
+    if (/\b(tests?|verify|verification|regression|coverage)\b/.test(lower)) {
+      criteria.push({
+        id: "build-tests",
         kind: "build",
-        statement: "Requested code change is implemented in the relevant files",
+        statement: "Relevant tests or verification commands pass",
         targets: inferTargets(lower),
-        evidence,
+        evidence: ["test"],
         expectedExecutables: inferExpectedExecutables(lower),
         expectedArgs: inferExpectedArgs(lower),
-        mustNot: inferMustNot(lower),
+        mustNot: [],
         source: "deterministic_fallback",
-      }],
+      });
+    }
+
+    if (/\b(docs?|readme|adr|plan)\b/.test(lower)) {
+      criteria.push({
+        id: "build-docs",
+        kind: "build",
+        statement: "Requested documentation is updated",
+        targets: inferTargets(lower),
+        evidence: ["manual"],
+        expectedExecutables: [],
+        expectedArgs: [],
+        mustNot: [],
+        source: "deterministic_fallback",
+      });
+    }
+
+    return {
+      objective: request,
+      criteria,
     };
   }
 
