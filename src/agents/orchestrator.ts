@@ -20,6 +20,16 @@ export interface BatchState {
   results: Map<string, SubagentResultContract>;
 }
 
+export interface AgentBatchRequest {
+  id: string;
+  tasks: BatchTask[];
+  execute: (task: BatchTask) => Promise<SubagentResultContract>;
+}
+
+export interface AgentBatchResult {
+  state: BatchState;
+}
+
 const MAX_WIDTH = 8;
 const MAX_DEPTH = 1;
 
@@ -140,5 +150,15 @@ export class AgentOrchestrator {
 
   get activeRunCount(): number {
     return this.activeRunIds.size;
+  }
+
+  async runBatch(request: AgentBatchRequest): Promise<AgentBatchResult> {
+    const state = this.createBatch(request.id, request.tasks);
+    for (const task of request.tasks) {
+      this.startTask(request.id, task.id);
+      const result = await request.execute(task);
+      this.completeTask(request.id, task.id, result);
+    }
+    return { state };
   }
 }

@@ -1,5 +1,6 @@
 import type { ReviewFinding } from "./findings";
 import type { SubagentResultContract } from "../agents/result";
+import { AgentOrchestrator, type BatchTask } from "../agents/orchestrator";
 
 export interface ReviewTarget {
   diff: string;
@@ -152,4 +153,76 @@ export function synthesize(criticResults: CriticResult[], oracleResult: OracleRe
     oracleResult,
     synthesis: synthesisLines.join("\n"),
   };
+}
+
+export async function runJuryRuntime(input: {
+  critics: Partial<Record<(typeof CRITIC_IDS)[number], SubagentResultContract>>;
+  oracle?: SubagentResultContract;
+}): Promise<JuryVerdict> {
+  const criticResults: CriticResult[] = [];
+  const missingCritics = CRITIC_IDS.filter((criticId) => !input.critics[criticId]);
+
+  for (const criticId of CRITIC_IDS) {
+    const contract = input.critics[criticId];
+    if (contract) {
+      criticResults.push(buildCriticResult(criticId, contract));
+    }
+  }
+
+  const criticFindings = criticResults.flatMap((result) => result.findings);
+  const oracleResult = input.oracle ? buildOracleResult(input.oracle, criticFindings) : undefined;
+  const verdict = synthesize(criticResults, oracleResult);
+
+  if (missingCritics.length > 0) {
+    return {
+      ...verdict,
+      verdict: verdict.verdict === "APPROVE" ? "COMMENT" : verdict.verdict,
+      synthesis: `${verdict.synthesis}\nmissing critic: ${missingCritics.join(", ")}`,
+    };
+  }
+
+  if (!oracleResult || oracleResult.status !== "completed") {
+    return {
+      ...verdict,
+      verdict: verdict.verdict === "APPROVE" ? "COMMENT" : verdict.verdict,
+      synthesis: `${verdict.synthesis}\noracle missing or incomplete`,
+    };
+  }
+
+  return verdict;
+}
+
+export async function runJuryBatch(input: {
+  target: ReviewTarget;
+  execute: (task: BatchTask) => Promise<SubagentResultContract>;
+}): Promise<JuryVerdict> {
+  const orchestrator = new AgentOrchestrator();
+  const criticTasks: BatchTask[] = CRITIC_IDS.map((criticId) => ({
+    id: criticId,
+    type: criticId,
+    goal: `Review this change for ${criticId}`,
+    context: input.target.diff,
+  }));
+  const criticBatch = await orchestrator.runBatch({
+    id: `jury:${input.target.baseCommit}`,
+    tasks: criticTasks,
+    execute: input.execute,
+  });
+
+  const critics = Object.fromEntries(
+    criticTasks.map((task) => [task.id, criticBatch.state.results.get(task.id)]),
+  ) as Partial<Record<(typeof CRITIC_IDS)[number], SubagentResultContract>>;
+
+  const criticFindings = Object.values(critics)
+    .filter((contract): contract is SubagentResultContract => !!contract)
+    .flatMap((contract) => collectFindings(contract));
+
+  const oracle = await input.execute({
+    id: "oracle",
+    type: "oracle",
+    goal: `Challenge the critic panel with stable finding ids`,
+    context: JSON.stringify(criticFindings),
+  });
+
+  return runJuryRuntime({ critics, oracle });
 }
