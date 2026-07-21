@@ -120,6 +120,10 @@ Mode, autonomy, and the yolo lock are **captain-owned**: they come only from the
 - `attended` (default) — Thanos prompts as usual within the policy ceiling.
 - `unattended` — auto-approves within the ceiling, so no prompts for allowed actions; **deny rules still block**. It is registry-only and can never be granted by a repo.
 
+In `direct-PR`, `/yolo` now asks whether to mark the repo `yolo-allowed` or keep it blocked.
+
+Yolo can also be explicitly allowed per trusted project entry for `direct-PR` repos, but it stays blocked for `no-mistakes`.
+
 ### Yolo lockout
 
 Yolo can be hard-disabled for a session, which makes `/yolo` and `Ctrl+Shift+Y` refuse with "Yolo is disabled by configuration." Any of these locks it:

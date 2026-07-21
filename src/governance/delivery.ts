@@ -19,6 +19,7 @@ export type DeliveryMerge = "fast-forward" | "pr";
 export interface ResolvedDelivery {
   mode: DeliveryMode;
   autonomy: DeliveryAutonomy;
+  yoloAllowed: boolean;
   gates: Record<string, string | null>;
   defaultBranch: string;
   merge: DeliveryMerge;
@@ -66,6 +67,7 @@ export function resolveDelivery(inputs: ResolveDeliveryInputs): ResolvedDelivery
   const mode: DeliveryMode = entry?.mode ?? def.mode;
   const autonomy: DeliveryAutonomy = entry?.autonomy ?? def.autonomy;
   const yoloLocked = entry?.yolo === "locked" || registry?.yolo === "disabled";
+  const yoloAllowed = !yoloLocked && (mode === "local-only" || (mode === "direct-PR" && entry?.yolo === "allowed"));
 
   // UNTRUSTED: mechanics from the repo-committed ship file.
   const gates = shipFile?.gates ?? {};
@@ -73,7 +75,7 @@ export function resolveDelivery(inputs: ResolveDeliveryInputs): ResolvedDelivery
   const merge: DeliveryMerge =
     shipFile?.merge ?? (mode === "direct-PR" ? "pr" : "fast-forward");
 
-  return { mode, autonomy, gates, defaultBranch, merge, yoloLocked, registered: entry !== undefined };
+  return { mode, autonomy, yoloAllowed, gates, defaultBranch, merge, yoloLocked, registered: entry !== undefined };
 }
 
 function isMissingFile(err: unknown): boolean {

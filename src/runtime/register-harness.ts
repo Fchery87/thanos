@@ -10,31 +10,28 @@ import type { AuditEvent } from "../audit/types";
 import { PermissionManager } from "../permissions/manager";
 import { gateDisabledByEnv, yoloDisabledByEnv } from "../permissions/yolo-config";
 import { SpecEngine } from "../spec/engine";
-import { buildContinuationPrompt, GATE_CONTINUE_SENTINEL, shouldReinject } from "../spec/gate";
+import { buildContinuationPrompt, shouldReinject } from "../spec/gate";
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { GoalController } from "../goal/controller";
 import { registerGoalCommand, renderGoalStatusSegment } from "../goal/command";
 import { handleAgentEnd as handleGoalAgentEnd } from "../goal/loop";
 import { extractLastTurnFromBranch, readAborted, readWillRetry } from "../goal/extract";
 import { runEvaluatorWith } from "../goal/evaluator";
-import { GOAL_DIRECTIVE_SENTINEL, buildGoalSystemPrompt } from "../goal/prompts";
+import { buildGoalSystemPrompt } from "../goal/prompts";
 import { confirmGoalCompletion } from "../goal/confirm";
 import { loadEvaluatorOverride, loadGoalSettings } from "../goal/load-settings";
 import { pickEvaluatorModel, resolveEvaluatorAuth } from "../goal/evaluator-model";
 import { resolveGoalSettings } from "../goal/types";
-import { makeBeforeToolHandler } from "../hooks/before-tool";
 import { makeAfterToolHandler } from "../hooks/after-tool";
 import type { TaskParams } from "../agents/task-tool";
 import { AGENT_TYPES } from "../agents/registry";
-import { formatRoster, loadRoster } from "../agents/roster";
+import { loadRoster } from "../agents/roster";
 import { loadPolicyState } from "../policy/state";
 import { loadRegistry, readRepoId, resolveDeliveryState } from "../governance/delivery";
 import type { DeliveryMode, ResolvedDelivery } from "../governance/delivery";
 import { deliveryPolicyOverlay } from "../governance/delivery-overlay";
 import { DELIVERY_MODE_HELP, DELIVERY_MODES, saveRegistry, upsertRegistryEntry } from "../governance/delivery-select";
-import { shouldBlockLocalOnlyPush } from "../governance/push-guard";
 import { fastForwardMerge, getCurrentBranch } from "../governance/ff-merge";
-import type { FormalSpec } from "../spec/types";
 import { registerSlashCommands } from "../commands/slash";
 import { MCPManager } from "../mcp/manager";
 import { loadMcpConfigs, mcpConfigPaths } from "../mcp/config";
@@ -68,7 +65,6 @@ import { MemoryStore, MAX_MEMORY_LENGTH } from "../memory/store";
 import type { MemoryRecord } from "../memory/types";
 // Model router removed — use /models command or pi-subagents for model selection
 import { createSnapshot } from "../security/snapshot";
-import { evaluateGovernedToolCall } from "../governance/tool-call";
 // registerSearchTool removed — superseded by npm:pi-web-access
 import { AskParamsSchema, buildAskDecision, resolveHeadlessAsk, type AskQuestion } from "../interaction/ask";
 import {
@@ -519,9 +515,41 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
         return;
       }
 
-      if (delivery?.mode !== undefined && delivery.mode !== "local-only") {
+      const repoId = await readRepoId(process.cwd());
+
+      if (delivery?.mode === "direct-PR") {
+        if (!ctx.hasUI) {
+          ctx.ui.notify("Yolo in direct-PR mode requires an interactive UI.", "warning");
+          return;
+        }
+
+        const choice = await ctx.ui.select(
+          `Yolo for ${repoId.remote ?? repoId.path}`,
+          ["allow — mark this repo yolo-allowed", "deny — keep yolo blocked"],
+        );
+
+        if (!choice || choice.startsWith("deny")) {
+          ctx.ui.notify("Yolo remains blocked.", "info");
+          return;
+        }
+
+        const theme = ctx.ui.theme ?? noopTheme;
+        await saveRegistry(upsertRegistryEntry(await loadRegistry(), repoId, delivery.mode, delivery.autonomy, "allowed"));
+        const next = await resolveDeliveryState(process.cwd());
+        deliveryStatePromise = Promise.resolve(next);
+        deliveryOverlayPromise = Promise.resolve(deliveryPolicyOverlay(next.mode));
+        permissions.setYolo(true);
+        ctx.ui.setStatus("harness-yolo", theme.fg("error", "⚡ yolo"));
+        ctx.ui.notify(formatPanel(ctx.ui.theme, "Yolo Allowed", [
+          theme.fg("warning", "This repo is now marked yolo-allowed."),
+          theme.fg("dim", "Run /yolo again to restore normal permission behavior."),
+        ], "warning"), "warning");
+        return;
+      }
+
+      if (!delivery?.yoloAllowed) {
         ctx.ui.notify(
-          `Yolo is restricted to personal (local-only) delivery mode. Current mode: ${delivery.mode}.`,
+          `Yolo is restricted to local-only or repos explicitly marked yolo-allowed. Current mode: ${delivery?.mode ?? "unknown"}.`,
           "warning",
         );
         return;

@@ -34,6 +34,7 @@ export function upsertRegistryEntry(
   repoId: RepoId,
   mode: DeliveryMode,
   autonomy: DeliveryAutonomy = "attended",
+  yolo?: NonNullable<Registry["projects"][number]["yolo"]>,
 ): Registry {
   const base: Registry = registry ?? { version: 1, default: { ...SAFE_DEFAULT }, projects: [] };
 
@@ -52,13 +53,13 @@ export function upsertRegistryEntry(
   if (index >= 0) {
     const existing = projects[index];
     projects[index] = {
-      ...(existing.yolo != null ? { yolo: existing.yolo } : {}),
+      ...(yolo != null ? { yolo } : existing.yolo != null ? { yolo: existing.yolo } : {}),
       ...identity,
       mode,
       autonomy: existing.autonomy,
     };
   } else {
-    projects.push({ ...identity, mode, autonomy });
+    projects.push({ ...identity, mode, autonomy, ...(yolo != null ? { yolo } : {}) });
   }
 
   return { ...base, projects };

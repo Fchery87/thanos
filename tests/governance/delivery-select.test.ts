@@ -50,6 +50,21 @@ describe("upsertRegistryEntry (pure)", () => {
     expect(r.projects[0].autonomy).toBe("unattended");
   });
 
+  it("preserves an explicit yolo allowance on registry replace", () => {
+    const existing = parseRegistry({
+      version: 1,
+      default: SAFE,
+      projects: [{ match: "r1", path: "/old", mode: "direct-PR", autonomy: "attended", yolo: "allowed" }],
+    });
+    const r = upsertRegistryEntry(existing, { remote: "r1", path: "/new" }, "direct-PR");
+    expect(r.projects[0].yolo).toBe("allowed");
+  });
+
+  it("can explicitly set yolo allowance on upsert", () => {
+    const r = upsertRegistryEntry(null, { remote: "r2", path: "/new" }, "direct-PR", "attended", "allowed");
+    expect(r.projects[0].yolo).toBe("allowed");
+  });
+
   it("replaces an existing entry matched by path when the repo has no remote", () => {
     const existing = parseRegistry({
       version: 1,

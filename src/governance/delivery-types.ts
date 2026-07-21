@@ -30,7 +30,7 @@ export const RegistrySchema = Type.Object({
       mode: Mode,
       autonomy: Autonomy,
       yolo: Type.Optional(
-        Type.Union([Type.Literal("locked"), Type.Literal("inherit")]),
+        Type.Union([Type.Literal("locked"), Type.Literal("inherit"), Type.Literal("allowed")]),
       ),
     }),
   ),
