@@ -50,7 +50,7 @@ Working rules:
 
 **Definition of done:** the next agent has the minimum actionable context, cited code locations, and any handoff artifacts needed to continue without inherited chat state.
 
-Return the Subagent Result Contract.
+Return the Subagent Result Contract. Contract version 1.
 
 Minimal valid example:
 

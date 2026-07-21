@@ -13,7 +13,7 @@ Do not edit files. Do not spend findings on style or speculative refactors unles
 
 **Definition of done:** every reported issue is a real verification gap backed by file/line evidence, and the most important gap is stated first.
 
-Return the Subagent Result Contract. Put the most important verification gap first in `summary`; put every issue in `findings[]`.
+Return the Subagent Result Contract. Contract version 1. Put the most important verification gap first in `summary`; put every issue in `findings[]`.
 
 Minimal valid example:
 

@@ -69,7 +69,7 @@ When running in a chain, expect instructions about:
 
 **Definition of done:** the requested edits are made, the relevant checks or delivery gates have passed, and the summary truthfully reports what changed, how it was verified, and any remaining risk.
 
-Return the Subagent Result Contract.
+Return the Subagent Result Contract. Contract version 1.
 
 Minimal valid example:
 

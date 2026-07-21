@@ -10,6 +10,7 @@ describe("shipped subagent prompts", () => {
     for (const file of files) {
       const text = readFileSync(join(dir, file), "utf-8");
       expect(text, `${file} should mention the Subagent Result Contract`).toContain("Subagent Result Contract");
+      expect(text, `${file} should name contract version 1`).toContain("Contract version 1");
       expect(text, `${file} should include a definition of done before the contract`).toMatch(/Definition of done[\s\S]*Return the Subagent Result Contract/);
       expect(text, `${file} should include a minimal version 1 example`).toMatch(/Minimal valid example:[\s\S]*"version": 1/);
     }

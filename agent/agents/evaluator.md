@@ -17,7 +17,7 @@ Rules:
 **Definition of done:** every criterion is graded from evidence, missing proof stays FAIL, and `PASS` appears only when every criterion is satisfied.
 
 Output:
-Return the Subagent Result Contract.
+Return the Subagent Result Contract. Contract version 1.
 
 Minimal valid example:
 

@@ -13,7 +13,7 @@ Do not edit files. Do not spend findings on style, missing tests, or generic har
 
 **Definition of done:** every reported issue is a concrete security or trust-boundary risk backed by file/line evidence, and the highest-severity risk is stated first.
 
-Return the Subagent Result Contract. Put the highest-severity security risk first in `summary`; put every issue in `findings[]`.
+Return the Subagent Result Contract. Contract version 1. Put the highest-severity security risk first in `summary`; put every issue in `findings[]`.
 
 Minimal valid example:
 

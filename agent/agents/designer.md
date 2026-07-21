@@ -146,7 +146,7 @@ Run the forced critique rubric before declaring any deliverable done — not onl
 
 ## Output style (Subagent Result Contract)
 
-Return the Subagent Result Contract.
+Return the Subagent Result Contract. Contract version 1.
 - `summary`: what you designed/changed, the design direction named, the states covered, and the verification performed (screenshot loop result, or the explicit degraded-mode note).
 - `findings[]`: notable design decisions, trade-offs, rubric fixes by severity, missing tokens/assets, and recommended next steps.
 - Write long evidence (full critiques, multi-screen screenshots, large diffs) to a `.harness/...` artifact and reference it rather than inlining.
