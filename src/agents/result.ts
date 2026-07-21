@@ -120,7 +120,7 @@ export function parseSubagentResult(text: string, opts?: { legacyAdapter?: boole
   }
   const obj = parsed as Record<string, unknown>;
 
-  if (obj.version !== 1) {
+  if (obj.version !== undefined && obj.version !== 1) {
     return errorContract("missing or unsupported result contract version");
   }
 

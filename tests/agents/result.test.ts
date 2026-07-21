@@ -43,7 +43,7 @@ describe("parseSubagentResult", () => {
   it("rejects legacy { text, metadata } shape on the live path", () => {
     const c = parseSubagentResult(JSON.stringify({ text: "legacy", metadata: { a: 1 } }));
     expect(c.status).toBe("error");
-    expect(c.summary).toBe("missing or unsupported result contract version");
+    expect(c.summary).toBe("legacy result format not allowed");
   });
 });
 
