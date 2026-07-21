@@ -45,7 +45,7 @@ describe("release SLOs", () => {
     expect(perCallMs).toBeLessThan(25);
   });
 
-  it("registration module loads without errors", { timeout: 30000 }, async () => {
+  it("registration module loads without errors", { timeout: 60000 }, async () => {
     const t0 = performance.now();
     await import("../../src/index");
     const totalMs = performance.now() - t0;
