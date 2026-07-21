@@ -18,6 +18,7 @@
     "test:security": "vitest run tests/security tests/permissions/yolo-lock.test.ts tests/permissions/yolo-config.test.ts tests/mcp/oauth.test.ts tests/mcp/client.test.ts tests/mcp/lifecycle.test.ts tests/mcp/state.test.ts tests/mcp",
     "test:installer": "vitest run tests/scripts",
     "test:perf": "vitest run tests/performance",
+    "eval:prompts": "bun scripts/eval-prompts.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src tests",
     "ci": "bun run typecheck && bun run lint && bun run test"
