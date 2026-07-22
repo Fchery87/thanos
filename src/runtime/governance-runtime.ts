@@ -87,10 +87,22 @@ export class GovernanceRuntime {
       return { block: true, reason: formatPolicyDenial(governed.policyDecision) };
     }
 
-    // Yolo: skip all remaining checks
+    // Yolo: skip the remaining PROMPTS and risk gating — but never an explicit
+    // deny, and never the pre-critical rollback snapshot. A permission-manager
+    // deny (a preset deny or a session-remembered deny) still blocks here, so a
+    // bypass can never cross a deny; a critical op still signals snapshotNeeded
+    // so the rollback safety net is preserved when prompts are off.
     if (yolo) {
+      if (permissions.evaluate(governed.call.capability, governed.call.target) === "deny") {
+        await this.audit("deny", toolName, governed.call.capability);
+        return { block: true, reason: `${toolName} denied (capability: ${governed.call.capability})` };
+      }
       await this.audit("allow", toolName, governed.call.capability, "yolo");
-      return { block: false, operation: this.toOperation(governed) };
+      return {
+        block: false,
+        operation: this.toOperation(governed),
+        snapshotNeeded: governed.call.riskTier === "critical",
+      };
     }
 
     // Low-risk: always allow unless policy says ask
