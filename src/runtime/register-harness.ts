@@ -1622,13 +1622,18 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
 
     // Model router removed — /models command handles model selection
 
-    // ── Auto-invoke: nudge the top-level agent to delegate proactively ──
+    // ── Auto-invoke: keep the top-level agent inline-first ──
     // Parent only — children must not recursively fan out. The per-agent
     // `description` frontmatter (~/.pi/agent/agents/*.md) is the routing signal,
     // so the roster is injected here verbatim instead of instructing the model
     // to call `subagent {action:"list"}` — that instruction made it re-list the
     // roster on every prompt, burning ~700 transcript tokens per turn for
     // information that is static within a session.
+    //
+    // The directive is inline-FIRST on purpose: a specialist run spins up a
+    // fresh cold-started child (seconds of startup, often minutes of wall-clock),
+    // so reflexively delegating ordinary work makes the session slower, not
+    // smarter. Delegate only when it genuinely pays.
     const roster = isSubagent ? [] : await loadRoster();
     const promptAssembly = assemblePrompt({
       isSubagent,
@@ -1637,7 +1642,8 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
       goalCondition: goalController.snapshot()?.status === "active" ? goalController.snapshot()?.condition : undefined,
       trustedInstructions: isSubagent ? [] : [
         "Specialist subagents are available via the `subagent` tool.",
-        "Before doing non-trivial work yourself, PROACTIVELY delegate matching work to the specialist whose description fits; prefer delegating to a specialist over doing specialist work inline; use the parallel/chain modes when tasks are independent or form a pipeline.",
+        "Do non-trivial work inline yourself by default — you are a capable generalist and inline work has no cold-start cost. Delegate to a specialist ONLY when the work is genuinely parallel (independent slices worth running at once), needs a capability you lack, or the user explicitly asked for deep review or /waves. A specialist run cold-starts a fresh child (seconds to load, often minutes of wall-clock), so reflexive delegation of ordinary work makes the session slower, not smarter.",
+        "When you do delegate independent or pipelined tasks, use the parallel/chain modes.",
         "Read-only specialists cannot edit or run commands by design.",
         "Do NOT pass timeoutMs/maxRuntimeMs when delegating — every agent has its own maxExecutionTimeMs budget, and short caller timeouts kill healthy runs mid-flight, wasting all their work. If you must bound a run, use at least 600000 (10 minutes).",
       ],
@@ -1653,9 +1659,9 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
       "system prompt. Before doing non-trivial work, scan that block: if any " +
       "skill's description matches the task, `read` its SKILL.md file FIRST and " +
       "follow its instructions — do not improvise work a skill already covers. " +
-      "Skills and specialist subagents are complementary: a skill gives you the " +
-      "procedure to run inline; a subagent runs the work in fresh context. When " +
-      "both fit, load the skill and delegate under its guidance.";
+      "A skill gives you a procedure to run inline; by default run it inline " +
+      "yourself. Delegating skill-guided work to a subagent is only worth the " +
+      "cold-start when the work is independent/parallel or genuinely needs fresh context.";
 
     // ── Goal mode: persistence rules for the whole active-goal turn ─────
     // Stands in the system prompt (not just the follow-up directive) so the

@@ -132,6 +132,33 @@ All of W1 lands as a single reviewable change; partial landing is worse than non
 
 ### W2 — Default-path speed bundle (ship together; NO routing)
 
+**Checkpoint state (2026-07-22):**
+- **2.3 inline-first directive — DONE** (branch code, `register-harness.ts`). Live
+  only after a build/reload. No test pinned the old text; suite green.
+- **2.1 / 2.2 — STAGED, pending baseline.** These edit `agent/settings.json`,
+  which is **gitignored live config** read at runtime — flipping them changes the
+  running harness immediately. Per the "measure before/after" discipline they are
+  held until W0 baseline is captured (see below). The exact diffs:
+  ```jsonc
+  // agent/settings.json
+  - "defaultThinkingLevel": "max",     →  "medium"     // 2.1
+  - "goal": { "maxTurns": 200 }        →  25           // 2.2 (code default is
+  //                                                      already 25; the 200 is a
+  //                                                      local override. Escape
+  //                                                      hatch: GoalBudget.extend())
+  ```
+
+**W0 baseline procedure (user-run — needs live model turns, cannot be faked):**
+On the *current* config (max thinking, pre-2.3 build), run the three canonical
+prompts and record wall-clock + child metrics, then apply 2.1/2.2 + the 2.3 build
+and re-run the same three:
+1. the exact audit prompt ("do an honest audit …") — expect fewer continuation
+   turns even before W2 (that is the W1 win) and lower `prompt→final` after.
+2. a trivial single-file edit — expect fewer/zero auto-spawned children after 2.3.
+3. a real build-with-failing-test — reinjection must be **unchanged** (guard).
+Capture: `prompt→first-tool`, `prompt→final`, continuation count, child
+count+duration. Adopt 2.1/2.2 only if the hard-task spot-check holds.
+
 One change set on the *same* models, so latency wins are attributable.
 
 - **2.1** `agent/settings.json` — `defaultThinkingLevel: "max" → "medium"`.
