@@ -1,161 +1,77 @@
 import { describe, expect, it, vi } from "vitest";
-import { makeBeforeToolHandler } from "../../src/hooks/before-tool";
-import { PermissionManager } from "../../src/permissions/manager";
-import { SpecEngine } from "../../src/spec/engine";
-import { roleNarrowingOverlay } from "../../src/governance/role-overlay";
-import type { HarnessPolicy } from "../../src/policy/types";
+import { authorizeVia } from "../helpers/authorize";
 
 /**
- * Reconstructs the exact composition the `pi.on("tool_call")` gate builds for
- * a live subagent child: the role-narrowing overlay PREPENDED onto the base
- * policy, exactly like the delivery overlay (see
- * tests/hooks/subagent-delivery-composition.test.ts, the sibling test this
- * mirrors). Proves the narrowing rule wins over both a broad ceiling allow
+ * Role-narrowing enforcement through the LIVE gate: authorize() applies
+ * roleNarrowingOverlay(childRole) via buildEffectivePolicy, so passing a
+ * `childRole` exercises the real wiring the `pi.on("tool_call")` gate uses for a
+ * subagent child. Proves the narrowing rule wins over both a broad ceiling allow
  * and unattended autonomy's "trust the ceiling" bypass.
  */
-
-const basePolicy: HarnessPolicy = {
-  version: 1,
-  preset: "personal",
-  rules: [],
-  audit: { enabled: true },
-  headless: { defaultDecision: "allow" },
-};
-
-function makePermissions() {
-  const permissions = new PermissionManager();
-  permissions.setYolo(false);
-  return permissions;
-}
 
 const promptThatThrows = async (): Promise<boolean> => {
   throw new Error("promptUser must NOT be called for a headless subagent");
 };
 
-function composeGatePolicy(role: string | undefined): HarnessPolicy {
-  const overlay = roleNarrowingOverlay(role);
-  return { ...basePolicy, rules: [...overlay, ...basePolicy.rules] };
+// Common context for a headless, unattended subagent child of a given role.
+function child(role: string | undefined, recordAudit = vi.fn(async () => undefined)) {
+  return {
+    autonomy: "unattended" as const,
+    hasUI: false,
+    childRole: role,
+    agentType: "subagent" as const,
+    promptUser: promptThatThrows,
+    recordAudit,
+  };
 }
 
 describe("role-narrowing composition (unattended live subagent)", () => {
   it("denies edit for a read-only role's child, naming the narrowing rule's reason", async () => {
-    const auditLogger = { record: vi.fn(async () => undefined) };
-    const handler = makeBeforeToolHandler(
-      makePermissions(),
-      new SpecEngine(),
-      promptThatThrows,
-      false,
-      undefined,
-      composeGatePolicy("explore"),
-      auditLogger as never,
-      { sessionId: "child-1", agentType: "subagent" },
-      "unattended",
-    );
+    const recordAudit = vi.fn(async () => undefined);
+    const decision = await authorizeVia(child("explore", recordAudit), "edit", { file_path: "src/foo.ts" });
 
-    const result = await handler({ toolName: "edit", input: { file_path: "src/foo.ts" } });
-
-    expect(result?.block).toBe(true);
-    expect(result?.reason).toContain("role-deny-edit");
-    expect(auditLogger.record).toHaveBeenCalledWith(
+    expect(decision.block).toBe(true);
+    expect(decision.reason).toContain("role-deny-edit");
+    expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ decision: "deny", ruleId: "role-deny-edit" }),
     );
   });
 
   it("denies exec for a read-only role's child — deny wins over unattended", async () => {
-    const handler = makeBeforeToolHandler(
-      makePermissions(),
-      new SpecEngine(),
-      promptThatThrows,
-      false,
-      undefined,
-      composeGatePolicy("reviewer"),
-      undefined,
-      { sessionId: "child-1", agentType: "subagent" },
-      "unattended",
-    );
+    const decision = await authorizeVia(child("reviewer"), "bash", { command: "ls -la" });
 
-    const result = await handler({ toolName: "bash", input: { command: "ls -la" } });
-
-    expect(result?.block).toBe(true);
-    expect(result?.reason).toContain("role-deny-exec");
+    expect(decision.block).toBe(true);
+    expect(decision.reason).toContain("role-deny-exec");
   });
 
   it("evaluator: exec is allowed per the ceiling, edit is denied", async () => {
-    const handler = makeBeforeToolHandler(
-      makePermissions(),
-      new SpecEngine(),
-      promptThatThrows,
-      false,
-      undefined,
-      composeGatePolicy("evaluator"),
-      undefined,
-      { sessionId: "child-1", agentType: "subagent" },
-      "unattended",
-    );
+    const execDecision = await authorizeVia(child("evaluator"), "bash", { command: "npm test" });
+    expect(execDecision.block).toBe(false); // no rule denies exec — unattended trusts the ceiling
 
-    const execResult = await handler({ toolName: "bash", input: { command: "npm test" } });
-    expect(execResult).toBeUndefined(); // critical tier, but unattended trusts the ceiling — no rule denies exec
-
-    const editResult = await handler({ toolName: "edit", input: { file_path: "src/foo.ts" } });
-    expect(editResult?.block).toBe(true);
-    expect(editResult?.reason).toContain("role-deny-edit");
+    const editDecision = await authorizeVia(child("evaluator"), "edit", { file_path: "src/foo.ts" });
+    expect(editDecision.block).toBe(true);
+    expect(editDecision.reason).toContain("role-deny-edit");
   });
 
   it("designer: edit is allowed per the ceiling, exec is denied", async () => {
-    const handler = makeBeforeToolHandler(
-      makePermissions(),
-      new SpecEngine(),
-      promptThatThrows,
-      false,
-      undefined,
-      composeGatePolicy("designer"),
-      undefined,
-      { sessionId: "child-1", agentType: "subagent" },
-      "unattended",
-    );
+    const editDecision = await authorizeVia(child("designer"), "edit", { file_path: "src/foo.ts" });
+    expect(editDecision.block).toBe(false);
 
-    const editResult = await handler({ toolName: "edit", input: { file_path: "src/foo.ts" } });
-    expect(editResult).toBeUndefined();
-
-    const execResult = await handler({ toolName: "bash", input: { command: "rm -rf tmp" } });
-    expect(execResult?.block).toBe(true);
-    expect(execResult?.reason).toContain("role-deny-exec");
+    const execDecision = await authorizeVia(child("designer"), "bash", { command: "rm -rf tmp" });
+    expect(execDecision.block).toBe(true);
+    expect(execDecision.reason).toContain("role-deny-exec");
   });
 
   it("writer role (build): no narrowing — both edit and exec follow the ceiling", async () => {
-    const handler = makeBeforeToolHandler(
-      makePermissions(),
-      new SpecEngine(),
-      promptThatThrows,
-      false,
-      undefined,
-      composeGatePolicy("build"),
-      undefined,
-      { sessionId: "child-1", agentType: "subagent" },
-      "unattended",
-    );
+    const editDecision = await authorizeVia(child("build"), "edit", { file_path: "src/foo.ts" });
+    expect(editDecision.block).toBe(false);
 
-    const editResult = await handler({ toolName: "edit", input: { file_path: "src/foo.ts" } });
-    expect(editResult).toBeUndefined();
-
-    const execResult = await handler({ toolName: "bash", input: { command: "npm test" } });
-    expect(execResult).toBeUndefined();
+    const execDecision = await authorizeVia(child("build"), "bash", { command: "npm test" });
+    expect(execDecision.block).toBe(false);
   });
 
   it("undefined role (parent session): no narrowing", async () => {
-    const handler = makeBeforeToolHandler(
-      makePermissions(),
-      new SpecEngine(),
-      promptThatThrows,
-      false,
-      undefined,
-      composeGatePolicy(undefined),
-      undefined,
-      { sessionId: "parent", agentType: "parent" },
-      "unattended",
-    );
-
-    const editResult = await handler({ toolName: "edit", input: { file_path: "src/foo.ts" } });
-    expect(editResult).toBeUndefined();
+    const decision = await authorizeVia(child(undefined), "edit", { file_path: "src/foo.ts" });
+    expect(decision.block).toBe(false);
   });
 });

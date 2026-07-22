@@ -46,7 +46,9 @@ describe("SpecEngine lifecycle", () => {
     ]);
     expect(active?.acceptanceCriteria[0]?.evidenceRequired).toEqual(["diff"]);
     expect(active?.acceptanceCriteria[1]?.evidenceRequired).toEqual(["test"]);
-    expect(active?.acceptanceCriteria[2]?.evidenceRequired).toEqual(["manual"]);
+    // A docs update is a file edit → diff (the runtime can emit it); it was
+    // previously "manual", which the runtime agent cannot produce.
+    expect(active?.acceptanceCriteria[2]?.evidenceRequired).toEqual(["diff"]);
   });
 
   it("derives acceptance criteria from the task contract for rename requests", () => {
@@ -64,7 +66,9 @@ describe("SpecEngine lifecycle", () => {
     expect(spec.taskContract.criteria.some((criterion) => criterion.kind === "fix")).toBe(true);
     expect(spec.acceptanceCriteria.some((criterion) => criterion.statement.toLowerCase().includes("bug fix"))).toBe(true);
     expect(spec.acceptanceCriteria.some((criterion) => criterion.evidenceRequired.includes("diff"))).toBe(true);
-    expect(spec.acceptanceCriteria.some((criterion) => criterion.evidenceRequired.includes("test") || criterion.evidenceRequired.includes("command"))).toBe(true);
+    // Verification is a "test OR command" anyOf group, not a pre-guessed required kind.
+    expect(spec.acceptanceCriteria.some((criterion) =>
+      (criterion.evidenceAnyOf ?? []).some((group) => group.includes("test") && group.includes("command")))).toBe(true);
   });
 
   it("tracks gate attempts and resets them on a new turn", () => {

@@ -36,8 +36,13 @@ export class PermissionManager {
   }
 
   evaluate(capability: Capability, target: string): Decision {
+    // An explicit deny wins even under yolo: yolo bypasses prompts and risk
+    // gating, never a deny. Only after no deny matches does yolo short-circuit
+    // the remaining ask/allow rules to "allow".
+    const decision = evaluateRules(this.rules, capability, target);
+    if (decision === "deny") return "deny";
     if (this.isYolo) return "allow";
-    return evaluateRules(this.rules, capability, target);
+    return decision;
   }
 
   remember(capability: Capability | "*", pattern: string, decision: Decision): void {

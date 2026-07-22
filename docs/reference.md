@@ -25,7 +25,7 @@
 | `/waves <goal>` | Run a bounded WAVES orchestration: discover the shape, plan independent slices, fan out parallel workers, verify handoffs, synthesize one deliverable. See [Bounded waves](governance.md#bounded-waves-waves) |
 | `/todo` | Show the current todo checklist for this branch (Escape to close); `/todo export` prints the markdown |
 | `/modes` | Select the default specialist mode for the **legacy** `task` tool (`explore`, `plan`, `build`, `reviewer`, `designer`, `oracle`, `researcher`, `evaluator`) — only meaningful with `THANOS_LEGACY_TASK=1` |
-| `/yolo` | Toggle yolo mode for this session (bypasses thanos permission checks; Lens Lite secret scan still runs). Refuses when yolo is locked by config — see [Yolo lockout](governance.md#yolo-lockout) |
+| `/yolo` | Toggle yolo mode for this session — available in every delivery mode. Skips permission prompts and risk gating, but never crosses an explicit deny, the local-only egress/push guards, the Lens Lite secret scan, or the pre-critical snapshot. Refuses when yolo is locked by config (see [Yolo lockout](governance.md#yolo-lockout)) or when the repo is `unattended` |
 | `/delivery [mode]` | Choose this repo's [delivery mode](governance.md#delivery-modes) (`local-only`, `direct-PR`, `no-mistakes`); persists to `~/.pi/agent/projects.json`. No arg opens the picker; main session only |
 | `/ship` | Deliver the current branch per the resolved [delivery mode](governance.md#delivery-modes) (local-only: fast-forward merge into the default branch; main session only) |
 | `/remember` | Save a durable project preference, injected into future sessions on this branch/project |

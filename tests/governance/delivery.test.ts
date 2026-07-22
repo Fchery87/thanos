@@ -45,18 +45,26 @@ describe("resolveDelivery", () => {
     expect(resolveDelivery({ registry: reg2, shipFile: null, repoId: { remote: null, path: "/x" }}).yoloLocked).toBe(true);
   });
 
-  it("allows yolo only for local-only or explicitly allowed direct-PR repos", () => {
+  it("allows yolo in every mode unless it is locked", () => {
+    // Yolo is now gated ONLY by the lock — every delivery mode can toggle it.
     const localOnly = { version: 1, default: SAFE, projects: [{ match: "r1", mode: "local-only", autonomy: "attended" }] } as any;
     expect(resolveDelivery({ registry: localOnly, shipFile: null, repoId: { remote: "r1", path: "/x" }}).yoloAllowed).toBe(true);
 
     const directPR = { version: 1, default: SAFE, projects: [{ match: "r2", mode: "direct-PR", autonomy: "attended" }] } as any;
-    expect(resolveDelivery({ registry: directPR, shipFile: null, repoId: { remote: "r2", path: "/x" }}).yoloAllowed).toBe(false);
+    expect(resolveDelivery({ registry: directPR, shipFile: null, repoId: { remote: "r2", path: "/x" }}).yoloAllowed).toBe(true);
 
-    const allowed = { version: 1, default: SAFE, projects: [{ match: "r3", mode: "direct-PR", autonomy: "attended", yolo: "allowed" }] } as any;
-    expect(resolveDelivery({ registry: allowed, shipFile: null, repoId: { remote: "r3", path: "/x" }}).yoloAllowed).toBe(true);
+    const noMistakes = { version: 1, default: SAFE, projects: [{ match: "r4", mode: "no-mistakes", autonomy: "attended" }] } as any;
+    expect(resolveDelivery({ registry: noMistakes, shipFile: null, repoId: { remote: "r4", path: "/x" }}).yoloAllowed).toBe(true);
 
-    const noMistakes = { version: 1, default: SAFE, projects: [{ match: "r4", mode: "no-mistakes", autonomy: "attended", yolo: "allowed" }] } as any;
-    expect(resolveDelivery({ registry: noMistakes, shipFile: null, repoId: { remote: "r4", path: "/x" }}).yoloAllowed).toBe(false);
+    // A project-level lock blocks yolo regardless of mode.
+    const locked = { version: 1, default: SAFE, projects: [{ match: "r5", mode: "local-only", autonomy: "attended", yolo: "locked" }] } as any;
+    const lockedResolved = resolveDelivery({ registry: locked, shipFile: null, repoId: { remote: "r5", path: "/x" }});
+    expect(lockedResolved.yoloLocked).toBe(true);
+    expect(lockedResolved.yoloAllowed).toBe(false);
+
+    // A global disable blocks yolo everywhere.
+    const disabled = { version: 1, yolo: "disabled", default: SAFE, projects: [{ match: "r6", mode: "local-only", autonomy: "attended" }] } as any;
+    expect(resolveDelivery({ registry: disabled, shipFile: null, repoId: { remote: "r6", path: "/x" }}).yoloAllowed).toBe(false);
   });
 
   it("exposes yoloAllowed in the resolved delivery object", () => {

@@ -67,7 +67,13 @@ export function resolveDelivery(inputs: ResolveDeliveryInputs): ResolvedDelivery
   const mode: DeliveryMode = entry?.mode ?? def.mode;
   const autonomy: DeliveryAutonomy = entry?.autonomy ?? def.autonomy;
   const yoloLocked = entry?.yolo === "locked" || registry?.yolo === "disabled";
-  const yoloAllowed = !yoloLocked && (mode === "local-only" || (mode === "direct-PR" && entry?.yolo === "allowed"));
+  // Yolo is toggleable in every delivery mode; the ONLY gate is the lock. The
+  // hard protection floor (explicit policy denies, local-only egress/push
+  // guards, and Lens Lite secret scanning) is enforced ahead of yolo in the
+  // execution path regardless of mode, so a bypass never crosses it. A repo
+  // that must never yolo is locked via `"yolo": "locked"` (or globally
+  // `"yolo": "disabled"` / env `THANOS_YOLO_DISABLED=1`).
+  const yoloAllowed = !yoloLocked;
 
   // UNTRUSTED: mechanics from the repo-committed ship file.
   const gates = shipFile?.gates ?? {};

@@ -2,16 +2,38 @@ export type TaskCriterionKind = "rename" | "fix" | "build" | "audit" | "secure" 
 export type TaskCriterionSource = "user" | "deterministic_fallback" | "semantic_extraction";
 export type TaskEvidenceIdentity = "diff" | "test" | "command" | "manual";
 
+/**
+ * Whether a criterion drives the continuation gate.
+ *
+ * - `gated` (default): unmet → the verify gate re-injects until evidence proves
+ *   it, or the attempt budget is exhausted. Use only when the runtime can
+ *   actually produce the required evidence (diff/test/command).
+ * - `advisory`: surfaced in the turn summary but never re-injected. Use for
+ *   criteria whose satisfaction depends on human/analytical judgement (audits,
+ *   open-ended investigations, arbitrary demonstrations) — those are not
+ *   machine-verifiable from tool telemetry, so gating on them loops forever.
+ */
+export type TaskVerificationMode = "advisory" | "gated";
+
 export interface TaskCriterion {
   id: string;
   kind: TaskCriterionKind;
   statement: string;
   targets: string[];
   evidence: TaskEvidenceIdentity[];
+  /**
+   * Optional alternative evidence groups. Each inner group is satisfied by ANY
+   * one of its kinds; groups are conjoined with each other and with `evidence`.
+   * Lets a mutating criterion accept "test OR command" without pre-guessing
+   * which the agent will run.
+   */
+  evidenceAnyOf?: TaskEvidenceIdentity[][];
   expectedExecutables: string[];
   expectedArgs: string[];
   mustNot: string[];
   source: TaskCriterionSource;
+  /** Defaults to `gated` when omitted. */
+  verificationMode?: TaskVerificationMode;
 }
 
 export interface TaskContract {
@@ -47,11 +69,15 @@ export function buildTaskContract(request: string): TaskContract {
         kind: "investigate",
         statement: "Requested investigation explains the observed behavior with evidence-backed findings",
         targets: inferTargets(lower),
-        evidence: ["command", "manual"],
+        // Advisory: an investigation's correctness is analytical, not provable
+        // from tool telemetry. `command` corroborates but never gates. `manual`
+        // is omitted because the runtime agent cannot emit it (only user/evaluator can).
+        evidence: ["command"],
         expectedExecutables: inferExpectedExecutables(lower),
         expectedArgs: inferExpectedArgs(lower),
         mustNot: [],
         source: "deterministic_fallback",
+        verificationMode: "advisory",
       }],
     };
   }
@@ -64,11 +90,15 @@ export function buildTaskContract(request: string): TaskContract {
         kind: "audit",
         statement: "Requested audit findings are supported by direct evidence from the relevant surface",
         targets: inferTargets(lower),
-        evidence: ["manual", "command"],
+        // Advisory: an audit's correctness is analytical, not provable from tool
+        // telemetry. `command` corroborates but never gates. `manual` is omitted
+        // because the runtime agent cannot emit it (only user/evaluator can).
+        evidence: ["command"],
         expectedExecutables: inferExpectedExecutables(lower),
         expectedArgs: inferExpectedArgs(lower),
         mustNot: [],
         source: "deterministic_fallback",
+        verificationMode: "advisory",
       }],
     };
   }
@@ -81,7 +111,10 @@ export function buildTaskContract(request: string): TaskContract {
         kind: "secure",
         statement: "Requested security hardening is applied without exposing the trust boundary",
         targets: inferTargets(lower),
-        evidence: ["diff", /\b(test|verify|verification|policy)\b/.test(lower) ? "test" : "command"],
+        // The change must land (diff) and be verified somehow — a test OR any
+        // command. Don't pre-guess which; either satisfies the criterion.
+        evidence: ["diff"],
+        evidenceAnyOf: [["test", "command"]],
         expectedExecutables: inferExpectedExecutables(lower),
         expectedArgs: inferExpectedArgs(lower),
         mustNot: inferMustNot(lower),
@@ -98,7 +131,8 @@ export function buildTaskContract(request: string): TaskContract {
         kind: "fix",
         statement: "Behavior is preserved while the code structure is improved",
         targets: inferTargets(lower),
-        evidence: ["diff", /\b(tests?|verify|verification|regression|coverage)\b/.test(lower) ? "test" : "command"],
+        evidence: ["diff"],
+        evidenceAnyOf: [["test", "command"]],
         expectedExecutables: inferExpectedExecutables(lower),
         expectedArgs: inferExpectedArgs(lower),
         mustNot: [],
@@ -115,7 +149,8 @@ export function buildTaskContract(request: string): TaskContract {
         kind: "fix",
         statement: "Requested bug fix is implemented without regressing the described behavior",
         targets: inferTargets(lower),
-        evidence: ["diff", /\b(tests?|verify|verification|ci)\b/.test(lower) ? "test" : "command"],
+        evidence: ["diff"],
+        evidenceAnyOf: [["test", "command"]],
         expectedExecutables: inferExpectedExecutables(lower),
         expectedArgs: inferExpectedArgs(lower),
         mustNot: [],
@@ -157,7 +192,9 @@ export function buildTaskContract(request: string): TaskContract {
         kind: "build",
         statement: "Requested documentation is updated",
         targets: inferTargets(lower),
-        evidence: ["manual"],
+        // A doc update is a file edit → `diff`, which the runtime emits.
+        // (Was `manual`, which the runtime agent cannot produce, so it looped.)
+        evidence: ["diff"],
         expectedExecutables: [],
         expectedArgs: [],
         mustNot: [],
@@ -178,11 +215,15 @@ export function buildTaskContract(request: string): TaskContract {
       kind: "manual",
       statement: "Task outcome is explicitly demonstrated",
       targets: [],
+      // Advisory: the catch-all bucket (no build/fix/test verb matched) covers
+      // conversational and demonstration prompts whose outcome the runtime agent
+      // cannot self-certify. Never gate it — that loops arbitrary prompts.
       evidence: ["manual"],
       expectedExecutables: [],
       expectedArgs: [],
       mustNot: [],
       source: "deterministic_fallback",
+      verificationMode: "advisory",
     }],
   };
 }
@@ -191,9 +232,10 @@ function inferExpectedExecutables(lower: string): string[] {
   if (/\b(tests?|verify|verification|regression|coverage|policy)\b/.test(lower)) {
     return ["vitest", "bun test", "pytest", "jest"];
   }
-  if (/\binvestigate\b/.test(lower) || /\baudit\b/.test(lower)) {
-    return ["bash"];
-  }
+  // Audits/investigations are open-ended — there is no single "correct"
+  // executable, and `normalizeExecutable` never emits the literal "bash"
+  // (it returns the real program: git/rg/bun/…). Constraining to ["bash"] made
+  // every command fail the exact-match check. Accept any command instead.
   return [];
 }
 

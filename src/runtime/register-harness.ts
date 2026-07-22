@@ -515,46 +515,6 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
         return;
       }
 
-      const repoId = await readRepoId(process.cwd());
-
-      if (delivery?.mode === "direct-PR") {
-        if (!ctx.hasUI) {
-          ctx.ui.notify("Yolo in direct-PR mode requires an interactive UI.", "warning");
-          return;
-        }
-
-        const choice = await ctx.ui.select(
-          `Yolo for ${repoId.remote ?? repoId.path}`,
-          ["allow — mark this repo yolo-allowed", "deny — keep yolo blocked"],
-        );
-
-        if (!choice || choice.startsWith("deny")) {
-          ctx.ui.notify("Yolo remains blocked.", "info");
-          return;
-        }
-
-        const theme = ctx.ui.theme ?? noopTheme;
-        await saveRegistry(upsertRegistryEntry(await loadRegistry(), repoId, delivery.mode, delivery.autonomy, "allowed"));
-        const next = await resolveDeliveryState(process.cwd());
-        deliveryStatePromise = Promise.resolve(next);
-        deliveryOverlayPromise = Promise.resolve(deliveryPolicyOverlay(next.mode));
-        permissions.setYolo(true);
-        ctx.ui.setStatus("harness-yolo", theme.fg("error", "⚡ yolo"));
-        ctx.ui.notify(formatPanel(ctx.ui.theme, "Yolo Allowed", [
-          theme.fg("warning", "This repo is now marked yolo-allowed."),
-          theme.fg("dim", "Run /yolo again to restore normal permission behavior."),
-        ], "warning"), "warning");
-        return;
-      }
-
-      if (!delivery?.yoloAllowed) {
-        ctx.ui.notify(
-          `Yolo is restricted to local-only or repos explicitly marked yolo-allowed. Current mode: ${delivery?.mode ?? "unknown"}.`,
-          "warning",
-        );
-        return;
-      }
-
       if (!ctx.hasUI) {
         ctx.ui.notify("Yolo requires an interactive UI.", "warning");
         return;
@@ -564,10 +524,14 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
       const current = permissions.isYolo;
 
       if (!current) {
-        // Require explicit confirmation before enabling
+        // Require explicit confirmation before enabling. Yolo bypasses
+        // permission prompts and risk gating in every delivery mode, but the
+        // immutable protection floor still applies — explicit policy denies,
+        // local-only egress/push guards, and Lens Lite secret scanning.
         const ok = await ctx.ui.confirm(
           "Enable Yolo Mode?",
-          "All permission checks, policy rules, and confirmation prompts will be bypassed.\n" +
+          "Permission prompts and risk gating will be bypassed for this session.\n" +
+          "Explicit policy denies, local-only egress guards, and secret scanning still apply.\n" +
           "The agent will execute any tool without asking. Use in trusted environments only.",
         );
         if (!ok) {
@@ -1658,13 +1622,18 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
 
     // Model router removed — /models command handles model selection
 
-    // ── Auto-invoke: nudge the top-level agent to delegate proactively ──
+    // ── Auto-invoke: keep the top-level agent inline-first ──
     // Parent only — children must not recursively fan out. The per-agent
     // `description` frontmatter (~/.pi/agent/agents/*.md) is the routing signal,
     // so the roster is injected here verbatim instead of instructing the model
     // to call `subagent {action:"list"}` — that instruction made it re-list the
     // roster on every prompt, burning ~700 transcript tokens per turn for
     // information that is static within a session.
+    //
+    // The directive is inline-FIRST on purpose: a specialist run spins up a
+    // fresh cold-started child (seconds of startup, often minutes of wall-clock),
+    // so reflexively delegating ordinary work makes the session slower, not
+    // smarter. Delegate only when it genuinely pays.
     const roster = isSubagent ? [] : await loadRoster();
     const promptAssembly = assemblePrompt({
       isSubagent,
@@ -1673,7 +1642,8 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
       goalCondition: goalController.snapshot()?.status === "active" ? goalController.snapshot()?.condition : undefined,
       trustedInstructions: isSubagent ? [] : [
         "Specialist subagents are available via the `subagent` tool.",
-        "Before doing non-trivial work yourself, PROACTIVELY delegate matching work to the specialist whose description fits; prefer delegating to a specialist over doing specialist work inline; use the parallel/chain modes when tasks are independent or form a pipeline.",
+        "Do non-trivial work inline yourself by default — you are a capable generalist and inline work has no cold-start cost. Delegate to a specialist ONLY when the work is genuinely parallel (independent slices worth running at once), needs a capability you lack, or the user explicitly asked for deep review or /waves. A specialist run cold-starts a fresh child (seconds to load, often minutes of wall-clock), so reflexive delegation of ordinary work makes the session slower, not smarter.",
+        "When you do delegate independent or pipelined tasks, use the parallel/chain modes.",
         "Read-only specialists cannot edit or run commands by design.",
         "Do NOT pass timeoutMs/maxRuntimeMs when delegating — every agent has its own maxExecutionTimeMs budget, and short caller timeouts kill healthy runs mid-flight, wasting all their work. If you must bound a run, use at least 600000 (10 minutes).",
       ],
@@ -1689,9 +1659,9 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
       "system prompt. Before doing non-trivial work, scan that block: if any " +
       "skill's description matches the task, `read` its SKILL.md file FIRST and " +
       "follow its instructions — do not improvise work a skill already covers. " +
-      "Skills and specialist subagents are complementary: a skill gives you the " +
-      "procedure to run inline; a subagent runs the work in fresh context. When " +
-      "both fit, load the skill and delegate under its guidance.";
+      "A skill gives you a procedure to run inline; by default run it inline " +
+      "yourself. Delegating skill-guided work to a subagent is only worth the " +
+      "cold-start when the work is independent/parallel or genuinely needs fresh context.";
 
     // ── Goal mode: persistence rules for the whole active-goal turn ─────
     // Stands in the system prompt (not just the follow-up directive) so the
@@ -1752,6 +1722,12 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
       }
     }
 
+    // An approved explicit spec narrows the session to its allowed capabilities.
+    // (A pending spec is handled by the approval gate above; a rejected one has
+    // already remembered a global deny.) The scope is enforced inside authorize.
+    const specScope =
+      active?.tier === "explicit" ? active.allowedCapabilities : undefined;
+
     const gov = new GovernanceRuntime({
       policy: effectivePolicy,
       permissions,
@@ -1759,6 +1735,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
       autonomy: delivery?.autonomy ?? "attended",
       deliveryMode: delivery?.mode,
       childRole,
+      specScope,
       hasUI: ctx.hasUI,
       sessionId,
       agentType,
@@ -1783,8 +1760,11 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     const lensResult = await lens.beforeTool(event, ctx);
     if (lensResult?.block) return lensResult;
 
-    // Snapshot for critical operations (governance signaled the need)
-    if (!permissions.isYolo && decision.snapshotNeeded) {
+    // Snapshot for critical operations (governance signaled the need). This
+    // runs under yolo too: authorize() sets snapshotNeeded for critical ops even
+    // when yolo is on, preserving the pre-critical rollback point when prompts
+    // are bypassed.
+    if (decision.snapshotNeeded) {
       await createSnapshot(process.cwd());
     }
   });

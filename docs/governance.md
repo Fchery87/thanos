@@ -15,9 +15,9 @@ Every tool call is classified by risk tier and a capability:
 | `bash` | critical | `exec` |
 | `ask`, `todo`, `report_finding` | medium | `interaction` |
 
-Each call is evaluated against the active policy ceiling (preset + any delivery overlay). The order of checks is: **yolo (if on) → policy/permission deny → autonomy → interactive prompt.** Deny always wins; autonomy can only auto-approve what the ceiling already allows.
+Each call is evaluated against the active policy ceiling (preset + any delivery overlay). The order of checks is: **immutable delivery denies (local-only egress/push) → policy deny → explicit-spec scope → yolo (if on) → autonomy → interactive prompt.** Deny always wins — yolo short-circuits the *remaining* prompts but never crosses an explicit deny, a delivery guard, an explicit-spec scope, or a permission-manager deny (and a critical op still takes its rollback snapshot); autonomy can only auto-approve what the ceiling already allows.
 
-Yolo mode is **default off** — the harness asks before high/critical actions. When yolo *is* turned on for a session it short-circuits to "allow" immediately (the Lens Lite secret scan still runs), letting rytswd `permission-gate` and `slow-mode` run independently. Yolo can be hard-disabled so it cannot be turned on at all — see [Yolo lockout](#yolo-lockout). To make a yolo-off setup frictionless on trusted repos, mark them `unattended` in the [captain registry](#delivery-modes).
+Yolo mode is **default off** — the harness asks before high/critical actions. When yolo *is* turned on for a session it short-circuits to "allow" for anything the immutable floor hasn't already denied (the Lens Lite secret scan still runs), letting rytswd `permission-gate` and `slow-mode` run independently. Yolo is toggleable in **every delivery mode**; its only gate is the lock — see [Yolo lockout](#yolo-lockout). To make a yolo-off setup frictionless on trusted repos, mark them `unattended` in the [captain registry](#delivery-modes).
 
 ## Context-mode execution guard
 
@@ -45,6 +45,8 @@ Recommended timeouts:
 ## Spec lifecycle
 
 Thanos derives acceptance criteria from your prompt and verifies them after each run. Use `--spec` to require explicit approval before the first write. Criteria are **default-fail**: each one requires concrete evidence (a diff, a passing test/command, or explicit manual evidence) and stays false until that evidence is collected — so a model cannot self-certify completion by asserting it. A read-only `evaluator` specialist can grade the collected evidence against the criteria from a fresh context, and the [completion verification gate](guide.md#completion-verification-gate) re-injects unmet criteria instead of letting the agent stop.
+
+An **explicit** spec also scopes the session to a set of capabilities: once approved, a tool call whose capability is outside the spec's `allowedCapabilities` is blocked (`Blocked by explicit spec scope: …`). This is enforced in the governance gate like a deny — honored even under yolo — while low-risk reads stay exempt so a scoped task can still inspect the tree.
 
 ## Harness evolution ledger
 
@@ -120,9 +122,7 @@ Mode, autonomy, and the yolo lock are **captain-owned**: they come only from the
 - `attended` (default) — Thanos prompts as usual within the policy ceiling.
 - `unattended` — auto-approves within the ceiling, so no prompts for allowed actions; **deny rules still block**. It is registry-only and can never be granted by a repo.
 
-In `direct-PR`, `/yolo` now asks whether to mark the repo `yolo-allowed` or keep it blocked.
-
-Yolo can also be explicitly allowed per trusted project entry for `direct-PR` repos, but it stays blocked for `no-mistakes`.
+`/yolo` is available in **every delivery mode** (`local-only`, `direct-PR`, `no-mistakes`). Enabling it takes one interactive confirmation per session; there is no per-mode gate and no persistent `yolo-allowed` flag to set first. It stays blocked only when yolo is locked (see [Yolo lockout](#yolo-lockout)) or when the repo is `unattended` (yolo and unattended are mutually exclusive — unattended already auto-approves within the ceiling). A repo that must never be yolo'd is locked with `"yolo": "locked"`; the immutable protection floor (explicit policy denies, local-only egress/push guards, secret scanning) applies under yolo in every mode regardless.
 
 ### Yolo lockout
 

@@ -8,8 +8,17 @@ export type SpecStatus = "active" | "completed" | "abandoned";
 
 export interface AcceptanceCriterion {
   id: string;
-  statement: string;
+  /** Every kind here must be matched (conjunction). */
   evidenceRequired: EvidenceRequirement[];
+  /**
+   * Optional alternative groups. Each inner group is a disjunction ("any of
+   * these kinds satisfies it"); the groups are conjoined with each other and
+   * with {@link evidenceRequired}. Use for a mutating criterion whose
+   * verification can be shown more than one way — e.g. `[["test", "command"]]`
+   * means "a passing test OR a passing command", without pre-guessing which.
+   */
+  evidenceAnyOf?: EvidenceRequirement[][];
+  statement: string;
 }
 
 export interface FormalSpec {

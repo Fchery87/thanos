@@ -29,9 +29,11 @@ export const RegistrySchema = Type.Object({
       path: Type.Optional(Type.String()),
       mode: Mode,
       autonomy: Autonomy,
-      yolo: Type.Optional(
-        Type.Union([Type.Literal("locked"), Type.Literal("inherit"), Type.Literal("allowed")]),
-      ),
+      // Yolo is toggleable in every mode; the only meaningful per-project value
+      // is `"locked"`, which hard-disables yolo for that repo. (The legacy
+      // `"inherit"`/`"allowed"` values were no-ops once mode-gating was removed
+      // and have been dropped.)
+      yolo: Type.Optional(Type.Literal("locked")),
     }),
   ),
 });

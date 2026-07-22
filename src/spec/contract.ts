@@ -12,6 +12,7 @@ export function buildContractFromTaskContract(taskContract: TaskContract): Defau
       id: criterion.id,
       statement: criterion.statement,
       evidenceRequired: [...criterion.evidence],
+      ...(criterion.evidenceAnyOf ? { evidenceAnyOf: criterion.evidenceAnyOf.map((group) => [...group]) } : {}),
     })),
     notes: ["Criteria are default-fail until matching evidence is collected."],
   };
