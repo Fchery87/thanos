@@ -1,16 +1,31 @@
 # Plan: repair the impossible spec gate and give ordinary prompts a fast lane
 
-**Status:** W1 + W2 landed, W3 resolved, W4.1 landed (4.2 deferred) · **Date:**
-2026-07-22 · **Branch:**
-`fix/spec-gate-audit-fast-lane` · **Scope:** SpecEngine contract correctness +
-default-path latency. Governance policy computation is already fast (sub-ms);
-this plan targets *workflow amplification*, not the policy engine.
+**Status:** W1 · W2 (incl. thinking escape hatch) · W3 · W4.1 landed. W4.2 / W5
+deferred. Merged to `master` via #32 → #33. · **Date:** 2026-07-22 · **Scope:**
+SpecEngine contract correctness + default-path latency. Governance policy
+computation is already fast (sub-ms); this plan targets *workflow amplification*,
+not the policy engine.
 
-**Progress:** W1 (§4) implemented — audit/investigate/catch-all criteria are now
-advisory, the impossible `manual` requirement and `["bash"]` matcher are gone,
-`build-docs` requires `diff` not `manual`. Regression tests pin both directions.
-Full suite green (979 tests). W0 baseline capture is deferred to the W2
-checkpoint, where it serves as the before/after anchor for the speed knobs.
+### Honest completion ledger
+
+**Done & on master:** W1 (advisory audit/investigate/catch-all criteria; impossible
+`manual`/`["bash"]` gone; `build-docs`→`diff`), W2.1/2.2 config knobs, W2.1 thinking
+escape hatch (`thinking-escalation.ts`), W2.3 inline-first delegation, W3 (dead
+routing table deleted — enable was non-viable, provider de-authed), W4.1 anyOf
+evidence. Full suite green (990 tests).
+
+**Deliberately deferred (documented below):** W4.2 (read/MCP/subagent evidence — no
+consumer), W5.1 (child lazy-runtime — measurement-gated; only the measurement tool
+`scripts/measure-child-runs.mjs` exists, baseline 8.5 runs/day), W5.2
+(permission-layer consolidation — unverified overlap, needs a design pass).
+
+**Superseded by owner decision:** W5.3 skill trim — the owner keeps all skills;
+did skill reconciliation instead (Cloudflare set → `~/.agents/skills`).
+
+**Genuine remaining gap:** W0 top-level instrumentation — only child count+duration
+is measured; `prompt→first-tool`, `prompt→final`, and continuation-count are not
+instrumented (would need pi session-loop hooks). The felt-speed check therefore
+relies on the child-run tool plus subjective latency.
 
 ## 1. Motivation
 
@@ -159,7 +174,12 @@ count+duration. Adopt 2.1/2.2 only if the hard-task spot-check holds.
 One change set on the *same* models, so latency wins are attributable.
 
 - **2.1** `agent/settings.json` — `defaultThinkingLevel: "max" → "medium"`.
-  Escape hatch: `/goal` and `--spec` request max explicitly.
+  Escape hatch **IMPLEMENTED**: `src/runtime/thinking-escalation.ts` +
+  `before_agent_start` wiring raise the parent session to the model's max supported
+  level whenever a goal is active or `--spec` is set, and restore the user's
+  baseline the moment neither is (a manual `/thinking` override mid-goal is
+  respected, not clobbered). Pure policy unit-tested in
+  `tests/runtime/thinking-escalation.test.ts`.
 - **2.2** `agent/settings.json` — `goal.maxTurns: 200 → 25`. Escape hatch: allow
   a per-invocation `/goal --max-turns N` override for exceptionally large runs.
 - **2.3** `src/runtime/register-harness.ts:1640` + `:1656-1658` — rewrite the
