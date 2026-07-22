@@ -15,7 +15,7 @@ Every tool call is classified by risk tier and a capability:
 | `bash` | critical | `exec` |
 | `ask`, `todo`, `report_finding` | medium | `interaction` |
 
-Each call is evaluated against the active policy ceiling (preset + any delivery overlay). The order of checks is: **immutable delivery denies (local-only egress/push) → policy deny → yolo (if on) → autonomy → interactive prompt.** Deny always wins — yolo short-circuits the *remaining* prompts but never crosses an explicit deny or a delivery guard; autonomy can only auto-approve what the ceiling already allows.
+Each call is evaluated against the active policy ceiling (preset + any delivery overlay). The order of checks is: **immutable delivery denies (local-only egress/push) → policy deny → explicit-spec scope → yolo (if on) → autonomy → interactive prompt.** Deny always wins — yolo short-circuits the *remaining* prompts but never crosses an explicit deny, a delivery guard, an explicit-spec scope, or a permission-manager deny (and a critical op still takes its rollback snapshot); autonomy can only auto-approve what the ceiling already allows.
 
 Yolo mode is **default off** — the harness asks before high/critical actions. When yolo *is* turned on for a session it short-circuits to "allow" for anything the immutable floor hasn't already denied (the Lens Lite secret scan still runs), letting rytswd `permission-gate` and `slow-mode` run independently. Yolo is toggleable in **every delivery mode**; its only gate is the lock — see [Yolo lockout](#yolo-lockout). To make a yolo-off setup frictionless on trusted repos, mark them `unattended` in the [captain registry](#delivery-modes).
 

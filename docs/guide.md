@@ -33,9 +33,9 @@ You have three ways to reduce prompting, in increasing order of trust:
 
 1. **Approve per action** — answer each prompt as it comes. Maximum control.
 2. **Mark a repo `unattended`** in your captain registry (Step 4) — auto-approves actions *within* that repo's policy ceiling, so no prompts for allowed work. Pair it with `mode: "direct-PR"` if you also want commit **and** push with no prompts; `local-only` keeps the same no-prompt feel but blocks push. Deny rules always still block.
-3. **Yolo** (`/yolo` or `Ctrl+Shift+Y`) — bypasses the whole permission layer for the session. The Lens Lite secret scan still runs. You can hard-disable yolo entirely (see [Yolo lockout](governance.md#yolo-lockout)).
+3. **Yolo** (`/yolo` or `Ctrl+Shift+Y`) — available in **every** delivery mode; a one-time confirmation skips permission prompts and risk gating for the session. It does **not** cross the protection floor: explicit policy denies, local-only egress/push guards, the Lens Lite secret scan, and the pre-critical rollback snapshot all still apply. It is refused when yolo is locked (see [Yolo lockout](governance.md#yolo-lockout)) or when the repo is `unattended`.
 
-> Prefer option 2 over option 3. `unattended` gives you the same prompt-free experience while keeping the policy ceiling and secret protections intact; yolo removes everything.
+> Prefer option 2 over option 3. `unattended` keeps the interactive ceiling (asks become auto-allows only *within* the ceiling); yolo additionally waves through what the ceiling would prompt for — including unrecognized tools — so reach for it only in trusted repos. Neither one crosses an explicit deny.
 
 ## Step 4 — Register your projects (delivery modes)
 
