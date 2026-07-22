@@ -46,6 +46,8 @@ Recommended timeouts:
 
 Thanos derives acceptance criteria from your prompt and verifies them after each run. Use `--spec` to require explicit approval before the first write. Criteria are **default-fail**: each one requires concrete evidence (a diff, a passing test/command, or explicit manual evidence) and stays false until that evidence is collected — so a model cannot self-certify completion by asserting it. A read-only `evaluator` specialist can grade the collected evidence against the criteria from a fresh context, and the [completion verification gate](guide.md#completion-verification-gate) re-injects unmet criteria instead of letting the agent stop.
 
+An **explicit** spec also scopes the session to a set of capabilities: once approved, a tool call whose capability is outside the spec's `allowedCapabilities` is blocked (`Blocked by explicit spec scope: …`). This is enforced in the governance gate like a deny — honored even under yolo — while low-risk reads stay exempt so a scoped task can still inspect the tree.
+
 ## Harness evolution ledger
 
 Thanos treats agent failures as harness training data. High-signal events — verification-gate re-injections, delivery-gate failures, review disagreements, wave-handoff rejections, and `/goal` lifecycle transitions (`goal_set` / `goal_achieved` / `goal_paused`) — are recorded as JSONL to `.harness/evolution/events.jsonl` (gitignored; summaries and artifact paths only, never prompts or secrets). Every deliberate harness change should carry a manifest entry answering: what failure evidence motivated it, the root cause, the exact component changed, the predicted improvement, the regression risk, and when to check whether it helped. See [harness-evolution.md](harness-evolution.md).

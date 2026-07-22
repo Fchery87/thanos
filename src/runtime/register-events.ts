@@ -40,6 +40,7 @@ export function setupRuntime(
       autonomy: delivery?.autonomy ?? "attended",
       deliveryMode: delivery?.mode,
       childRole: undefined,
+      specScope: undefined,
       hasUI: ctx.hasUI,
       sessionId,
       agentType,

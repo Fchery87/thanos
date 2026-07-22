@@ -1716,6 +1716,12 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
       }
     }
 
+    // An approved explicit spec narrows the session to its allowed capabilities.
+    // (A pending spec is handled by the approval gate above; a rejected one has
+    // already remembered a global deny.) The scope is enforced inside authorize.
+    const specScope =
+      active?.tier === "explicit" ? active.allowedCapabilities : undefined;
+
     const gov = new GovernanceRuntime({
       policy: effectivePolicy,
       permissions,
@@ -1723,6 +1729,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
       autonomy: delivery?.autonomy ?? "attended",
       deliveryMode: delivery?.mode,
       childRole,
+      specScope,
       hasUI: ctx.hasUI,
       sessionId,
       agentType,

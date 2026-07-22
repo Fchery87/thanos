@@ -5,6 +5,7 @@ import type { GovernedOperation, GovernedOperationResult } from "../governance/o
 import { formatPolicyDenial } from "../policy/denial";
 import type { HarnessPolicy } from "../policy/types";
 import type { PermissionManager } from "../permissions/manager";
+import type { Capability } from "../permissions/rules";
 import type { DeliveryMode, DeliveryAutonomy } from "../governance/delivery";
 import {
   roleNarrowingOverlay,
@@ -21,6 +22,12 @@ export interface GovernanceContext {
   autonomy: DeliveryAutonomy;
   deliveryMode: DeliveryMode | undefined;
   childRole: string | undefined;
+  /**
+   * Capabilities an active, approved *explicit* spec restricts the session to.
+   * Undefined when there is no explicit-spec scope in force. Enforced like a
+   * deny (honored even under yolo); low-risk calls are exempt.
+   */
+  specScope: Capability[] | undefined;
   hasUI: boolean;
   sessionId: string;
   agentType: "parent" | "subagent";
@@ -85,6 +92,23 @@ export class GovernanceRuntime {
     if (governed.policyDecision?.decision === "deny") {
       await this.audit("deny", toolName, governed.call.capability, governed.policyDecision.ruleId);
       return { block: true, reason: formatPolicyDenial(governed.policyDecision) };
+    }
+
+    // Explicit-spec capability scope: an approved explicit spec restricts the
+    // session to a set of capabilities. Enforced like a deny — honored even
+    // under yolo — because the user approved a scoped task, not a blank cheque.
+    // Low-risk calls (reads, listings) are exempt: a scoped task may still
+    // inspect the tree.
+    if (
+      this.ctx.specScope &&
+      governed.call.riskTier !== "low" &&
+      !this.ctx.specScope.includes(governed.call.capability)
+    ) {
+      await this.audit("deny", toolName, governed.call.capability, "explicit-spec-scope");
+      return {
+        block: true,
+        reason: `Blocked by explicit spec scope: ${governed.call.capability} is not allowed for this task`,
+      };
     }
 
     // Yolo: skip the remaining PROMPTS and risk gating — but never an explicit

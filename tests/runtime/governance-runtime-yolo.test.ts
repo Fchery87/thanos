@@ -20,6 +20,7 @@ function makeCtx(overrides: Partial<GovernanceContext> = {}): GovernanceContext 
     autonomy: "attended",
     deliveryMode: "direct-PR",
     childRole: undefined,
+    specScope: undefined,
     hasUI: true,
     sessionId: "s1",
     agentType: "parent",
