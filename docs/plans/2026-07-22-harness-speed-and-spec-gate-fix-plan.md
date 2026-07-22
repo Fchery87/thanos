@@ -1,6 +1,6 @@
 # Plan: repair the impossible spec gate and give ordinary prompts a fast lane
 
-**Status:** W1 + W2 landed · **Date:** 2026-07-22 · **Branch:**
+**Status:** W1 + W2 landed, W3 resolved · **Date:** 2026-07-22 · **Branch:**
 `fix/spec-gate-audit-fast-lane` · **Scope:** SpecEngine contract correctness +
 default-path latency. Governance policy computation is already fast (sub-ms);
 this plan targets *workflow amplification*, not the policy engine.
@@ -175,18 +175,32 @@ One change set on the *same* models, so latency wins are attributable.
   the W0 before/after.
 - **Rollback:** each of 2.1/2.2/2.3 reverts independently.
 
-### W3 — Routing decision (ISOLATED, measured alone)
+### W3 — Routing decision (RESOLVED: dead table deleted)
 
-Routing is a **model-provider swap**, not a latency knob, and it was disabled on
-purpose (`modelOverridesEnabled: false`; GPT table stashed in
-`savedAgentOverrides`). Bundling it with W2 would destroy attribution.
+**Outcome (2026-07-22): deleted the stash; enable was not viable.**
 
-- **3.1** Decide: either enable `modelOverridesEnabled: true` (routing on) **or**
-  delete the dead `savedAgentOverrides` table. Do not leave it half-live.
-- **3.2** If enabling: run its **own** before/after on quality + latency + cost
-  across the specialist roles, separate from the W2 benchmark.
-- **Verify:** W3 benchmark is a distinct artifact from W2's.
-- **Rollback:** flip `modelOverridesEnabled` back; the override table is data.
+Investigation settled this without a benchmark: the entire `savedAgentOverrides`
+table (13 roles) pointed at `theclawbay/gpt-5.6-*` with `theclawbay-claude/*`
+fallbacks, but **theclawbay is no longer an authenticated provider** —
+`agent/auth.json` has only `google`, `zai`, `deepseek`, and `models-store.json`
+lists the same three. The default was migrated off `theclawbay/gpt-5.5` to
+`deepseek-v4-pro` at some earlier point, and the routing table was left dormant.
+
+Enabling routing (`modelOverridesEnabled: true`) would have restored a table
+pointing at a de-authed provider, breaking every subagent role. So "enable" was
+impossible, and the coherent action was cleanup, not a strategy reversal — the
+strategy this table encoded already died at the theclawbay→deepseek migration.
+
+- **Done:** removed `savedAgentOverrides` from `agent/settings.json`; the block
+  is now `{ disableBuiltins: true, modelOverridesEnabled: false }`. Every
+  subagent role runs on the `deepseek-v4-pro` default. JSON validated.
+- **Preserved:** the table survives in `agent/settings.json.bak-gpt-routing` and
+  `agent/settings.json.bak-pre-w3-*` if tiering is ever rebuilt — but it should
+  be rebuilt on an **authed** provider (deepseek/zai/google), not resurrected.
+- **Note:** W2.3 inline-first already reduces subagent frequency, so per-role
+  routing buys less than it once did. If tiering is wanted later (cheap model for
+  explore/scout/evaluator, strong for oracle/plan/reviewer), that is a fresh,
+  deliberate task on a live provider — not part of this plan.
 
 ### W4 — Contract expressiveness (longer-term)
 
