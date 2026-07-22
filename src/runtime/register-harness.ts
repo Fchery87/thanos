@@ -10,6 +10,7 @@ import type { AuditEvent } from "../audit/types";
 import { PermissionManager } from "../permissions/manager";
 import { gateDisabledByEnv, yoloDisabledByEnv } from "../permissions/yolo-config";
 import { SpecEngine } from "../spec/engine";
+import { computeThinkingEscalation, NO_ESCALATION, type ThinkingEscalationState } from "./thinking-escalation";
 import { buildContinuationPrompt, shouldReinject } from "../spec/gate";
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { GoalController } from "../goal/controller";
@@ -177,6 +178,9 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   const spec = new SpecEngine();
   const goalSettings = resolveGoalSettings(loadGoalSettings());
   const goalController = new GoalController(goalSettings);
+  // Thinking escape hatch: /goal and --spec run at the model's max, restored when
+  // neither is active. State persists across turns (parent session only).
+  let thinkingEscalation: ThinkingEscalationState = NO_ESCALATION;
   const policyStatePromise = loadPolicyState(process.cwd(), process.env.HARNESS_POLICY_FILE);
   // Resolved in BOTH parent and child processes. A subagent's cwd is a worktree
   // of the same repo (shared git remote), so it matches the same registry entry —
@@ -1605,6 +1609,24 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     lens.beginTurn();
     lens.setStatus(ctx);
 
+    // ── Thinking escape hatch: /goal and --spec run at the model's max ──
+    // Parent only. High-assurance work overrides the medium default and restores
+    // the user's baseline the moment neither a goal nor --spec is active.
+    if (!isSubagent) {
+      const model = ctx.model;
+      const supportedLevels = model?.reasoning ? getSupportedLevels(model) : [];
+      const escalation = computeThinkingEscalation({
+        active: goalController.snapshot()?.status === "active" || pi.getFlag("spec") === true,
+        supportedLevels,
+        current: pi.getThinkingLevel() as string | undefined,
+        state: thinkingEscalation,
+      });
+      thinkingEscalation = escalation.state;
+      if (escalation.setLevel !== undefined) {
+        pi.setThinkingLevel(escalation.setLevel as ThinkingLevel);
+        setThinkingStatus(pi, ctx);
+      }
+    }
 
     // ── Memory: inject hand-curated preferences ────────────────────
     // Read-only: entries come from deliberate edits to .harness/memory.json,
