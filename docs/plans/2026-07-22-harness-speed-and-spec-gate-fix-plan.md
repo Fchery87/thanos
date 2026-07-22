@@ -1,6 +1,6 @@
 # Plan: repair the impossible spec gate and give ordinary prompts a fast lane
 
-**Status:** W1 landed · **Date:** 2026-07-22 · **Branch:**
+**Status:** W1 + W2 landed · **Date:** 2026-07-22 · **Branch:**
 `fix/spec-gate-audit-fast-lane` · **Scope:** SpecEngine contract correctness +
 default-path latency. Governance policy computation is already fast (sub-ms);
 this plan targets *workflow amplification*, not the policy engine.
@@ -132,21 +132,17 @@ All of W1 lands as a single reviewable change; partial landing is worse than non
 
 ### W2 — Default-path speed bundle (ship together; NO routing)
 
-**Checkpoint state (2026-07-22):**
-- **2.3 inline-first directive — DONE** (branch code, `register-harness.ts`). Live
-  only after a build/reload. No test pinned the old text; suite green.
-- **2.1 / 2.2 — STAGED, pending baseline.** These edit `agent/settings.json`,
-  which is **gitignored live config** read at runtime — flipping them changes the
-  running harness immediately. Per the "measure before/after" discipline they are
-  held until W0 baseline is captured (see below). The exact diffs:
-  ```jsonc
-  // agent/settings.json
-  - "defaultThinkingLevel": "max",     →  "medium"     // 2.1
-  - "goal": { "maxTurns": 200 }        →  25           // 2.2 (code default is
-  //                                                      already 25; the 200 is a
-  //                                                      local override. Escape
-  //                                                      hatch: GoalBudget.extend())
-  ```
+**Checkpoint state (2026-07-22): W2 applied.**
+- **2.3 inline-first directive — DONE + committed** (`80c3256`, branch code,
+  `register-harness.ts`). Live after the next harness build/reload. No test pinned
+  the old text; suite green.
+- **2.1 / 2.2 — APPLIED to live config** (`agent/settings.json`, gitignored;
+  backup at `agent/settings.json.bak-pre-w2-*`). `defaultThinkingLevel: "max" →
+  "medium"`; `goal.maxTurns: 200 → 25` (code default was already 25; escape hatch
+  `GoalBudget.extend()`). Active on the next `pi` session. Formal before/after was
+  deferred by decision — these are one-line reversible knobs; measurement rigor is
+  reserved for W3 routing and a holistic felt-speed check.
+  Revert: `cp agent/settings.json.bak-pre-w2-* agent/settings.json`.
 
 **W0 baseline procedure (user-run — needs live model turns, cannot be faked):**
 On the *current* config (max thinking, pre-2.3 build), run the three canonical
