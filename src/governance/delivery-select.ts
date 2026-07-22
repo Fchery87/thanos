@@ -22,9 +22,9 @@ const SAFE_DEFAULT = { mode: "local-only", autonomy: "attended" } as const;
  * Matching mirrors resolveDelivery: an existing entry is replaced when its
  * `match` equals the repo's remote or its `path` equals the repo's path —
  * otherwise the entry is appended. On replace, fields the selector does not
- * manage (autonomy, yolo) are preserved; the selector only ever sets the mode
- * and refreshes the identity keys. New entries get attended autonomy: the
- * selector grants delivery, never autonomy.
+ * manage (autonomy, and the yolo lock) are preserved; the selector only ever
+ * sets the mode and refreshes the identity keys. New entries get attended
+ * autonomy: the selector grants delivery, never autonomy.
  *
  * A null registry (no file yet) is created fresh with the restrictive safe
  * default — NOT the mode being granted, which applies only to this project.
@@ -34,7 +34,6 @@ export function upsertRegistryEntry(
   repoId: RepoId,
   mode: DeliveryMode,
   autonomy: DeliveryAutonomy = "attended",
-  yolo?: NonNullable<Registry["projects"][number]["yolo"]>,
 ): Registry {
   const base: Registry = registry ?? { version: 1, default: { ...SAFE_DEFAULT }, projects: [] };
 
@@ -53,13 +52,14 @@ export function upsertRegistryEntry(
   if (index >= 0) {
     const existing = projects[index];
     projects[index] = {
-      ...(yolo != null ? { yolo } : existing.yolo != null ? { yolo: existing.yolo } : {}),
+      // Preserve an existing yolo lock across a mode change.
+      ...(existing.yolo != null ? { yolo: existing.yolo } : {}),
       ...identity,
       mode,
       autonomy: existing.autonomy,
     };
   } else {
-    projects.push({ ...identity, mode, autonomy, ...(yolo != null ? { yolo } : {}) });
+    projects.push({ ...identity, mode, autonomy });
   }
 
   return { ...base, projects };
