@@ -66,7 +66,9 @@ describe("SpecEngine lifecycle", () => {
     expect(spec.taskContract.criteria.some((criterion) => criterion.kind === "fix")).toBe(true);
     expect(spec.acceptanceCriteria.some((criterion) => criterion.statement.toLowerCase().includes("bug fix"))).toBe(true);
     expect(spec.acceptanceCriteria.some((criterion) => criterion.evidenceRequired.includes("diff"))).toBe(true);
-    expect(spec.acceptanceCriteria.some((criterion) => criterion.evidenceRequired.includes("test") || criterion.evidenceRequired.includes("command"))).toBe(true);
+    // Verification is a "test OR command" anyOf group, not a pre-guessed required kind.
+    expect(spec.acceptanceCriteria.some((criterion) =>
+      (criterion.evidenceAnyOf ?? []).some((group) => group.includes("test") && group.includes("command")))).toBe(true);
   });
 
   it("tracks gate attempts and resets them on a new turn", () => {

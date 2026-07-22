@@ -47,6 +47,20 @@ function normalizeCriterion(value: unknown): TaskCriterion | undefined {
     }
     verificationMode = raw.verificationMode as TaskVerificationMode;
   }
+  // Optional anyOf groups: an array of non-empty groups, each of valid evidence
+  // kinds. A malformed value is rejected outright, not coerced.
+  let evidenceAnyOf: TaskEvidenceIdentity[][] | undefined;
+  if (raw.evidenceAnyOf !== undefined) {
+    if (!Array.isArray(raw.evidenceAnyOf) || raw.evidenceAnyOf.length > 4) return undefined;
+    const groups: TaskEvidenceIdentity[][] = [];
+    for (const rawGroup of raw.evidenceAnyOf) {
+      const group = normalizeStringArray(rawGroup, 4);
+      if (!group || group.length === 0) return undefined;
+      if (!group.every((item) => VALID_EVIDENCE.has(item as TaskEvidenceIdentity))) return undefined;
+      groups.push(group as TaskEvidenceIdentity[]);
+    }
+    evidenceAnyOf = groups;
+  }
   return {
     id: raw.id.trim(),
     kind: raw.kind as TaskCriterionKind,
@@ -58,6 +72,7 @@ function normalizeCriterion(value: unknown): TaskCriterion | undefined {
     mustNot,
     source: raw.source as TaskCriterionSource,
     ...(verificationMode ? { verificationMode } : {}),
+    ...(evidenceAnyOf ? { evidenceAnyOf } : {}),
   };
 }
 

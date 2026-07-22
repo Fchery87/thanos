@@ -1,6 +1,7 @@
 # Plan: repair the impossible spec gate and give ordinary prompts a fast lane
 
-**Status:** W1 + W2 landed, W3 resolved · **Date:** 2026-07-22 · **Branch:**
+**Status:** W1 + W2 landed, W3 resolved, W4.1 landed (4.2 deferred) · **Date:**
+2026-07-22 · **Branch:**
 `fix/spec-gate-audit-fast-lane` · **Scope:** SpecEngine contract correctness +
 default-path latency. Governance policy computation is already fast (sub-ms);
 this plan targets *workflow amplification*, not the policy engine.
@@ -202,17 +203,27 @@ strategy this table encoded already died at the theclawbay→deepseek migration.
   explore/scout/evaluator, strong for oracle/plan/reviewer), that is a fresh,
   deliberate task on a live provider — not part of this plan.
 
-### W4 — Contract expressiveness (longer-term)
+### W4 — Contract expressiveness
 
-Only after W1/W2 are stable and measured.
+**4.1 — DONE.** `evidenceRequired` is now conjunctive AND, plus an optional
+`evidenceAnyOf: EvidenceRequirement[][]` — each inner group is a disjunction, the
+groups are conjoined with each other and with `evidenceRequired`. The `fix`,
+`secure`, and `refactor` criteria stopped pre-guessing `test` vs `command`; they
+now carry `evidence: ["diff"]` + `evidenceAnyOf: [["test","command"]]`, so an
+agent that verifies with *either* satisfies the criterion (previously "fix X"
+demanded `command`, and an agent that ran the test suite hit a false negative and
+the gate looped — the milder cousin of the W1 bug). Threaded through
+`TaskCriterion`, `AcceptanceCriterion`, the contract binder, the verifier
+(`acceptableKinds` + per-group satisfaction; unmet groups report as `test|command`),
+and the schema validator (malformed groups rejected, not coerced). Audit path
+untouched (still advisory). Tests: `tests/spec/evidence-anyof.test.ts` +
+updated contract/engine assertions. Full suite target: green.
 
-- **4.1** `src/spec/verification.ts` — extend `evidenceRequired` from pure AND to
-  support alternative groups (`anyOf`) for **mutating/mixed** criteria (e.g.
-  "passing test *or* green build"). Do **not** wire read-evidence into audit
-  acceptance — that is near-self-certification (Principle 3).
-- **4.2** `src/spec/evidence.ts` — optionally emit evidence records for
-  read/MCP/subagent results *for corroboration of mutating tasks only*.
-- **Verify:** new tests for `anyOf` satisfaction; audit path stays advisory.
+**4.2 — DEFERRED (deliberately).** Emitting evidence records for read/MCP/subagent
+results has **no consumer** today (no criterion requires those kinds), so it would
+produce dead data, and wiring read-evidence toward acceptance risks the
+self-certification failure mode (Principle 3). Revisit only if a concrete
+mutating criterion needs read/subagent corroboration.
 
 ### W5 — Cleanup (last; measurement-gated)
 

@@ -21,6 +21,13 @@ export interface TaskCriterion {
   statement: string;
   targets: string[];
   evidence: TaskEvidenceIdentity[];
+  /**
+   * Optional alternative evidence groups. Each inner group is satisfied by ANY
+   * one of its kinds; groups are conjoined with each other and with `evidence`.
+   * Lets a mutating criterion accept "test OR command" without pre-guessing
+   * which the agent will run.
+   */
+  evidenceAnyOf?: TaskEvidenceIdentity[][];
   expectedExecutables: string[];
   expectedArgs: string[];
   mustNot: string[];
@@ -104,7 +111,10 @@ export function buildTaskContract(request: string): TaskContract {
         kind: "secure",
         statement: "Requested security hardening is applied without exposing the trust boundary",
         targets: inferTargets(lower),
-        evidence: ["diff", /\b(test|verify|verification|policy)\b/.test(lower) ? "test" : "command"],
+        // The change must land (diff) and be verified somehow — a test OR any
+        // command. Don't pre-guess which; either satisfies the criterion.
+        evidence: ["diff"],
+        evidenceAnyOf: [["test", "command"]],
         expectedExecutables: inferExpectedExecutables(lower),
         expectedArgs: inferExpectedArgs(lower),
         mustNot: inferMustNot(lower),
@@ -121,7 +131,8 @@ export function buildTaskContract(request: string): TaskContract {
         kind: "fix",
         statement: "Behavior is preserved while the code structure is improved",
         targets: inferTargets(lower),
-        evidence: ["diff", /\b(tests?|verify|verification|regression|coverage)\b/.test(lower) ? "test" : "command"],
+        evidence: ["diff"],
+        evidenceAnyOf: [["test", "command"]],
         expectedExecutables: inferExpectedExecutables(lower),
         expectedArgs: inferExpectedArgs(lower),
         mustNot: [],
@@ -138,7 +149,8 @@ export function buildTaskContract(request: string): TaskContract {
         kind: "fix",
         statement: "Requested bug fix is implemented without regressing the described behavior",
         targets: inferTargets(lower),
-        evidence: ["diff", /\b(tests?|verify|verification|ci)\b/.test(lower) ? "test" : "command"],
+        evidence: ["diff"],
+        evidenceAnyOf: [["test", "command"]],
         expectedExecutables: inferExpectedExecutables(lower),
         expectedArgs: inferExpectedArgs(lower),
         mustNot: [],
