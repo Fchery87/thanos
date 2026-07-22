@@ -8,17 +8,27 @@ export interface VerificationResult {
   passed: boolean;
   evidence: string[];
   missingEvidence: string[];
+  /**
+   * When true, this criterion is informational: it is reported but never drives
+   * the continuation gate (see {@link TaskCriterion.verificationMode}). Defaults
+   * to gated (false/undefined) when the source task criterion is unknown.
+   */
+  advisory?: boolean;
+}
+
+/** Every evidence kind this criterion can be satisfied by: the required set plus
+ * every kind mentioned in an anyOf group. */
+function acceptableKinds(criterion: AcceptanceCriterion): Set<EvidenceRecord["kind"]> {
+  const kinds = new Set<EvidenceRecord["kind"]>(criterion.evidenceRequired);
+  for (const group of criterion.evidenceAnyOf ?? []) {
+    for (const kind of group) kinds.add(kind);
+  }
+  return kinds;
 }
 
 function evidenceMatches(criterion: AcceptanceCriterion, record: EvidenceRecord): boolean {
   if (!record.passed) return false;
-  for (const req of criterion.evidenceRequired) {
-    if (req === "diff" && record.kind === "diff") return true;
-    if (req === "test" && record.kind === "test") return true;
-    if (req === "command" && record.kind === "command") return true;
-    if (req === "manual" && record.kind === "manual") return true;
-  }
-  return false;
+  return acceptableKinds(criterion).has(record.kind);
 }
 
 function pathsMatchTargets(targets: string[], paths: string[]): boolean {
@@ -127,9 +137,20 @@ export function verifyCriteria(spec: FormalSpec, evidence: EvidenceRecord[]): Ve
     });
     const matchedTypes = new Set(matchingEvidence.map((e) => e.kind));
 
-    const missingEvidence = criterion.evidenceRequired
+    const missingRequired = criterion.evidenceRequired
       .filter((req) => !matchedTypes.has(req))
       .map((req) => (hasFailedEvidence(req, evidence) ? `${req} (failed)` : req));
+
+    // Each anyOf group needs at least one of its kinds matched; report an unmet
+    // group as "test|command" so the continuation prompt shows the alternatives.
+    const missingGroups = (criterion.evidenceAnyOf ?? [])
+      .filter((group) => !group.some((kind) => matchedTypes.has(kind)))
+      .map((group) => {
+        const label = group.join("|");
+        return group.some((kind) => hasFailedEvidence(kind, evidence)) ? `${label} (failed)` : label;
+      });
+
+    const missingEvidence = [...missingRequired, ...missingGroups];
 
     const mustNotViolation = taskCriterion ? !mustNotIsSatisfied(taskCriterion.mustNot ?? [], evidence) : false;
     const passed = missingEvidence.length === 0 && !mustNotViolation;
@@ -137,6 +158,7 @@ export function verifyCriteria(spec: FormalSpec, evidence: EvidenceRecord[]): Ve
     return {
       criterion,
       passed,
+      advisory: taskCriterion?.verificationMode === "advisory",
       evidence: matchingEvidence.map(evidenceSummary),
       missingEvidence: mustNotViolation ? [...missingEvidence, "mustNot"] : missingEvidence,
     };

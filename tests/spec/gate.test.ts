@@ -9,6 +9,14 @@ const crit = (passed: boolean, missingEvidence: string[] = []): VerificationResu
   missingEvidence,
 });
 
+const advisoryCrit = (passed: boolean, missingEvidence: string[] = []): VerificationResult => ({
+  criterion: { id: "audit-primary", statement: "audit findings supported by evidence", evidenceRequired: ["command"] },
+  passed,
+  advisory: true,
+  evidence: passed ? ["ran a command"] : [],
+  missingEvidence,
+});
+
 describe("shouldReinject", () => {
   it("re-injects when a criterion fails and budget remains", () => {
     expect(shouldReinject({ results: [crit(false, ["test"])], attempts: 0, isSubagent: false, enabled: true, goalActive: false })).toBe(true);
@@ -40,6 +48,14 @@ describe("shouldReinject", () => {
 
   it("does not re-inject when the user aborted the turn (ESC must win)", () => {
     expect(shouldReinject({ results: [crit(false, ["test"])], attempts: 0, isSubagent: false, enabled: true, goalActive: false, aborted: true })).toBe(false);
+  });
+
+  it("does not re-inject when the only failing criterion is advisory (audit/investigate)", () => {
+    expect(shouldReinject({ results: [advisoryCrit(false, ["command"])], attempts: 0, isSubagent: false, enabled: true, goalActive: false })).toBe(false);
+  });
+
+  it("still re-injects when a gated criterion fails alongside a failing advisory one", () => {
+    expect(shouldReinject({ results: [advisoryCrit(false, ["command"]), crit(false, ["test"])], attempts: 0, isSubagent: false, enabled: true, goalActive: false })).toBe(true);
   });
 });
 
