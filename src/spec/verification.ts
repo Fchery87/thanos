@@ -8,6 +8,12 @@ export interface VerificationResult {
   passed: boolean;
   evidence: string[];
   missingEvidence: string[];
+  /**
+   * When true, this criterion is informational: it is reported but never drives
+   * the continuation gate (see {@link TaskCriterion.verificationMode}). Defaults
+   * to gated (false/undefined) when the source task criterion is unknown.
+   */
+  advisory?: boolean;
 }
 
 function evidenceMatches(criterion: AcceptanceCriterion, record: EvidenceRecord): boolean {
@@ -137,6 +143,7 @@ export function verifyCriteria(spec: FormalSpec, evidence: EvidenceRecord[]): Ve
     return {
       criterion,
       passed,
+      advisory: taskCriterion?.verificationMode === "advisory",
       evidence: matchingEvidence.map(evidenceSummary),
       missingEvidence: mustNotViolation ? [...missingEvidence, "mustNot"] : missingEvidence,
     };

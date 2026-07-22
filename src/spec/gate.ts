@@ -21,12 +21,15 @@ export function shouldReinject(input: ReinjectInputs): boolean {
   if (input.isSubagent) return false;
   if (input.results.length === 0) return false;
   if (input.attempts >= GATE_MAX_ATTEMPTS) return false;
-  return input.results.some((result) => !result.passed);
+  // Advisory criteria (audits, investigations, catch-all demonstrations) are
+  // informational — a failing advisory criterion must never drive continuation,
+  // or non-machine-verifiable prompts loop until the attempt budget is spent.
+  return input.results.some((result) => !result.passed && !result.advisory);
 }
 
 export function buildContinuationPrompt(results: VerificationResult[], attempts: number): string {
   const unmet = results
-    .filter((result) => !result.passed)
+    .filter((result) => !result.passed && !result.advisory)
     .map((result) => {
       const missing = result.missingEvidence.length > 0
         ? ` (missing: ${result.missingEvidence.join(", ")})`

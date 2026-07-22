@@ -46,7 +46,9 @@ describe("SpecEngine lifecycle", () => {
     ]);
     expect(active?.acceptanceCriteria[0]?.evidenceRequired).toEqual(["diff"]);
     expect(active?.acceptanceCriteria[1]?.evidenceRequired).toEqual(["test"]);
-    expect(active?.acceptanceCriteria[2]?.evidenceRequired).toEqual(["manual"]);
+    // A docs update is a file edit → diff (the runtime can emit it); it was
+    // previously "manual", which the runtime agent cannot produce.
+    expect(active?.acceptanceCriteria[2]?.evidenceRequired).toEqual(["diff"]);
   });
 
   it("derives acceptance criteria from the task contract for rename requests", () => {
