@@ -84,6 +84,7 @@ import { GovernanceRuntime } from "./governance-runtime";
 import { assemblePrompt } from "../context/broker";
 import { consumeContinuation, issueContinuation } from "./continuation-auth";
 import { registerThinkingCommand } from "./commands/thinking";
+import { registerModesCommand } from "./commands/modes";
 import { registerModelEvents } from "./model-events";
 import { getSupportedLevels, setThinkingStatus, type ThinkingLevel } from "./thinking-levels";
 
@@ -376,26 +377,9 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     description: "Require approval before first edit/exec when task is ambient",
   });
 
-  pi.registerCommand("modes", {
-    description: "Choose the default specialist subagent for this session",
-    getArgumentCompletions: (prefix) => {
-      const filtered = (AGENT_TYPES as readonly string[]).filter((mode) => mode.startsWith(prefix));
-      return filtered.length > 0 ? filtered.map((value) => ({ value, label: value })) : null;
-    },
-    handler: async (args, ctx) => {
-      const trimmed = args.trim();
-      const explicit = (AGENT_TYPES as readonly string[]).includes(trimmed) ? (trimmed as NonNullable<TaskParams["type"]>) : undefined;
-      if (!ctx.hasUI && !explicit) {
-        ctx.ui.notify("Modes selector requires an interactive UI", "warning");
-        return;
-      }
-
-      const selected = explicit ?? (await ctx.ui.select("Choose a default subagent mode", [...AGENT_TYPES]));
-      if (!selected) return;
-      defaultTaskType = selected as NonNullable<TaskParams["type"]>;
-      ctx.ui.setStatus("harness-mode", ctx.ui.theme.fg("accent", `modes:${selected}`));
-      ctx.ui.notify(`Default subagent mode: ${selected}`, "info");
-    },
+  registerModesCommand(pi, {
+    getDefaultTaskType: () => defaultTaskType,
+    setDefaultTaskType: (type) => { defaultTaskType = type; },
   });
 
   pi.registerCommand("todo", {
