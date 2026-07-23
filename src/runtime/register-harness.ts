@@ -151,12 +151,14 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   // spawns. Without checking it, children get the parent-only delegation
   // directive and recursively re-delegate (a reviewer spawning a reviewer)
   // instead of doing their own work, idling until their budget kills them.
-  // See src/agents/child-role.ts for the full legacy vs. live env contract.
+  // See src/agents/child-role.ts for the PI_SUBAGENT_CHILD* env contract —
+  // the sole subagent-detection signal (no legacy fallback).
   const isSubagent = isSubagentProcess(process.env);
   // Precise live-roster role name (e.g. "reviewer-security", "explore"),
-  // undefined in the parent session and for the legacy path's generic "1"
-  // marker. Drives roleNarrowingOverlay below — undefined naturally yields no
-  // narrowing, which is exactly right for a parent session.
+  // undefined in the parent session (PI_SUBAGENT_CHILD_AGENT is only ever set
+  // on a spawned child). Drives roleNarrowingOverlay below — undefined
+  // naturally yields no narrowing, which is exactly right for a parent
+  // session.
   const childRole = detectChildRole(process.env);
   const sessionId = crypto.randomUUID();
   const agentType = isSubagent ? "subagent" : "parent" as const;

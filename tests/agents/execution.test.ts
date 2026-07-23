@@ -33,21 +33,13 @@ describe("buildSubagentEnv", () => {
     rules: [],
   };
 
-  it("marks non-reviewer subagents as leaf agents (HARNESS_SUBAGENT=1)", () => {
+  it("includes the policy file path in the env when one is given", () => {
     const env = buildSubagentEnv("explore", basePolicy, "/tmp/policy.json");
-    expect(env.HARNESS_SUBAGENT).toBe("1");
     expect(env.HARNESS_POLICY_FILE).toBe("/tmp/policy.json");
   });
 
-  it("marks reviewer subagents with their role so they can spawn explore agents", () => {
-    const env = buildSubagentEnv("reviewer", basePolicy, "/tmp/policy.json");
-    expect(env.HARNESS_SUBAGENT).toBe("reviewer");
-    expect(env.HARNESS_POLICY_FILE).toBe("/tmp/policy.json");
-  });
-
-  it("marks build subagents as leaf agents", () => {
+  it("omits the policy file key when no policy file is given", () => {
     const env = buildSubagentEnv("build", basePolicy, undefined);
-    expect(env.HARNESS_SUBAGENT).toBe("1");
     expect(env.HARNESS_POLICY_FILE).toBeUndefined();
   });
 });
