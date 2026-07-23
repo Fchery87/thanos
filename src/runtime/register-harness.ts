@@ -5,7 +5,6 @@ import { Type } from "typebox";
 import { join } from "node:path";
 
 import { AuditLogger } from "../audit/logger";
-import type { AuditEvent } from "../audit/types";
 import { PermissionManager } from "../permissions/manager";
 import { gateDisabledByEnv, yoloDisabledByEnv } from "../permissions/yolo-config";
 import { SpecEngine } from "../spec/engine";
@@ -32,12 +31,10 @@ import { registerSlashCommands } from "../commands/slash";
 import { MCPManager } from "../mcp/manager";
 import { initializeMcpSession } from "../mcp/lifecycle";
 import {
-  formatValue,
   formatSpecForApproval,
   formatPanel,
   noopTheme,
 } from "../ui-utils";
-import { renderAuditPanel, renderPolicyPanel, renderSessionSnapshotPanel, renderSpecVerificationPanel } from "../commands/presenters";
 import { renderWelcomeHeader, formatTimeAgo, type WelcomeMcpSummary, type WelcomePolicySummary } from "../welcome/header";
 import { checkForUpdate } from "../welcome/update-check";
 import { checkPatchDrift, formatPatchDriftWarning } from "../welcome/patch-drift";
@@ -47,7 +44,6 @@ import { createSnapshot } from "../security/snapshot";
 // registerSearchTool removed — superseded by npm:pi-web-access
 import { AskParamsSchema, buildAskDecision, resolveHeadlessAsk, type AskQuestion } from "../interaction/ask";
 import { FindingParamsSchema, addFinding, formatReviewSummary, type ReviewFinding } from "../review/findings";
-import { buildJuryPrompt } from "../review/jury";
 import { LensLite, registerLensLiteCommand } from "../lens/lite";
 import { appendHarnessEvent } from "../observability/harness-ledger";
 import { detectChildRole, isSubagentProcess } from "../agents/child-role";
@@ -65,6 +61,7 @@ import { registerShipCommand } from "./commands/ship";
 import { registerMcpCommand } from "./commands/mcp";
 import { registerModelsCommand } from "./commands/models";
 import { registerDesignerCommand } from "./commands/designer";
+import { registerDiagnosticShortcuts } from "./shortcuts";
 import { registerModelEvents } from "./model-events";
 import { getSupportedLevels, setThinkingStatus, type ThinkingLevel } from "./thinking-levels";
 
@@ -134,16 +131,6 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   // See DeliveryRuntime's constructor docblock for the subagent-remote-match
   // caveat and why resolution happens in both parent and child processes.
   const deliveryRuntime = new DeliveryRuntime(process.cwd());
-
-  async function requirePolicy(ctx: ExtensionContext) {
-    const policyState = await policyStatePromise;
-    if (policyState.kind === "error") {
-      const theme = ctx.ui.theme ?? noopTheme;
-      ctx.ui.notify(formatPanel(theme, "Policy Error", policyState.error, "error"), "warning");
-      return undefined;
-    }
-    return policyState.policy;
-  }
 
   // ── MCP server management (main session only) ───────────────────────
   const mcpManager = isSubagent ? null : new MCPManager();
@@ -435,115 +422,12 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   // ctrl+shift+k (select thinking level) is registered by
   // registerThinkingCommand above, alongside the /thinking command it mirrors.
 
-  // Moved from ctrl+shift+s to avoid conflict with pi-web-access curator
-  pi.registerShortcut("ctrl+shift+f", {
-    description: "Show session snapshot: model, thinking, mode, spec, context, policy",
-    handler: async (ctx) => {
-      const policy = await requirePolicy(ctx);
-      if (!policy) return;
-      const theme = ctx.ui.theme;
-      const model = ctx.model;
-      const thinking = pi.getThinkingLevel() as ThinkingLevel | undefined;
-      const usage = ctx.getContextUsage();
-      const active = spec.activeSpec;
-
-      const modelStr = model ? (model.name || model.id) : "none";
-      const thinkingStr = thinking && thinking !== "off" ? thinking : "off";
-      const modeStr = String(defaultTaskType ?? "explore (default)");
-
-      let contextStr = theme.fg("dim", "unknown");
-      if (usage) {
-        const pct = usage.percent !== null ? `${Math.round(usage.percent * 100)}%` : "?%";
-        const tok = usage.tokens !== null ? usage.tokens.toLocaleString() : "?";
-        const wk = Math.round(usage.contextWindow / 1000);
-        contextStr = `${formatValue(theme, tok, "accent")} tokens  ${theme.fg("dim", "(")}${usage.percent && usage.percent > 0.8 ? theme.fg("warning", pct) : theme.fg("success", pct)} of ${wk}k${theme.fg("dim", ")")}`;
-      }
-
-      const panel = renderSessionSnapshotPanel(theme, {
-        modelStr,
-        thinkingStr,
-        modeStr,
-        spec: active,
-        contextStr,
-        policy,
-        yolo: permissions.isYolo,
-      });
-      ctx.ui.notify(panel, "info");
-    },
-  });
-
-  pi.registerShortcut("ctrl+shift+e", {
-    description: "Show current spec: goal, tier, criteria, verification state",
-    handler: async (ctx) => {
-      const active = spec.activeSpec;
-      const theme = ctx.ui.theme;
-      if (!active) {
-        ctx.ui.notify(
-          "No active spec.\nSpecs generate on ambient and explicit tasks — not instant reads.",
-          "info",
-        );
-        return;
-      }
-      const presentation = renderSpecVerificationPanel(theme, active, spec.verify());
-      ctx.ui.notify(presentation.panel, presentation.notification);
-    },
-  });
-
-  pi.registerShortcut("ctrl+shift+g", {
-    description: "Show active policy: preset, rules, audit status",
-    handler: async (ctx) => {
-      const policy = await requirePolicy(ctx);
-      if (!policy) return;
-      const theme = ctx.ui.theme;
-      ctx.ui.notify(renderPolicyPanel(theme, policy), "info");
-    },
-  });
-
-  pi.registerShortcut("ctrl+shift+a", {
-    description: "Show last 10 audit log entries",
-    handler: async (ctx) => {
-      const { readFile } = await import("node:fs/promises");
-      const { join } = await import("node:path");
-      const policy = await requirePolicy(ctx);
-      if (!policy) return;
-      const theme = ctx.ui.theme;
-      if (!policy.audit.enabled) {
-        ctx.ui.notify(
-          "Audit logging is off for this policy preset.\nSet audit.enabled = true in harness.policy.json to enable it.",
-          "warning",
-        );
-        return;
-      }
-      const auditPath = policy.audit.path ?? join(process.cwd(), ".harness", "audit.jsonl");
-      let raw: string;
-      try {
-        raw = await readFile(auditPath, "utf-8");
-      } catch {
-        ctx.ui.notify("No audit log yet.\nIt gets written on the first governed tool call.", "info");
-        return;
-      }
-      const entries = raw
-        .trim()
-        .split("\n")
-        .filter(Boolean)
-        .slice(-10)
-        .map(line => { try { return JSON.parse(line); } catch { return null; } })
-        .filter((e): e is AuditEvent => e !== null);
-      if (entries.length === 0) { ctx.ui.notify("Audit log is empty.", "info"); return; }
-      ctx.ui.notify(renderAuditPanel(theme, entries), "info");
-    },
-  });
-
-  pi.registerShortcut("ctrl+shift+r", {
-    description: "Run a code review — spawns a heterogeneous critic jury",
-    handler: async (ctx) => {
-      if (isSubagent) {
-        ctx.ui.notify("Code review is only available in the main session.", "warning");
-        return;
-      }
-      ctx.ui.notify("Delegating code review to the heterogeneous jury…", "info");
-      await pi.sendUserMessage(buildJuryPrompt(), { deliverAs: "followUp" });
-    },
+  registerDiagnosticShortcuts(pi, {
+    isSubagent,
+    policyStatePromise,
+    spec,
+    permissions,
+    getDefaultTaskType: () => defaultTaskType,
   });
 
   registerDesignerCommand(pi, isSubagent);
