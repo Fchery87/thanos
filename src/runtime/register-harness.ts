@@ -26,7 +26,7 @@ import { resolveGoalSettings } from "../goal/types";
 import { makeAfterToolHandler } from "../hooks/after-tool";
 import type { TaskParams } from "../agents/task-tool";
 import { AGENT_TYPES } from "../agents/registry";
-import { loadRoster } from "../agents/roster";
+import { loadRoster, formatRoster } from "../agents/roster";
 import { loadPolicyState } from "../policy/state";
 import { loadRegistry, readRepoId, resolveDeliveryState } from "../governance/delivery";
 import type { DeliveryMode, ResolvedDelivery } from "../governance/delivery";
@@ -82,6 +82,7 @@ import { detectChildRole, isSubagentProcess } from "../agents/child-role";
 import { roleNarrowingOverlay } from "../governance/role-overlay";
 import { GovernanceRuntime } from "./governance-runtime";
 import { assemblePrompt } from "../context/broker";
+import { assembleSystemPrompt } from "./prompt-assembly";
 import { consumeContinuation, issueContinuation } from "./continuation-auth";
 
 
@@ -145,6 +146,26 @@ function contextModeExecutionGuard(event: { toolName?: string; input?: unknown }
   return undefined;
 }
 
+
+// ── Auto-invoke: keep the top-level agent inline-first ──
+// Parent only — children must not recursively fan out. The per-agent
+// `description` frontmatter (~/.pi/agent/agents/*.md) is the routing signal,
+// so the roster is injected here verbatim instead of instructing the model
+// to call `subagent {action:"list"}` — that instruction made it re-list the
+// roster on every prompt, burning ~700 transcript tokens per turn for
+// information that is static within a session.
+//
+// The directive is inline-FIRST on purpose: a specialist run spins up a
+// fresh cold-started child (seconds of startup, often minutes of wall-clock),
+// so reflexively delegating ordinary work makes the session slower, not
+// smarter. Delegate only when it genuinely pays.
+const TRUSTED_INSTRUCTIONS: readonly string[] = [
+  "Specialist subagents are available via the `subagent` tool.",
+  "Do non-trivial work inline yourself by default — you are a capable generalist and inline work has no cold-start cost. Delegate to a specialist ONLY when the work is genuinely parallel (independent slices worth running at once), needs a capability you lack, or the user explicitly asked for deep review or /waves. A specialist run cold-starts a fresh child (seconds to load, often minutes of wall-clock), so reflexive delegation of ordinary work makes the session slower, not smarter.",
+  "When you do delegate independent or pipelined tasks, use the parallel/chain modes.",
+  "Read-only specialists cannot edit or run commands by design.",
+  "Do NOT pass timeoutMs/maxRuntimeMs when delegating — every agent has its own maxExecutionTimeMs budget, and short caller timeouts kill healthy runs mid-flight, wasting all their work. If you must bound a run, use at least 600000 (10 minutes).",
+];
 
 export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean }) {
   // PI_SUBAGENT_CHILD is set by the pi-subagents engine for every child it
@@ -1644,32 +1665,14 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
 
     // Model router removed — /models command handles model selection
 
-    // ── Auto-invoke: keep the top-level agent inline-first ──
-    // Parent only — children must not recursively fan out. The per-agent
-    // `description` frontmatter (~/.pi/agent/agents/*.md) is the routing signal,
-    // so the roster is injected here verbatim instead of instructing the model
-    // to call `subagent {action:"list"}` — that instruction made it re-list the
-    // roster on every prompt, burning ~700 transcript tokens per turn for
-    // information that is static within a session.
-    //
-    // The directive is inline-FIRST on purpose: a specialist run spins up a
-    // fresh cold-started child (seconds of startup, often minutes of wall-clock),
-    // so reflexively delegating ordinary work makes the session slower, not
-    // smarter. Delegate only when it genuinely pays.
+    // Roster and memories are still rendered by assemblePrompt (broker) /
+    // formatRoster, but destinations now diverge: roster is session-static so
+    // it goes into the cached systemPrompt below; memories are per-turn
+    // dynamic so they're routed into the uncached tail message instead (see
+    // assembleSystemPrompt in ./prompt-assembly for the cache-stability
+    // rationale).
     const roster = isSubagent ? [] : await loadRoster();
-    const promptAssembly = assemblePrompt({
-      isSubagent,
-      memories,
-      roster,
-      goalCondition: goalController.snapshot()?.status === "active" ? goalController.snapshot()?.condition : undefined,
-      trustedInstructions: isSubagent ? [] : [
-        "Specialist subagents are available via the `subagent` tool.",
-        "Do non-trivial work inline yourself by default — you are a capable generalist and inline work has no cold-start cost. Delegate to a specialist ONLY when the work is genuinely parallel (independent slices worth running at once), needs a capability you lack, or the user explicitly asked for deep review or /waves. A specialist run cold-starts a fresh child (seconds to load, often minutes of wall-clock), so reflexive delegation of ordinary work makes the session slower, not smarter.",
-        "When you do delegate independent or pipelined tasks, use the parallel/chain modes.",
-        "Read-only specialists cannot edit or run commands by design.",
-        "Do NOT pass timeoutMs/maxRuntimeMs when delegating — every agent has its own maxExecutionTimeMs budget, and short caller timeouts kill healthy runs mid-flight, wasting all their work. If you must bound a run, use at least 600000 (10 minutes).",
-      ],
-    });
+    const rendered = assemblePrompt({ isSubagent, memories });
 
     // ── Auto-invoke: nudge the top-level agent to reach for skills ──
     // Pi core injects an <available_skills> block into the system prompt but
@@ -1697,16 +1700,28 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
       ? buildGoalSystemPrompt(goalSnap.condition)
       : "";
 
-    const systemPrompt = [
-      promptAssembly.trustedInstructions,
+    // event.systemPrompt is Pi's base prompt (skills block, AGENTS.md, tool
+    // snippets) — folding it in here is the fix: it was previously dropped
+    // on the floor every parent turn. Static blocks (base prompt, trusted
+    // instructions, skills directive, roster) stay on the cached systemPrompt
+    // breakpoint; dynamic per-turn blocks (memories, goal) move to a separate
+    // uncached tail message so they don't bust the prompt cache every turn.
+    const assembled = assembleSystemPrompt({
+      baseSystemPrompt: event.systemPrompt ?? "",
+      isSubagent,
+      trustedInstructions: isSubagent ? [] : TRUSTED_INSTRUCTIONS,
       skillsDirective,
+      roster: isSubagent ? "" : formatRoster(roster),
+      memoriesBlock: rendered.memoriesMessage,
       goalDirective,
-      promptAssembly.contextMessage ?? "",
-    ]
-      .filter(Boolean)
-      .join("\n\n");
+    });
 
-    return systemPrompt ? { systemPrompt } : undefined;
+    return {
+      ...(assembled.systemPrompt ? { systemPrompt: assembled.systemPrompt } : {}),
+      ...(assembled.dynamicMessage
+        ? { message: { customType: "harness-context", content: assembled.dynamicMessage, display: false } }
+        : {}),
+    };
   });
 
   // ── Governed execution gate: GovernanceRuntime.authorize() owns

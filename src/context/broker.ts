@@ -1,67 +1,39 @@
 import type { MemoryRecord } from "../memory/types";
 import { formatMemoriesForInjection } from "../memory/injector";
-import { formatRoster, type RosterEntry } from "../agents/roster";
 import { renderContextEnvelope } from "./render";
 import { makeContextEnvelope } from "./envelope";
 
 export interface PromptAssembly {
-  trustedInstructions: string;
-  contextMessage?: string;
-  diagnostics: { truncated: number; dropped: number };
+  /** Rendered memory envelope, or undefined if there's nothing to inject. */
+  memoriesMessage?: string;
 }
 
+/**
+ * Renders the memory envelope for injection into the dynamic (uncached) tail
+ * message. Roster and goal-condition rendering moved out of this function:
+ * roster now goes straight through `formatRoster` into `assembleSystemPrompt`'s
+ * static `roster` block, and the goal condition is rendered by
+ * `buildGoalSystemPrompt`/`goalDirective` — neither belongs in the
+ * per-turn-dynamic memories envelope, so keeping them here would just be
+ * dead branches wearing a "prompt assembly" name.
+ */
 export function assemblePrompt(input: {
   isSubagent: boolean;
   memories?: MemoryRecord[];
-  roster?: RosterEntry[];
-  goalCondition?: string;
-  trustedInstructions: string[];
 }): PromptAssembly {
-  const diagnostics = { truncated: 0, dropped: 0 };
-  const contextBlocks: string[] = [];
+  if (input.isSubagent || !input.memories) return {};
 
-  if (!input.isSubagent && input.memories) {
-    const memoriesBlock = formatMemoriesForInjection(input.memories);
-    if (memoriesBlock) {
-      contextBlocks.push(renderContextEnvelope(makeContextEnvelope({
-        id: "project-memories",
-        origin: "memory",
-        authority: "preference",
-        trusted: false,
-        content: memoriesBlock,
-        maxBytes: 12_000,
-      })));
-    }
-  }
-
-  if (!input.isSubagent && input.roster) {
-    const roster = formatRoster(input.roster);
-    if (roster) {
-      contextBlocks.push(renderContextEnvelope(makeContextEnvelope({
-        id: "specialist-roster",
-        origin: "project",
-        authority: "request",
-        trusted: false,
-        content: roster,
-        maxBytes: 12_000,
-      })));
-    }
-  }
-
-  if (input.goalCondition) {
-    contextBlocks.push(renderContextEnvelope(makeContextEnvelope({
-      id: "active-goal",
-      origin: "harness",
-      authority: "request",
-      trusted: false,
-      content: input.goalCondition,
-      maxBytes: 12_000,
-    })));
-  }
+  const memoriesBlock = formatMemoriesForInjection(input.memories);
+  if (!memoriesBlock) return {};
 
   return {
-    trustedInstructions: input.trustedInstructions.join("\n\n"),
-    contextMessage: contextBlocks.length ? contextBlocks.join("\n\n") : undefined,
-    diagnostics,
+    memoriesMessage: renderContextEnvelope(makeContextEnvelope({
+      id: "project-memories",
+      origin: "memory",
+      authority: "preference",
+      trusted: false,
+      content: memoriesBlock,
+      maxBytes: 12_000,
+    })),
   };
 }
