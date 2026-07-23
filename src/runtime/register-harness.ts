@@ -64,6 +64,7 @@ import { registerDeliveryCommand, DeliveryRuntime } from "./commands/delivery";
 import { registerShipCommand } from "./commands/ship";
 import { registerMcpCommand } from "./commands/mcp";
 import { registerModelsCommand } from "./commands/models";
+import { registerDesignerCommand } from "./commands/designer";
 import { registerModelEvents } from "./model-events";
 import { getSupportedLevels, setThinkingStatus, type ThinkingLevel } from "./thinking-levels";
 
@@ -545,59 +546,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     },
   });
 
-  const designerGoalOptions = [
-    "Implement UI changes — read the codebase, build components, cover all states",
-    "Review UI code — check for accessibility gaps, missing states, AI slop patterns",
-    "Audit design system — extract tokens, document inconsistencies, suggest consolidation",
-  ];
-
-  const runDesignerAgent = async (goal: string, ctx: ExtensionContext) => {
-    if (isSubagent) {
-      ctx.ui.notify("Designer is only available in the main session.", "warning");
-      return;
-    }
-    ctx.ui.notify("Delegating to the designer subagent…", "info");
-    // Route through the pi-subagents engine (unified delegation + rich render).
-    await pi.sendUserMessage(
-      `Use the \`subagent\` tool to run the \`designer\` agent on this task: ${goal}`,
-      { deliverAs: "followUp" },
-    );
-  };
-
-  pi.registerCommand("designer", {
-    description: "Spawn the Designer subagent for UI/UX implementation, review, or design-system audit",
-    getArgumentCompletions: (prefix) => {
-      if (prefix.trim().length > 0) return null;
-      return designerGoalOptions.map((value) => ({ value, label: value }));
-    },
-    handler: async (args, ctx) => {
-      const explicitGoal = args.trim();
-      if (explicitGoal) {
-        await runDesignerAgent(explicitGoal, ctx);
-        return;
-      }
-      if (!ctx.hasUI) {
-        ctx.ui.notify("Pass a goal: /designer <goal>", "warning");
-        return;
-      }
-      const goal = await ctx.ui.select("What should the designer do?", designerGoalOptions);
-      if (!goal) return;
-      await runDesignerAgent(goal, ctx);
-    },
-  });
-
-  pi.registerShortcut("ctrl+shift+d", {
-    description: "Spawn designer — UI/UX implementation and review",
-    handler: async (ctx) => {
-      if (!ctx.hasUI) {
-        ctx.ui.notify("Pass a goal: /designer <goal>", "warning");
-        return;
-      }
-      const goal = await ctx.ui.select("What should the designer do?", designerGoalOptions);
-      if (!goal) return;
-      await runDesignerAgent(goal, ctx);
-    },
-  });
+  registerDesignerCommand(pi, isSubagent);
 
   registerYoloShortcut(pi, permissions);
 
