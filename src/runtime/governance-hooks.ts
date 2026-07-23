@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { TextContent, ImageContent } from "@earendil-works/pi-ai";
 import { AuditLogger } from "../audit/logger";
 import type { PermissionManager } from "../permissions/manager";
 import { gateDisabledByEnv } from "../permissions/yolo-config";
@@ -159,12 +160,27 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
 
   // ── Spec output collection ─────────────────────────────────────────
   pi.on("tool_result", (event, ctx: ExtensionContext) => {
-    return policyStatePromise.then((state) => {
+    return policyStatePromise.then(async (state) => {
       lens.afterTool(event, ctx);
       const auditLogger = state.kind === "ok" && state.policy.audit.enabled
         ? new AuditLogger(state.policy.audit.path ?? join(process.cwd(), ".harness", "audit.jsonl"))
         : undefined;
-      return makeAfterToolHandler(spec, auditLogger, { sessionId, agentType })(event);
+      const override = await makeAfterToolHandler(spec, auditLogger, { sessionId, agentType })(event);
+      if (!override) return undefined;
+      // makeAfterToolHandler's ToolResultOverride uses a deliberately loose
+      // content-part shape (spec/evidence.ts's TextPart, `{ type: string; text?:
+      // string }`) so tests can build fake events without importing the real
+      // SDK content union. Its actual values are always either passed through
+      // unchanged from the real event.content, or a shallow copy of a text part
+      // with only `text` rewritten (see truncateContextToolResult) — i.e.
+      // always a genuine TextContent | ImageContent at runtime. This cast
+      // reconciles that at the one boundary where it must satisfy pi's real
+      // ToolResultEventResult contract.
+      return {
+        content: override.content as (TextContent | ImageContent)[] | undefined,
+        details: override.details,
+        isError: override.isError,
+      };
     }).catch((err) => {
       console.error("[harness][tool_result]", err instanceof Error ? err.message : String(err));
       return undefined;

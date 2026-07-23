@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { MemoryStore, MAX_MEMORY_LENGTH } from "../../memory/store";
+import { MemoryStore, MAX_MEMORY_LENGTH, isSaveSuccess } from "../../memory/store";
 
 /**
  * Open the current project's memory store. The only write path into
@@ -23,7 +23,7 @@ export function registerMemoryCommands(pi: ExtensionAPI): void {
     handler: async (args, ctx) => {
       const { store, project } = projectMemory();
       const result = store.save({ project, text: args });
-      if (result.saved) {
+      if (isSaveSuccess(result)) {
         ctx.ui.notify(`Remembered for ${project}: ${result.record.text}`, "info");
       } else if (result.reason === "empty") {
         ctx.ui.notify("Usage: /remember <preference>", "warning");

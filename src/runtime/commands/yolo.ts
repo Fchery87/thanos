@@ -11,7 +11,7 @@ export interface YoloCommandDeps {
   // by value at registration time would freeze this command onto whatever
   // delivery state existed at register() time — a live getter reads the
   // current binding on every invocation instead.
-  getDeliveryState: () => Promise<ResolvedDelivery | undefined>;
+  getDeliveryState: () => Promise<ResolvedDelivery>;
 }
 
 /** /yolo — toggle yolo mode (bypass all permission checks/policy gating). */
