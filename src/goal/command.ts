@@ -20,6 +20,11 @@ export interface GoalCommandDeps {
   notify: (message: string, level?: "info" | "warning") => void;
   sendFollowUp: (text: string) => Promise<void>;
   recordEvent: (event: GoalEventRecord) => Promise<void>;
+  /** Sync the controller's current state to on-disk persistence. Called
+   *  directly by clear/pause/resume; `set` persists via `recordEvent`
+   *  instead (recordGoalEvent already calls this internally), so it must
+   *  not call syncState itself to avoid a double-write. */
+  syncState: () => Promise<void>;
 }
 
 function formatStatus(deps: GoalCommandDeps, now: number): string {
@@ -58,17 +63,25 @@ export async function runGoalCommand(args: string, deps: GoalCommandDeps): Promi
     case "clear": {
       const had = deps.controller.snapshot() !== undefined;
       deps.controller.clear();
+      // Unconditional: even when memory had nothing to clear, a stale
+      // on-disk file from a prior session (never loaded into this one)
+      // should still be wiped rather than left to resurrect on restart.
+      await deps.syncState();
       deps.notify(had ? "◎ /goal cleared." : "◎ /goal — nothing to clear.");
       return;
     }
-    case "pause":
-      deps.notify(deps.controller.pause() ? "◎ /goal paused. Run `/goal resume` to continue." : "◎ /goal — no active goal to pause.", deps.controller.snapshot()?.status === "paused" ? "warning" : "info");
+    case "pause": {
+      const paused = deps.controller.pause();
+      if (paused) await deps.syncState();
+      deps.notify(paused ? "◎ /goal paused. Run `/goal resume` to continue." : "◎ /goal — no active goal to pause.", deps.controller.snapshot()?.status === "paused" ? "warning" : "info");
       return;
+    }
     case "resume": {
       if (!deps.controller.resume()) {
         deps.notify("◎ /goal — no paused goal to resume.");
         return;
       }
+      await deps.syncState();
       deps.notify("◎ /goal resumed.");
       // Re-kick the loop: it only advances on agent-end, so without a
       // directive here nothing happens until the user types something. The
@@ -100,6 +113,7 @@ export interface RegisterGoalDeps {
   isSubagent: boolean;
   sendFollowUp: (text: string) => Promise<void>;
   recordEvent: (event: GoalEventRecord) => Promise<void>;
+  syncState: () => Promise<void>;
 }
 
 export function registerGoalCommand(pi: ExtensionAPI, deps: RegisterGoalDeps): void {
@@ -117,6 +131,7 @@ export function registerGoalCommand(pi: ExtensionAPI, deps: RegisterGoalDeps): v
         notify: (message, level) => ctx.ui.notify(message, level ?? "info"),
         sendFollowUp: deps.sendFollowUp,
         recordEvent: deps.recordEvent,
+        syncState: deps.syncState,
       });
       ctx.ui.setStatus("harness-goal", renderGoalStatusSegment(deps.controller.snapshot()));
     },

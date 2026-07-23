@@ -120,4 +120,23 @@ export class GoalController {
     }
     return { kind: "rejected", reason: verdict.reason };
   }
+
+  /**
+   * Package-private snapshot of the full internal state (unlike snapshot(),
+   * which strips fields not meant for external consumers). Used only by
+   * adoptFrom() to transplant state between two controller instances.
+   */
+  private snapshotInternal(): Internal | undefined {
+    return this.g ? { ...this.g } : undefined;
+  }
+
+  /**
+   * Replace this controller's state with another's. Used by session restore:
+   * the module-scoped controller instance is constructed once and referenced
+   * by many closures, so we overwrite its internals in place rather than
+   * reconstructing (which would orphan those references).
+   */
+  adoptFrom(other: GoalController): void {
+    this.g = other.snapshotInternal();
+  }
 }
