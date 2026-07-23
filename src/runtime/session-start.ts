@@ -27,8 +27,10 @@ export interface SessionStartDeps {
 
 /**
  * session_start (welcome header, MCP init, first-launch delivery selector,
- * status-bar segments) and session_tree (todo state re-sync on branch
- * switch). Both read/write todoRuntime, so they're extracted together.
+ * status-bar segments), session_tree (todo state re-sync on branch switch),
+ * and session_shutdown (MCP disconnect — the natural counterpart to the MCP
+ * init this module already owns). All three share mcpManager/todoRuntime
+ * state, so extracted together.
  */
 export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): void {
   const { todoRuntime, mcpManager, deliveryRuntime, permissions, lens, policyStatePromise, getDefaultTaskType, clearReviewFindings } = deps;
@@ -173,5 +175,10 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
   pi.on("session_tree", async (_event, ctx) => {
     todoRuntime.reconstructFrom(ctx.sessionManager.getBranch());
     ctx.ui.setStatus("harness-todo", todoRuntime.statusSegment(ctx));
+  });
+
+  // ── MCP cleanup on shutdown ────────────────────────────────────────
+  pi.on("session_shutdown", () => {
+    mcpManager?.disconnect();
   });
 }

@@ -290,11 +290,6 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
 
   registerYoloShortcut(pi, permissions);
 
-  // ── MCP cleanup on shutdown ────────────────────────────────────────
-
-  pi.on("session_shutdown", () => {
-    mcpManager?.disconnect();
-  });
   // ── Spec classification + session reset on each prompt ─────────────
   registerBeforeAgentStart(pi, { sessionId, isSubagent, permissions, spec, lens, goalController });
 
