@@ -381,7 +381,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   }
 
   // ── /yolo — bypass all permission checks ──────────────────────────
-  registerYoloCommand(pi, { permissions, deliveryStatePromise });
+  registerYoloCommand(pi, { permissions, getDeliveryState: () => deliveryStatePromise });
 
   // ── /delivery — choose this project's delivery mode (persisted) ──
 

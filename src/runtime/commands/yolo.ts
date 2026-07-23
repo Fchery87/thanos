@@ -5,7 +5,13 @@ import { formatPanel } from "../../ui-utils";
 
 export interface YoloCommandDeps {
   permissions: PermissionManager;
-  deliveryStatePromise: Promise<ResolvedDelivery | undefined>;
+  // A getter, not a bare Promise: deliveryStatePromise is reassigned in place
+  // (see applyDeliverySelection in commands/delivery.ts) whenever /delivery
+  // or the first-launch selector persists a new mode. Capturing the Promise
+  // by value at registration time would freeze this command onto whatever
+  // delivery state existed at register() time — a live getter reads the
+  // current binding on every invocation instead.
+  getDeliveryState: () => Promise<ResolvedDelivery | undefined>;
 }
 
 /** /yolo — toggle yolo mode (bypass all permission checks/policy gating). */
@@ -18,7 +24,7 @@ export function registerYoloCommand(pi: ExtensionAPI, deps: YoloCommandDeps): vo
         return;
       }
 
-      const delivery = await deps.deliveryStatePromise;
+      const delivery = await deps.getDeliveryState();
       if (delivery?.autonomy === "unattended") {
         ctx.ui.notify("Yolo is not available in unattended autonomy mode.", "warning");
         return;
