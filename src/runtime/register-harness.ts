@@ -83,35 +83,15 @@ import { roleNarrowingOverlay } from "../governance/role-overlay";
 import { GovernanceRuntime } from "./governance-runtime";
 import { assemblePrompt } from "../context/broker";
 import { consumeContinuation, issueContinuation } from "./continuation-auth";
+import { registerThinkingCommand } from "./commands/thinking";
+import { registerModelEvents } from "./model-events";
+import { getSupportedLevels, setThinkingStatus, type ThinkingLevel } from "./thinking-levels";
 
-
-type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
-
-const ALL_THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
-
-const THINKING_LABELS: Record<ThinkingLevel, string> = {
-  off:     "off      — no reasoning",
-  minimal: "minimal  — ~1k tokens",
-  low:     "low      — ~2k tokens",
-  medium:  "medium   — ~8k tokens",
-  high:    "high     — ~16k tokens",
-  xhigh:   "xhigh    — ~32k tokens",
-};
-
-function getSupportedLevels(model: { reasoning: boolean; thinkingLevelMap?: Partial<Record<string, string | null>> }): ThinkingLevel[] {
-  if (!model.reasoning) return ["off"];
-  return ALL_THINKING_LEVELS.filter((level) => model.thinkingLevelMap?.[level] !== null);
-}
 
 /** Human-readable list of gate names for /ship prompts ("none" when empty). */
 function formatGateNames(gates: Record<string, string | null>): string {
   const names = Object.keys(gates);
   return names.length > 0 ? names.join(", ") : "none";
-}
-
-function setThinkingStatus(pi: ExtensionAPI, ctx: ExtensionContext): void {
-  const level = pi.getThinkingLevel() as ThinkingLevel | undefined;
-  ctx.ui.setStatus("harness-thinking", level && level !== "off" ? ctx.ui.theme.fg("accent", `thinking:${level}`) : undefined);
 }
 
 const CTX_EXEC_TOOLS = new Set(["ctx_execute", "ctx_execute_file", "ctx_batch_execute"]);
@@ -1117,62 +1097,12 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     },
   });
 
-  // ── Thinking level selector ────────────────────────────────────────
-  pi.registerCommand("thinking", {
-    description: "Select reasoning effort level for the current model",
-    getArgumentCompletions: (prefix) => {
-      const filtered = ALL_THINKING_LEVELS.filter((l) => l.startsWith(prefix));
-      return filtered.length > 0 ? filtered.map((value) => ({ value, label: value })) : null;
-    },
-    handler: async (args, ctx) => {
-      const trimmed = args.trim() as ThinkingLevel;
-      if (ALL_THINKING_LEVELS.includes(trimmed)) {
-        pi.setThinkingLevel(trimmed);
-        setThinkingStatus(pi, ctx);
-        ctx.ui.notify(`Thinking: ${trimmed}`, "info");
-        return;
-      }
-      const model = ctx.model;
-      if (!model) {
-        ctx.ui.notify("No model active", "warning");
-        return;
-      }
-      if (!ctx.hasUI) {
-        ctx.ui.notify("Thinking selector requires an interactive UI", "warning");
-        return;
-      }
-      const levels = getSupportedLevels(model);
-      const options = levels.map((l) => THINKING_LABELS[l]);
-      const selected = await ctx.ui.select("Select thinking level", options);
-      if (!selected) return;
-      const level = levels[options.indexOf(selected)];
-      if (!level) return;
-      pi.setThinkingLevel(level);
-      setThinkingStatus(pi, ctx);
-    },
-  });
+  // ── Thinking level selector (command + ctrl+shift+k shortcut) ──────
+  registerThinkingCommand(pi);
 
-  // ── Auto-prompt thinking level when switching to a reasoning model ──
-  pi.on("model_select", async (event, ctx) => {
-    if (!event.model.reasoning) {
-      ctx.ui.setStatus("harness-thinking", undefined);
-      return;
-    }
-    if (!ctx.hasUI) return;
-    const levels = getSupportedLevels(event.model);
-    const options = levels.map((l) => THINKING_LABELS[l]);
-    const selected = await ctx.ui.select("Select thinking level", options);
-    if (!selected) return;
-    const level = levels[options.indexOf(selected)];
-    if (!level) return;
-    pi.setThinkingLevel(level);
-    setThinkingStatus(pi, ctx);
-  });
-
-  // ── Keep status bar in sync with Shift+Tab cycles ──────────────────
-  pi.on("thinking_level_select", (_event, ctx) => {
-    setThinkingStatus(pi, ctx);
-  });
+  // ── Model-lifecycle hooks: auto-prompt thinking level on model switch,
+  // keep status bar in sync with Shift+Tab cycles ────────────────────
+  registerModelEvents(pi);
 
   // ── /models — two-step provider→model selector ───────────────────
   pi.registerCommand("models", {
@@ -1377,22 +1307,8 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   registerLensLiteCommand(pi, lens);
 
   // ── Keyboard shortcuts (appear in /hotkeys → Extensions) ───────────
-  pi.registerShortcut("ctrl+shift+k", {
-    description: "Select thinking level",
-    handler: async (ctx) => {
-      const model = ctx.model;
-      if (!model) { ctx.ui.notify("No model active", "warning"); return; }
-      if (!ctx.hasUI) { ctx.ui.notify("Thinking selector requires an interactive UI", "warning"); return; }
-      const levels = getSupportedLevels(model);
-      const options = levels.map((l) => THINKING_LABELS[l]);
-      const selected = await ctx.ui.select("Select thinking level", options);
-      if (!selected) return;
-      const level = levels[options.indexOf(selected)];
-      if (!level) return;
-      pi.setThinkingLevel(level);
-      setThinkingStatus(pi, ctx);
-    },
-  });
+  // ctrl+shift+k (select thinking level) is registered by
+  // registerThinkingCommand above, alongside the /thinking command it mirrors.
 
   // Moved from ctrl+shift+s to avoid conflict with pi-web-access curator
   pi.registerShortcut("ctrl+shift+f", {
