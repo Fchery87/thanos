@@ -1,7 +1,7 @@
 import { buildContinueDirective, buildFirstDirective } from "./prompts";
 import { resolveGoalSettings, type CompletionAction, type GoalSettings, type GoalSnapshot, type TurnAction, type Verdict } from "./types";
 
-const MAX_CONDITION = 4000;
+export const MAX_CONDITION = 4000;
 
 interface Internal {
   condition: string;
