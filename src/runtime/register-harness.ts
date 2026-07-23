@@ -79,6 +79,7 @@ import { registerThinkingCommand } from "./commands/thinking";
 import { registerModesCommand } from "./commands/modes";
 import { registerTodoCommand, registerTodoTool, TodoRuntime } from "./commands/todo";
 import { registerMemoryCommands, projectMemory } from "./commands/memory";
+import { registerYoloCommand, registerYoloShortcut } from "./commands/yolo";
 import { registerModelEvents } from "./model-events";
 import { getSupportedLevels, setThinkingStatus, type ThinkingLevel } from "./thinking-levels";
 
@@ -380,62 +381,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   }
 
   // ── /yolo — bypass all permission checks ──────────────────────────
-  pi.registerCommand("yolo", {
-    description: "Toggle yolo mode — skips all permission prompts and policy checks.",
-    handler: async (_args, ctx) => {
-      if (permissions.yoloLocked) {
-        ctx.ui.notify("Yolo is disabled by configuration.", "warning");
-        return;
-      }
-
-      const delivery = await deliveryStatePromise;
-      if (delivery?.autonomy === "unattended") {
-        ctx.ui.notify("Yolo is not available in unattended autonomy mode.", "warning");
-        return;
-      }
-
-      if (!ctx.hasUI) {
-        ctx.ui.notify("Yolo requires an interactive UI.", "warning");
-        return;
-      }
-
-      const theme = ctx.ui.theme;
-      const current = permissions.isYolo;
-
-      if (!current) {
-        // Require explicit confirmation before enabling. Yolo bypasses
-        // permission prompts and risk gating in every delivery mode, but the
-        // immutable protection floor still applies — explicit policy denies,
-        // local-only egress/push guards, and Lens Lite secret scanning.
-        const ok = await ctx.ui.confirm(
-          "Enable Yolo Mode?",
-          "Permission prompts and risk gating will be bypassed for this session.\n" +
-          "Explicit policy denies, local-only egress guards, and secret scanning still apply.\n" +
-          "The agent will execute any tool without asking. Use in trusted environments only.",
-        );
-        if (!ok) {
-          ctx.ui.notify("Yolo mode not enabled.", "info");
-          return;
-        }
-        permissions.setYolo(true);
-        ctx.ui.setStatus("harness-yolo", theme.fg("error", "⚡ yolo"));
-        ctx.ui.notify(
-          formatPanel(theme, "Yolo Mode ON", [
-            theme.fg("warning", "All permission checks are now bypassed."),
-            theme.fg("dim", "Run /yolo again to restore normal permission behavior."),
-          ], "warning"),
-          "warning",
-        );
-      } else {
-        permissions.setYolo(false);
-        ctx.ui.setStatus("harness-yolo", undefined);
-        ctx.ui.notify(
-          formatPanel(theme, "Yolo Mode OFF", "Permission checks restored.", "dim"),
-          "info",
-        );
-      }
-    },
-  });
+  registerYoloCommand(pi, { permissions, deliveryStatePromise });
 
   // ── /delivery — choose this project's delivery mode (persisted) ──
 
@@ -1370,37 +1316,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     },
   });
 
-  pi.registerShortcut("ctrl+shift+y", {
-    description: "Toggle yolo mode — bypass all permission checks",
-    handler: async (ctx) => {
-      if (permissions.yoloLocked) {
-        ctx.ui.notify("Yolo is disabled by configuration.", "warning");
-        return;
-      }
-      const theme = ctx.ui.theme;
-      if (!permissions.isYolo) {
-        const ok = await ctx.ui.confirm(
-          "Enable Yolo Mode?",
-          "All permission checks, policy rules, and confirmation prompts will be bypassed.\n" +
-          "The agent will execute any tool without asking. Use in trusted environments only.",
-        );
-        if (!ok) return;
-        permissions.setYolo(true);
-        ctx.ui.setStatus("harness-yolo", theme.fg("error", "⚡ yolo"));
-        ctx.ui.notify(
-          formatPanel(theme, "Yolo Mode ON", [
-            theme.fg("warning", "All permission checks are now bypassed."),
-            theme.fg("dim", "Press Ctrl+Shift+Y again to restore normal behavior."),
-          ], "warning"),
-          "warning",
-        );
-      } else {
-        permissions.setYolo(false);
-        ctx.ui.setStatus("harness-yolo", undefined);
-        ctx.ui.notify(formatPanel(theme, "Yolo Mode OFF", "Permission checks restored.", "dim"), "info");
-      }
-    },
-  });
+  registerYoloShortcut(pi, permissions);
 
   // ── MCP cleanup on shutdown ────────────────────────────────────────
 
