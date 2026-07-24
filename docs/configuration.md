@@ -61,6 +61,64 @@ The user-owned copies are gitignored so credentials and local edits are never pu
 The committed `*.example.json` templates carry no secrets, so the published repository
 can never leak credentials.
 
+## Configuration resolution (`resolveConfig`)
+
+`src/config/resolve.ts` exports `resolveConfig(cwd, options?)`, a single typed
+entry point that composes the harness's existing, independently loaded
+configuration surfaces — delivery, policy, and `/goal` settings — into one
+`ResolvedConfig`. It is pure consolidation: every value still comes from its
+existing loader (`resolveDeliveryState`, `loadPolicyState`,
+`loadGoalSettings`) with that loader's precedence and trust rules unchanged.
+See [governance.md](governance.md#delivery-modes) for the full prose
+description this table summarizes.
+
+**Delivery** (`ResolvedConfig.delivery`) — mode, autonomy, yolo lock, gates,
+`defaultBranch`, `merge`:
+
+| Precedence | Source | Trusted? | Fields |
+|---|---|---|---|
+| 1. Env override | `THANOS_YOLO_DISABLED=1` | n/a (process env) | Hard-locks yolo (`yoloLocked`/`yoloAllowed`) on top of whatever the registry says. Can only make yolo *more* locked, never less. |
+| 2. Captain registry | `~/.pi/agent/projects.json` | **Trusted** | `mode`, `autonomy`, yolo lock (`"yolo": "locked"` / registry-wide `"yolo": "disabled"`) |
+| 3. Ship file (untrusted subset) | `<repo>/.thanos/delivery.json` | **Untrusted** | Only `gates`, `defaultBranch`, `merge`. `mode`/`autonomy`/`yolo` keys are never read from this file, even if present — see the [trust-split](governance.md#trust-split). |
+| 4. Built-in defaults | — | — | `local-only` / `attended`, `gates: {}`, `defaultBranch: "main"`, `merge` derived from mode |
+
+**Policy** (`ResolvedConfig.policy`) — the effective `HarnessPolicy`, via
+`loadPolicyState`:
+
+| Precedence | Source |
+|---|---|
+| 1. Explicit `options.policyPath` | Passed to `resolveConfig` directly |
+| 2. Env override | `HARNESS_POLICY_FILE` |
+| 3. Repo file | `<cwd>/harness.policy.json` |
+| 4. Built-in default | Hardcoded `personal` preset (`getPresetPolicy("personal")`) |
+
+`ResolvedConfig.presetImpliedByModeDocsOnly` additionally reports the preset
+docs/governance.md's [Delivery modes](governance.md#delivery-modes) table
+says the resolved mode "pins" (`local-only` → `personal`, `direct-PR` →
+`team`, `no-mistakes` → `ci`), via the existing `presetForMode()` mapping.
+The verbose name is deliberate: this is **not** the active preset (that's
+`policy` above) — it's only what the docs claim the mode implies, a value
+that is currently never applied anywhere.
+
+> **Known gap, not papered over:** as currently wired,
+> `presetImpliedByModeDocsOnly` is informational only. The `policy` field
+> above is *not* automatically switched to it — with no `harness.policy.json`
+> present, the effective policy preset stays `personal` regardless of
+> delivery mode. Only the `local-only`
+> overlay deny rules (git push / `gh` publish) are actually mode-dependent
+> today, applied later by `GovernanceRuntime`/`buildEffectivePolicy`
+> (`deliveryPolicyOverlay`), not by the load path `resolveConfig` composes.
+> Closing this gap (auto-selecting the base preset from delivery mode) is a
+> deliberate policy change, out of scope for this consolidation.
+
+**Settings** (`ResolvedConfig.goal`) — `/goal` defaults, via
+`loadGoalSettings()` merged over `DEFAULT_GOAL_SETTINGS`:
+
+| Precedence | Source |
+|---|---|
+| 1. `~/.pi/agent/settings.json`'s `goal` block | Per-field override |
+| 2. Built-in default | `DEFAULT_GOAL_SETTINGS` (`maxTurns: 25`, `maxTokens: 0`, `checkpointEvery: 0`, `evaluatorRole: "evaluator"`) |
+
 ## What's in here
 
 ```text
