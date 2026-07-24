@@ -1,7 +1,6 @@
 // src/index.ts
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
 import { join } from "node:path";
 
 import { AuditLogger } from "../audit/logger";
@@ -10,16 +9,12 @@ import { gateDisabledByEnv, yoloDisabledByEnv } from "../permissions/yolo-config
 import { SpecEngine } from "../spec/engine";
 import { computeThinkingEscalation, NO_ESCALATION, type ThinkingEscalationState } from "./thinking-escalation";
 import { buildContinuationPrompt, shouldReinject } from "../spec/gate";
-import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { GoalController } from "../goal/controller";
 import { registerGoalCommand, renderGoalStatusSegment } from "../goal/command";
 import { handleAgentEnd as handleGoalAgentEnd } from "../goal/loop";
-import { extractLastTurnFromBranch, readAborted, readWillRetry } from "../goal/extract";
-import { runEvaluatorWith } from "../goal/evaluator";
+import { readAborted, readWillRetry } from "../goal/extract";
 import { buildGoalSystemPrompt } from "../goal/prompts";
-import { confirmGoalCompletion } from "../goal/confirm";
-import { loadEvaluatorOverride, loadGoalSettings } from "../goal/load-settings";
-import { pickEvaluatorModel, resolveEvaluatorAuth } from "../goal/evaluator-model";
+import { loadGoalSettings } from "../goal/load-settings";
 import { resolveGoalSettings } from "../goal/types";
 import { restoreController, serializeGoal } from "../goal/persist";
 import { clearGoalState, loadGoalState, saveGoalState } from "../goal/store";
@@ -45,8 +40,7 @@ import type { MemoryRecord } from "../memory/types";
 // Model router removed — use /models command or pi-subagents for model selection
 import { createSnapshot } from "../security/snapshot";
 // registerSearchTool removed — superseded by npm:pi-web-access
-import { AskParamsSchema, buildAskDecision, resolveHeadlessAsk, type AskQuestion } from "../interaction/ask";
-import { FindingParamsSchema, addFinding, formatReviewSummary, type ReviewFinding } from "../review/findings";
+import type { ReviewFinding } from "../review/findings";
 import { LensLite, registerLensLiteCommand } from "../lens/lite";
 import { appendHarnessEvent } from "../observability/harness-ledger";
 import { detectChildRole, isSubagentProcess } from "../agents/child-role";
@@ -68,6 +62,7 @@ import { registerShipCommand } from "./commands/ship";
 import { registerMcpCommand } from "./commands/mcp";
 import { registerModelsCommand } from "./commands/models";
 import { registerDiagnosticShortcuts } from "./shortcuts";
+import { registerGoalCompleteTool, registerAskTool, registerReportFindingTool } from "./tools";
 
 
 const CTX_EXEC_TOOLS = new Set(["ctx_execute", "ctx_execute_file", "ctx_batch_execute"]);
@@ -433,73 +428,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   // working. Crucially, a checker ERROR never pauses the goal — it fails safe
   // to NOT_MET — so the per-turn "eval-error pause" class is gone entirely.
   if (!isSubagent) {
-    pi.registerTool({
-      name: "goal_complete",
-      label: "Goal Complete",
-      description:
-        "Mark the active /goal complete — only after every requirement is implemented AND verified. A fresh checker confirms before it closes; not for partial progress, a plan, or unverified work.",
-      promptSnippet: "Mark the active /goal complete once it is fully finished and verified",
-      parameters: Type.Object({
-        summary: Type.String({
-          description:
-            "What you finished and the concrete evidence that verifies it (test output, exit codes, counts, git status).",
-        }),
-      }),
-      async execute(_toolCallId, params: { summary: string }, _signal, _onUpdate, toolCtx: ExtensionContext) {
-        const snap = goalController.snapshot();
-        if (!snap || snap.status !== "active") {
-          return { content: [{ type: "text" as const, text: "goal_complete: no active /goal to complete." }], isError: true, details: undefined };
-        }
-
-        // Judge real output, not just the claim: pull the last work turn from
-        // the session branch. When that read comes back empty (private branch
-        // API drift, or goal_complete called before any proof turn),
-        // confirmGoalCompletion fails CLOSED — it never judges the bare summary
-        // claim, so self-grading cannot silently sneak back in.
-        const sm = toolCtx.sessionManager as { getBranch?: () => Array<{ type?: string; message?: unknown }> } | undefined;
-        const evidence = extractLastTurnFromBranch(sm?.getBranch?.());
-
-        // Resolve the evaluator model exactly as the per-turn loop used to:
-        // routed override when routing is on, else the session model.
-        const override = loadEvaluatorOverride(goalSettings.evaluatorRole);
-        const routed = override
-          ? pickEvaluatorModel(override, toolCtx.modelRegistry.getAll(), (m) => toolCtx.modelRegistry.hasConfiguredAuth(m))
-          : undefined;
-        const primary = routed?.model ?? toolCtx.model;
-        if (!primary) {
-          return { content: [{ type: "text" as const, text: "goal_complete: no model available to verify completion — keep working and try again." }], details: undefined };
-        }
-
-        // Out-of-band completions bypass pi's request path, so auth must be
-        // resolved through the registry (auth.json, $ENV refs, OAuth) — a bare
-        // completeSimple only finds well-known env keys for builtin providers
-        // and resolves (not rejects!) with stopReason "error" for the rest.
-        const completeAuthed = async (model: NonNullable<typeof primary>, context: Parameters<typeof completeSimple>[1], reasoning?: string) => {
-          const auth = await resolveEvaluatorAuth(toolCtx.modelRegistry, model);
-          return completeSimple(model, context, { reasoning: (reasoning ?? "low") as "low", ...auth });
-        };
-
-        // Retry once on the session model (routing may point at a flaky
-        // provider); confirmGoalCompletion owns the fail-closed + fail-safe policy.
-        const verdict = await confirmGoalCompletion(
-          { condition: snap.condition, previousReason: snap.lastReason, summary: params.summary, evidence },
-          (input) => runEvaluatorWith((context) => completeAuthed(primary, context, routed?.thinking), input),
-          (input) => runEvaluatorWith((context) => completeAuthed(toolCtx.model ?? primary, context), input),
-        );
-
-        const action = goalController.confirmComplete(verdict);
-        toolCtx.ui.setStatus("harness-goal", renderGoalStatusSegment(goalController.snapshot()));
-
-        if (action.kind === "achieved") {
-          await recordGoalEvent({ type: "goal_achieved", summary: action.reason, outcome: `turns=${action.turns}` });
-          toolCtx.ui.notify(`◎ /goal achieved in ${action.turns} turns — ${action.reason}`, "info");
-          return { content: [{ type: "text" as const, text: `Goal confirmed complete: ${action.reason}` }], terminate: true, details: undefined };
-        }
-
-        const reason = action.kind === "rejected" ? action.reason : "the goal is no longer active";
-        return { content: [{ type: "text" as const, text: `goal_complete rejected — not yet met: ${reason}. Keep working toward the goal, then call goal_complete again once you can show the proof.` }], details: undefined };
-      },
-    });
+    registerGoalCompleteTool(pi, { goalController, goalSettings, recordGoalEvent });
   }
 
   // ── Slash commands ─────────────────────────────────────────────────
@@ -819,74 +748,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     }
 
     registerTodoTool(pi, todoRuntime);
-
-    pi.registerTool({
-      name: "ask",
-      label: "Ask structured question",
-      description: "Ask the user one option-based question and return a governed decision record. Always set `recommended` to your strongest option (shown to the user, marked '(Recommended)' and listed first) and give each option a `description` explaining its trade-off. The user can type a free-text answer unless `allowOther` is false.",
-      parameters: AskParamsSchema,
-      async execute(_toolCallId, params: AskQuestion, _signal, _onUpdate, toolCtx) {
-        try {
-          const policyState = await policyStatePromise;
-          if (policyState.kind === "error") {
-            return { content: [{ type: "text" as const, text: `Policy configuration error: ${policyState.error}` }], isError: true, details: undefined };
-          }
-          const policy = policyState.policy;
-          if (!toolCtx.hasUI) {
-            const resolved = resolveHeadlessAsk(params, policy.preset);
-            if (resolved.kind === "blocked") {
-              return {
-                content: [{ type: "text" as const, text: resolved.reason }],
-                isError: true,
-                details: undefined,
-              };
-            }
-            const decision = buildAskDecision(params, resolved.selected, resolved.source);
-            return { content: [{ type: "text" as const, text: JSON.stringify(decision) }], details: undefined };
-          }
-
-          // Order options with the recommended one first, then render label — description,
-          // tagging the recommendation so the user can see it (Claude Code AskUserQuestion parity).
-          const recommended = params.options.find((o) => o.id === params.recommended);
-          const rest = params.options.filter((o) => o.id !== params.recommended);
-          const ordered = recommended ? [recommended, ...rest] : [...params.options];
-          const display = (o: { id: string; label: string; description?: string }) => {
-            const base = o.description ? `${o.label} — ${o.description}` : o.label;
-            return o.id === params.recommended ? `${base} (Recommended)` : base;
-          };
-          const rendered = ordered.map((o) => ({ id: o.id, text: display(o) }));
-
-          // Free-text "Other" is offered by default; allowOther:false locks the choice set.
-          const showOther = params.allowOther !== false;
-          const OTHER_LABEL = "✎ Other (type your own answer…)";
-          const choices = rendered.map((r) => r.text);
-          if (showOther) choices.push(OTHER_LABEL);
-
-          const picked = await toolCtx.ui.select(params.question, choices);
-          if (!picked) {
-            return { content: [{ type: "text" as const, text: "ask cancelled" }], isError: true, details: undefined };
-          }
-
-          if (showOther && picked === OTHER_LABEL) {
-            const typed = await toolCtx.ui.input(params.question, "Type your answer");
-            if (typed === undefined || typed.trim().length === 0) {
-              return { content: [{ type: "text" as const, text: "ask cancelled" }], isError: true, details: undefined };
-            }
-            const decision = buildAskDecision(params, [typed.trim()], "user", undefined, true);
-            return { content: [{ type: "text" as const, text: JSON.stringify(decision) }], details: undefined };
-          }
-
-          const match = rendered.find((r) => r.text === picked);
-          if (!match) {
-            return { content: [{ type: "text" as const, text: "ask cancelled" }], isError: true, details: undefined };
-          }
-          const decision = buildAskDecision(params, [match.id], "user");
-          return { content: [{ type: "text" as const, text: JSON.stringify(decision) }], details: undefined };
-        } catch (err) {
-          return { content: [{ type: "text" as const, text: String(err) }], isError: true, details: undefined };
-        }
-      },
-    });
+    registerAskTool(pi, policyStatePromise);
   }
 
   // Registered for every subagent process, not just reviewer roles: several
@@ -897,20 +759,9 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   // to one legacy-only role left every live one calling a tool that was never
   // registered in their process.
   if (isSubagent) {
-    pi.registerTool({
-      name: "report_finding",
-      label: "Report review finding",
-      description: "Record a structured review finding and return the aggregate review verdict.",
-      parameters: FindingParamsSchema,
-      async execute(_toolCallId, params, _signal, _onUpdate) {
-        try {
-          reviewFindings = addFinding(reviewFindings, params);
-          return { content: [{ type: "text" as const, text: formatReviewSummary(reviewFindings) }], details: undefined };
-        } catch (err) {
-          return { content: [{ type: "text" as const, text: String(err) }], isError: true, details: undefined };
-        }
-      },
+    registerReportFindingTool(pi, {
+      getReviewFindings: () => reviewFindings,
+      setReviewFindings: (findings) => { reviewFindings = findings; },
     });
   }
-
 }
