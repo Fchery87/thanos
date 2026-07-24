@@ -37,12 +37,23 @@ export interface MemoryQuery {
   limit?: number;
 }
 
-export interface SaveResult {
-  saved: boolean;
-  /** Present when saved is false. */
-  reason?: "empty" | "too-long" | "duplicate";
-  /** Present when saved is true. */
-  record?: MemoryRecord;
+export type SaveResult =
+  | { saved: true; record: MemoryRecord }
+  | { saved: false; reason: "empty" | "too-long" | "duplicate" };
+
+/**
+ * Type guard for the `saved: true` branch of `SaveResult`. Prefer this over
+ * a plain `if (result.saved)` check followed by an `else`/`else if` chain
+ * that reads `result.reason`: without `strictNullChecks` (this repo's base
+ * tsconfig.json runs with `strict: false`), TypeScript does not narrow a
+ * boolean-discriminated union in the negative branch, even though it
+ * narrows the positive branch fine — so `result.reason` in the `else`
+ * would fail to typecheck there while working under the stricter
+ * tsconfig.strict-boundaries.json. A user-defined type predicate narrows
+ * correctly in both configs.
+ */
+export function isSaveSuccess(result: SaveResult): result is { saved: true; record: MemoryRecord } {
+  return result.saved;
 }
 
 export class MemoryStore {
