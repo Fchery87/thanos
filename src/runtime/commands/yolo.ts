@@ -6,8 +6,8 @@ import { formatPanel } from "../../ui-utils";
 export interface YoloCommandDeps {
   permissions: PermissionManager;
   // A getter, not a bare Promise: deliveryStatePromise is reassigned in place
-  // (see applyDeliverySelection in commands/delivery.ts) whenever /delivery
-  // or the first-launch selector persists a new mode. Capturing the Promise
+  // (see DeliveryRuntime.applySelection in commands/delivery.ts) whenever
+  // /delivery or the first-launch selector persists a new mode. Capturing the Promise
   // by value at registration time would freeze this command onto whatever
   // delivery state existed at register() time — a live getter reads the
   // current binding on every invocation instead.
