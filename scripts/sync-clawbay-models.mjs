@@ -16,9 +16,10 @@
  * - claude-* ids route to the anthropic provider; everything else to the openai one.
  * - New entries get placeholder cost/context flagged in the report for review.
  */
-import { readFileSync, writeFileSync, copyFileSync, chmodSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, copyFileSync, chmodSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, basename, dirname } from "node:path";
+import { backupPath } from "../src/observability/backup.ts";
 
 const DEFAULT_MODELS_PATH = join(homedir(), ".pi", "agent", "models.json");
 // Provider pair: [openai-style completions/responses provider, anthropic-messages provider]
@@ -206,12 +207,14 @@ async function main() {
   };
 
   if (args.write && added.length > 0) {
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const backupPath = `${args.modelsPath}.bak-${stamp}`;
-    copyFileSync(args.modelsPath, backupPath);
+    const dest = backupPath(basename(args.modelsPath));
+    mkdirSync(dirname(dest), { recursive: true, mode: 0o700 });
+    chmodSync(dirname(dest), 0o700); // enforce even if the dir pre-existed with looser perms
+    copyFileSync(args.modelsPath, dest);
+    chmodSync(dest, 0o600); // the backup holds the same config/keys as the live file
     writeFileSync(args.modelsPath, JSON.stringify(next, null, 2) + "\n", "utf-8");
     chmodSync(args.modelsPath, 0o600);
-    summary.backupPath = backupPath;
+    summary.backupPath = dest;
   }
 
   console.log(JSON.stringify(summary, null, 2));
