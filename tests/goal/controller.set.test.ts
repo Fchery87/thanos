@@ -55,3 +55,43 @@ describe("GoalController pause/resume", () => {
     expect(c.resume()).toBe(false);
   });
 });
+
+describe("GoalController adoptFrom", () => {
+  it("transplants another controller's state into this instance", () => {
+    const target = new GoalController({}, now);
+    target.set("original", 0);
+
+    const source = new GoalController({}, now);
+    source.set("restored condition", 500);
+    source.pause();
+
+    target.adoptFrom(source);
+
+    expect(target.snapshot()).toMatchObject({
+      condition: "restored condition", status: "paused",
+    });
+  });
+
+  it("adopting an empty controller clears this instance's goal", () => {
+    const target = new GoalController({}, now);
+    target.set("a", 0);
+
+    const source = new GoalController({}, now);
+
+    target.adoptFrom(source);
+
+    expect(target.snapshot()).toBeUndefined();
+  });
+
+  it("mutating the source after adoptFrom does not affect the target (deep-ish copy)", () => {
+    const target = new GoalController({}, now);
+    const source = new GoalController({}, now);
+    source.set("shared", 0);
+
+    target.adoptFrom(source);
+    source.pause();
+
+    expect(target.snapshot()?.status).toBe("active");
+    expect(source.snapshot()?.status).toBe("paused");
+  });
+});

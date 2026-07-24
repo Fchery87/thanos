@@ -1,7 +1,7 @@
 import { buildContinueDirective, buildFirstDirective } from "./prompts";
 import { resolveGoalSettings, type CompletionAction, type GoalSettings, type GoalSnapshot, type TurnAction, type Verdict } from "./types";
 
-const MAX_CONDITION = 4000;
+export const MAX_CONDITION = 4000;
 
 interface Internal {
   condition: string;
@@ -119,5 +119,24 @@ export class GoalController {
       return { kind: "achieved", reason: verdict.reason, turns: this.g.turnsEvaluated };
     }
     return { kind: "rejected", reason: verdict.reason };
+  }
+
+  /**
+   * Package-private snapshot of the full internal state (unlike snapshot(),
+   * which strips fields not meant for external consumers). Used only by
+   * adoptFrom() to transplant state between two controller instances.
+   */
+  private snapshotInternal(): Internal | undefined {
+    return this.g ? { ...this.g } : undefined;
+  }
+
+  /**
+   * Replace this controller's state with another's. Used by session restore:
+   * the module-scoped controller instance is constructed once and referenced
+   * by many closures, so we overwrite its internals in place rather than
+   * reconstructing (which would orphan those references).
+   */
+  adoptFrom(other: GoalController): void {
+    this.g = other.snapshotInternal();
   }
 }
