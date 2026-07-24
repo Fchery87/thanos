@@ -1,6 +1,5 @@
 // src/index.ts
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
 
 import { AuditLogger } from "../audit/logger";
@@ -16,16 +15,14 @@ import { readAborted, readWillRetry } from "../goal/extract";
 import { buildGoalSystemPrompt } from "../goal/prompts";
 import { loadGoalSettings } from "../goal/load-settings";
 import { resolveGoalSettings } from "../goal/types";
-import { restoreController, serializeGoal } from "../goal/persist";
-import { clearGoalState, loadGoalState, saveGoalState } from "../goal/store";
+import { serializeGoal } from "../goal/persist";
+import { clearGoalState, saveGoalState } from "../goal/store";
 import { makeAfterToolHandler } from "../hooks/after-tool";
 import type { TaskParams } from "../agents/task-tool";
 import { loadRoster, formatRoster } from "../agents/roster";
 import { loadPolicyState } from "../policy/state";
-import { readRepoId } from "../governance/delivery";
 import { registerSlashCommands } from "../commands/slash";
 import { MCPManager } from "../mcp/manager";
-import { initializeMcpSession } from "../mcp/lifecycle";
 import {
   DEFAULT_PICKER_LABEL_WIDTH,
   fitTerminalText,
@@ -33,9 +30,6 @@ import {
   formatPanel,
   noopTheme,
 } from "../ui-utils";
-import { renderWelcomeHeader, formatTimeAgo, type WelcomeMcpSummary, type WelcomePolicySummary } from "../welcome/header";
-import { checkForUpdate } from "../welcome/update-check";
-import { checkPatchDrift, formatPatchDriftWarning } from "../welcome/patch-drift";
 import type { MemoryRecord } from "../memory/types";
 // Model router removed — use /models command or pi-subagents for model selection
 import { createSnapshot } from "../security/snapshot";
@@ -63,6 +57,7 @@ import { registerMcpCommand } from "./commands/mcp";
 import { registerModelsCommand } from "./commands/models";
 import { registerDiagnosticShortcuts } from "./shortcuts";
 import { registerGoalCompleteTool, registerAskTool, registerReportFindingTool } from "./tools";
+import { registerSessionStart } from "./session-start";
 
 
 const CTX_EXEC_TOOLS = new Set(["ctx_execute", "ctx_execute_file", "ctx_batch_execute"]);
@@ -175,175 +170,17 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   // ── MCP server management (main session only) ───────────────────────
   const mcpManager = isSubagent ? null : new MCPManager();
 
-  pi.on("session_start", async (event, ctx) => {
-    reviewFindings = [];
-    todoRuntime.reconstructFrom(ctx.sessionManager.getBranch());
-    ctx.ui.setStatus("harness-todo", todoRuntime.statusSegment(ctx));
-    if (!mcpManager) return;
-
-    // ── Restore a persisted /goal across a session restart ──────────────
-    // Parent-only: guaranteed by the `if (!mcpManager) return` guard above
-    // (mcpManager is null for subagents — see its construction). We do NOT
-    // fold this into the same isSubagent check other blocks below use,
-    // since that guard is already implied here; adding a second redundant
-    // isSubagent check would only obscure that this whole handler tail is
-    // parent-only. Restore leaves the goal active/paused as stored but does
-    // NOT auto-continue it (no sendFollowUp/sendUserMessage here) — the loop
-    // only advances on agent_end, and firing work unprompted on launch would
-    // be surprising. The status line + notify below hand control back to
-    // the user (their next message, or /goal resume for a paused goal).
-    const repo = process.cwd();
-    const storedGoal = await loadGoalState(repo, repo);
-    if (storedGoal && ctx.isProjectTrusted()) {
-      const tokens = ctx.getContextUsage()?.tokens ?? 0;
-      const restored = restoreController(storedGoal, goalSettings, () => Date.now(), tokens);
-      goalController.adoptFrom(restored);
-      ctx.ui.setStatus("harness-goal", renderGoalStatusSegment(goalController.snapshot()));
-      ctx.ui.notify(
-        `◎ /goal restored (${storedGoal.status}) — ${storedGoal.condition}. ${storedGoal.status === "paused" ? "Run /goal resume to continue." : "Send a message or run /goal resume to continue working on it."}`,
-        "info",
-      );
-    } else if (storedGoal) {
-      ctx.ui.notify(
-        `◎ /goal — a stored goal exists but this project isn't trusted (trust it to restore: "${storedGoal.condition}").`,
-        "warning",
-      );
-    }
-
-    const theme = ctx.ui.theme;
-
-    // session_start is parent-only (the `if (!mcpManager) return` guard above).
-    // If the registry locks yolo, enforce it here too — idempotent with the
-    // env-based lock applied at construction.
-    const delivery = await deliveryRuntime.getState();
-    if (delivery?.yoloLocked) permissions.lockYolo();
-
-    // Show yolo/lens status if default-on
-    if (permissions.isYolo) {
-      ctx.ui.setStatus("harness-yolo", theme.fg("error", "⚡ yolo"));
-    }
-    lens.setStatus(ctx);
-
-    // Delivery mode status segment (autonomy shown only when unattended).
-    if (delivery) {
-      ctx.ui.setStatus("harness-delivery", theme.fg("accent", DeliveryRuntime.statusLabel(delivery)));
-    }
-
-    // ── First-launch delivery selector ─────────────────────────────────
-    // An unregistered repo resolves to the safe default (local-only/attended).
-    // When a human is present, offer to register it in the trusted captain
-    // registry — the interactive counterpart of hand-editing projects.json.
-    // Every non-interactive path (ESC, no UI, subagent — excluded above by the
-    // mcpManager guard) keeps the fail-closed default untouched.
-    if (delivery && !delivery.registered && ctx.hasUI) {
-      try {
-        const repoId = await readRepoId(process.cwd());
-        const mode = await deliveryRuntime.promptMode(ctx, repoId.remote ?? repoId.path);
-        if (mode) {
-          await deliveryRuntime.applySelection(ctx, mode, permissions);
-        } else {
-          ctx.ui.notify(
-            "Keeping the safe default (local-only). Run /delivery to register this project later.",
-            "info",
-          );
-        }
-      } catch (err) {
-        ctx.ui.notify(
-          `Delivery selector failed: ${err instanceof Error ? err.message : String(err)}`,
-          "warning",
-        );
-      }
-    }
-
-    let mcpSummary: WelcomeMcpSummary = { configured: 0, connected: 0, failed: 0, initFailed: false };
-
-    // ── Thanos welcome header — two-column layout, clears on first prompt ─
-    if (event.reason === "startup" || event.reason === "new") {
-      const model = ctx.model;
-      const modelStr = model ? (model.name || model.id) : "—";
-      const thinkingStr = (pi.getThinkingLevel() as string) || "off";
-      const policyState = await policyStatePromise;
-      const policy: WelcomePolicySummary = policyState.kind === "ok"
-        ? {
-            kind: "loaded",
-            preset: policyState.policy.preset,
-            rules: policyState.policy.rules.length,
-            auditEnabled: policyState.policy.audit.enabled,
-          }
-        : { kind: "error" };
-
-      type SessionRow = { label: string; age: string };
-      let recentRows: SessionRow[] = [];
-      try {
-        const sessions = await SessionManager.list(ctx.cwd, ctx.sessionManager.getSessionDir());
-        recentRows = sessions
-          .sort((a, b) => b.modified.getTime() - a.modified.getTime())
-          .slice(0, 5)
-          .map((s) => ({
-            label: (s.name || s.firstMessage || "Untitled").slice(0, 72),
-            age: formatTimeAgo(s.modified),
-          }));
-      } catch { /* session dir may not exist yet */ }
-
-      ctx.ui.setHeader((_tui, theme) => renderWelcomeHeader(theme, {
-        modelStr,
-        thinkingStr,
-        modeStr: String(defaultTaskType ?? "explore (default)"),
-        mcp: mcpSummary,
-        policy,
-        recentRows,
-      }));
-
-      // Non-blocking release check (cached 24h). Failure is silent — an
-      // offline session should never see noise from this.
-      checkForUpdate().then((update) => {
-        if (update?.updateAvailable) {
-          ctx.ui.notify(
-            `Thanos ${update.latest} is available (you have v${update.current}) — run 'thanos update' to upgrade.`,
-            "info",
-          );
-        }
-      }).catch(() => {});
-
-      // Non-blocking pi-subagents patch-drift check. A package update can
-      // silently revert the two Thanos source patches (see
-      // scripts/patch-pi-subagents.mjs), and the first symptom is the fanout
-      // double-registration crash resurfacing unexplained on a reviewer run.
-      // Silent when pi-subagents isn't installed or both patches are intact.
-      checkPatchDrift().then((result) => {
-        const warning = formatPatchDriftWarning(result);
-        if (warning) ctx.ui.notify(warning, "warning");
-      }).catch(() => {});
-    }
-
-    initializeMcpSession({ manager: mcpManager, pi, cwd: ctx.cwd }).then((init) => {
-      mcpSummary = {
-        configured: init.statuses.length,
-        connected: init.connectedCount,
-        failed: init.statuses.filter((s) => s.error).length,
-        initFailed: init.kind === "failed",
-      };
-      if (init.kind === "failed") {
-        ctx.ui.notify(`MCP init failed: ${init.error}`, "warning");
-        return;
-      }
-      const connected = init.statuses.filter((s) => !s.error);
-      const failed = init.statuses.filter((s) => s.error);
-      if (connected.length > 0) {
-        ctx.ui.setStatus("harness-mcp", theme.fg("accent", `mcp:${connected.length}`));
-      }
-      if (failed.length > 0) {
-        const summary = failed.map((s) => `${theme.fg("error", s.name)}: ${s.error}`).join("\n  ");
-        ctx.ui.notify(formatPanel(theme, "MCP Failed", summary, "error"), "warning");
-      }
-    }).catch((err) => {
-      ctx.ui.notify(`MCP init failed: ${err instanceof Error ? err.message : String(err)}`, "warning");
-    });
-  });
-
-  pi.on("session_tree", async (_event, ctx) => {
-    todoRuntime.reconstructFrom(ctx.sessionManager.getBranch());
-    ctx.ui.setStatus("harness-todo", todoRuntime.statusSegment(ctx));
+  registerSessionStart(pi, {
+    todoRuntime,
+    mcpManager,
+    deliveryRuntime,
+    permissions,
+    lens,
+    policyStatePromise,
+    getDefaultTaskType: () => defaultTaskType,
+    clearReviewFindings: () => { reviewFindings = []; },
+    goalController,
+    goalSettings,
   });
 
   // ── --spec flag ────────────────────────────────────────────────────
@@ -453,11 +290,6 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
 
   registerYoloShortcut(pi, permissions);
 
-  // ── MCP cleanup on shutdown ────────────────────────────────────────
-
-  pi.on("session_shutdown", () => {
-    mcpManager?.disconnect();
-  });
   // ── Spec classification + session reset on each prompt ─────────────
   pi.on("before_agent_start", async (event, ctx) => {
     ctx.ui.setHeader(undefined);
