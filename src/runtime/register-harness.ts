@@ -28,10 +28,7 @@ import { makeAfterToolHandler } from "../hooks/after-tool";
 import type { TaskParams } from "../agents/task-tool";
 import { loadRoster, formatRoster } from "../agents/roster";
 import { loadPolicyState } from "../policy/state";
-import { loadRegistry, readRepoId, resolveDeliveryState } from "../governance/delivery";
-import type { DeliveryMode, ResolvedDelivery } from "../governance/delivery";
-import { deliveryPolicyOverlay } from "../governance/delivery-overlay";
-import { DELIVERY_MODE_HELP, DELIVERY_MODES, saveRegistry, upsertRegistryEntry } from "../governance/delivery-select";
+import { readRepoId } from "../governance/delivery";
 import { fastForwardMerge, getCurrentBranch } from "../governance/ff-merge";
 import { registerSlashCommands } from "../commands/slash";
 import { MCPManager } from "../mcp/manager";
@@ -84,6 +81,8 @@ import { registerModesCommand } from "./commands/modes";
 import { registerTodoCommand, registerTodoTool, TodoRuntime } from "./commands/todo";
 import { registerDesignerCommand } from "./commands/designer";
 import { projectMemory, registerMemoryCommands } from "./commands/memory";
+import { registerYoloCommand, registerYoloShortcut } from "./commands/yolo";
+import { DeliveryRuntime, registerDeliveryCommand } from "./commands/delivery";
 
 
 /** Human-readable list of gate names for /ship prompts ("none" when empty). */
@@ -195,45 +194,9 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   // subagent (its cwd is the worktree path), so it falls back to the safe default
   // (local-only/attended) — fail-safe, but path-only entries don't propagate to
   // subagents.
-  let deliveryStatePromise = resolveDeliveryState(process.cwd());
-  // The overlay is derived once per RESOLUTION, not per tool call. Both bindings
-  // are `let`: the delivery selector (first-launch prompt or /delivery) swaps
-  // them mid-session after persisting a registry change, so a granted mode takes
-  // effect without a restart. Every swap goes through applyDeliverySelection.
-  let deliveryOverlayPromise = deliveryStatePromise.then((d) => deliveryPolicyOverlay(d.mode));
-
-  function deliveryStatusLabel(d: ResolvedDelivery): string {
-    return `mode:${d.mode}${d.autonomy === "unattended" ? " ⚙ unattended" : ""}`;
-  }
-
-  /** Show the delivery-mode picker. Returns undefined when dismissed (fail-closed). */
-  async function promptDeliveryMode(ctx: ExtensionContext, repoLabel: string): Promise<DeliveryMode | undefined> {
-    const options = DELIVERY_MODES.map((m) => `${m} — ${DELIVERY_MODE_HELP[m]}`);
-    const choice = await ctx.ui.select(`New project: ${repoLabel} — choose a delivery mode`, options);
-    if (!choice) return undefined;
-    return DELIVERY_MODES.find((m) => choice.startsWith(m));
-  }
-
-  /**
-   * Persist a selector choice to the trusted registry, then swap the LIVE
-   * session's delivery state (mode overlay, yolo lock, status segment) so the
-   * grant applies immediately. Throws on persistence failure — callers surface
-   * it rather than letting the session believe the grant stuck.
-   */
-  async function applyDeliverySelection(ctx: ExtensionContext, mode: DeliveryMode): Promise<void> {
-    const repoId = await readRepoId(process.cwd());
-    await saveRegistry(upsertRegistryEntry(await loadRegistry(), repoId, mode));
-    const next = await resolveDeliveryState(process.cwd());
-    deliveryStatePromise = Promise.resolve(next);
-    deliveryOverlayPromise = Promise.resolve(deliveryPolicyOverlay(next.mode));
-    if (next.yoloLocked) permissions.lockYolo();
-    const theme = ctx.ui.theme ?? noopTheme;
-    ctx.ui.setStatus("harness-delivery", theme.fg("accent", deliveryStatusLabel(next)));
-    ctx.ui.notify(
-      `Delivery mode for ${repoId.remote ?? repoId.path}: ${next.mode} (saved to ~/.pi/agent/projects.json — /delivery to change)`,
-      "info",
-    );
-  }
+  // See DeliveryRuntime's constructor docblock for the subagent-remote-match
+  // caveat and why resolution happens in both parent and child processes.
+  const deliveryRuntime = new DeliveryRuntime(process.cwd());
 
   async function requirePolicy(ctx: ExtensionContext) {
     const policyState = await policyStatePromise;
@@ -288,7 +251,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     // session_start is parent-only (the `if (!mcpManager) return` guard above).
     // If the registry locks yolo, enforce it here too — idempotent with the
     // env-based lock applied at construction.
-    const delivery = await deliveryStatePromise;
+    const delivery = await deliveryRuntime.getState();
     if (delivery?.yoloLocked) permissions.lockYolo();
 
     // Show yolo/lens status if default-on
@@ -299,7 +262,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
 
     // Delivery mode status segment (autonomy shown only when unattended).
     if (delivery) {
-      ctx.ui.setStatus("harness-delivery", theme.fg("accent", deliveryStatusLabel(delivery)));
+      ctx.ui.setStatus("harness-delivery", theme.fg("accent", DeliveryRuntime.statusLabel(delivery)));
     }
 
     // ── First-launch delivery selector ─────────────────────────────────
@@ -311,9 +274,9 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     if (delivery && !delivery.registered && ctx.hasUI) {
       try {
         const repoId = await readRepoId(process.cwd());
-        const mode = await promptDeliveryMode(ctx, repoId.remote ?? repoId.path);
+        const mode = await deliveryRuntime.promptMode(ctx, repoId.remote ?? repoId.path);
         if (mode) {
-          await applyDeliverySelection(ctx, mode);
+          await deliveryRuntime.applySelection(ctx, mode, permissions);
         } else {
           ctx.ui.notify(
             "Keeping the safe default (local-only). Run /delivery to register this project later.",
@@ -440,108 +403,11 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   }
 
   // ── /yolo — bypass all permission checks ──────────────────────────
-  pi.registerCommand("yolo", {
-    description: "Toggle yolo mode — skips all permission prompts and policy checks.",
-    handler: async (_args, ctx) => {
-      if (permissions.yoloLocked) {
-        ctx.ui.notify("Yolo is disabled by configuration.", "warning");
-        return;
-      }
-
-      const delivery = await deliveryStatePromise;
-      if (delivery?.autonomy === "unattended") {
-        ctx.ui.notify("Yolo is not available in unattended autonomy mode.", "warning");
-        return;
-      }
-
-      if (!ctx.hasUI) {
-        ctx.ui.notify("Yolo requires an interactive UI.", "warning");
-        return;
-      }
-
-      const theme = ctx.ui.theme;
-      const current = permissions.isYolo;
-
-      if (!current) {
-        // Require explicit confirmation before enabling. Yolo bypasses
-        // permission prompts and risk gating in every delivery mode, but the
-        // immutable protection floor still applies — explicit policy denies,
-        // local-only egress/push guards, and Lens Lite secret scanning.
-        const ok = await ctx.ui.confirm(
-          "Enable Yolo Mode?",
-          "Permission prompts and risk gating will be bypassed for this session.\n" +
-          "Explicit policy denies, local-only egress guards, and secret scanning still apply.\n" +
-          "The agent will execute any tool without asking. Use in trusted environments only.",
-        );
-        if (!ok) {
-          ctx.ui.notify("Yolo mode not enabled.", "info");
-          return;
-        }
-        permissions.setYolo(true);
-        ctx.ui.setStatus("harness-yolo", theme.fg("error", "⚡ yolo"));
-        ctx.ui.notify(
-          formatPanel(theme, "Yolo Mode ON", [
-            theme.fg("warning", "All permission checks are now bypassed."),
-            theme.fg("dim", "Run /yolo again to restore normal permission behavior."),
-          ], "warning"),
-          "warning",
-        );
-      } else {
-        permissions.setYolo(false);
-        ctx.ui.setStatus("harness-yolo", undefined);
-        ctx.ui.notify(
-          formatPanel(theme, "Yolo Mode OFF", "Permission checks restored.", "dim"),
-          "info",
-        );
-      }
-    },
-  });
+  registerYoloCommand(pi, { permissions, getDeliveryState: () => deliveryRuntime.getState() });
 
   // ── /delivery — choose this project's delivery mode (persisted) ──
 
-  pi.registerCommand("delivery", {
-    description: "Choose the delivery mode for this project (persists to ~/.pi/agent/projects.json)",
-    getArgumentCompletions: (prefix) => {
-      const filtered = (DELIVERY_MODES as readonly string[]).filter((mode) => mode.startsWith(prefix));
-      return filtered.length > 0 ? filtered.map((value) => ({ value, label: value })) : null;
-    },
-    handler: async (args, ctx) => {
-      if (isSubagent) {
-        ctx.ui.notify("/delivery is only available in the main session.", "warning");
-        return;
-      }
-      const trimmed = args.trim();
-      const explicit = (DELIVERY_MODES as readonly string[]).includes(trimmed)
-        ? (trimmed as DeliveryMode)
-        : undefined;
-      if (trimmed && !explicit) {
-        ctx.ui.notify(
-          `Unknown delivery mode "${trimmed}" — expected one of: ${DELIVERY_MODES.join(", ")}`,
-          "warning",
-        );
-        return;
-      }
-      if (!ctx.hasUI && !explicit) {
-        ctx.ui.notify("The delivery selector requires an interactive UI (or pass a mode: /delivery direct-PR)", "warning");
-        return;
-      }
-
-      let mode = explicit;
-      if (!mode) {
-        const repoId = await readRepoId(process.cwd());
-        mode = await promptDeliveryMode(ctx, repoId.remote ?? repoId.path);
-      }
-      if (!mode) return;
-      try {
-        await applyDeliverySelection(ctx, mode);
-      } catch (err) {
-        ctx.ui.notify(
-          `Failed to save delivery mode: ${err instanceof Error ? err.message : String(err)}`,
-          "warning",
-        );
-      }
-    },
-  });
+  registerDeliveryCommand(pi, { isSubagent, runtime: deliveryRuntime, permissions });
 
   // ── /ship — deliver the current branch per the resolved delivery mode ──
 
@@ -555,7 +421,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
         return;
       }
 
-      const delivery = await deliveryStatePromise;
+      const delivery = await deliveryRuntime.getState();
 
       const currentBranch = await getCurrentBranch(process.cwd());
       if (!currentBranch) {
@@ -1394,37 +1260,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
 
   registerDesignerCommand(pi, isSubagent);
 
-  pi.registerShortcut("ctrl+shift+y", {
-    description: "Toggle yolo mode — bypass all permission checks",
-    handler: async (ctx) => {
-      if (permissions.yoloLocked) {
-        ctx.ui.notify("Yolo is disabled by configuration.", "warning");
-        return;
-      }
-      const theme = ctx.ui.theme;
-      if (!permissions.isYolo) {
-        const ok = await ctx.ui.confirm(
-          "Enable Yolo Mode?",
-          "All permission checks, policy rules, and confirmation prompts will be bypassed.\n" +
-          "The agent will execute any tool without asking. Use in trusted environments only.",
-        );
-        if (!ok) return;
-        permissions.setYolo(true);
-        ctx.ui.setStatus("harness-yolo", theme.fg("error", "⚡ yolo"));
-        ctx.ui.notify(
-          formatPanel(theme, "Yolo Mode ON", [
-            theme.fg("warning", "All permission checks are now bypassed."),
-            theme.fg("dim", "Press Ctrl+Shift+Y again to restore normal behavior."),
-          ], "warning"),
-          "warning",
-        );
-      } else {
-        permissions.setYolo(false);
-        ctx.ui.setStatus("harness-yolo", undefined);
-        ctx.ui.notify(formatPanel(theme, "Yolo Mode OFF", "Permission checks restored.", "dim"), "info");
-      }
-    },
-  });
+  registerYoloShortcut(pi, permissions);
 
   // ── MCP cleanup on shutdown ────────────────────────────────────────
 
@@ -1547,12 +1383,12 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
       return { block: true, reason: `Policy configuration error: ${policyState.error}` };
     }
 
-    const overlay = [...roleNarrowingOverlay(childRole), ...(await deliveryOverlayPromise)];
+    const overlay = [...roleNarrowingOverlay(childRole), ...(await deliveryRuntime.getOverlay())];
     const effectivePolicy = overlay.length
       ? { ...policyState.policy, rules: [...overlay, ...policyState.policy.rules] }
       : policyState.policy;
 
-    const delivery = await deliveryStatePromise;
+    const delivery = await deliveryRuntime.getState();
 
     // Explicit-spec approval gate: fires before governance runtime
     const active = spec.activeSpec;
