@@ -9,7 +9,8 @@
 // and runtime state out of version-controlled config.
 import { readFile, writeFile, mkdir, rename, chmod, copyFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, dirname } from "node:path";
+import { join, dirname, basename } from "node:path";
+import { backupPath } from "../observability/backup";
 
 // ─── Paths ────────────────────────────────────────────────────────────────────
 
@@ -90,10 +91,14 @@ export async function readMcpSecrets(): Promise<McpSecrets> {
     const parsed = JSON.parse(raw) as McpSecrets;
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
+    const dest = backupPath(basename(SECRETS_PATH));
     console.error(
-      "[harness][mcp] mcp-secrets.json is corrupted — resetting to empty. Backup at mcp-secrets.json.bak",
+      `[harness][mcp] mcp-secrets.json is corrupted — resetting to empty. Backup at ${dest}`,
     );
-    try { await copyFile(SECRETS_PATH, SECRETS_PATH + ".bak"); } catch { /* ignore */ }
+    try {
+      await mkdir(dirname(dest), { recursive: true });
+      await copyFile(SECRETS_PATH, dest);
+    } catch { /* ignore */ }
     return {};
   }
 }

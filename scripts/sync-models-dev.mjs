@@ -9,9 +9,10 @@
  * - Never changes provider auth, baseUrl, api, headers, authHeader, or model ids.
  * - Only updates safe model metadata fields when a matching models.dev entry is found.
  */
-import { readFileSync, writeFileSync, copyFileSync, chmodSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, copyFileSync, chmodSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, basename, dirname } from "node:path";
+import { backupPath } from "../src/observability/backup.ts";
 
 const DEFAULT_MODELS_PATH = join(homedir(), ".pi", "agent", "models.json");
 const MODELS_DEV_URL = "https://models.dev/api.json";
@@ -228,12 +229,12 @@ async function main() {
   };
 
   if (args.write && changed > 0) {
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const backupPath = `${args.modelsPath}.bak-${stamp}`;
-    copyFileSync(args.modelsPath, backupPath);
+    const dest = backupPath(basename(args.modelsPath));
+    mkdirSync(dirname(dest), { recursive: true });
+    copyFileSync(args.modelsPath, dest);
     writeFileSync(args.modelsPath, JSON.stringify(next, null, 2) + "\n", "utf-8");
     chmodSync(args.modelsPath, 0o600);
-    summary.backupPath = backupPath;
+    summary.backupPath = dest;
   }
 
   console.log(JSON.stringify(summary, null, 2));

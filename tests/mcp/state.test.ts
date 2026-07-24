@@ -45,7 +45,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 const SECRETS_PATH = join(homedir(), ".pi", "mcp-secrets.json");
 const SECRETS_TMP  = SECRETS_PATH + ".tmp";
-const SECRETS_BAK  = SECRETS_PATH + ".bak";
+// Backups now land under `.harness/backups/<name>.<ISO>.bak` (see
+// src/observability/backup.ts) instead of a `mcp-secrets.json.bak` sibling.
+const SECRETS_BAK_RE = /[/\\]\.harness[/\\]backups[/\\]mcp-secrets\.json\.[\d-]+T[\d-]+Z\.bak$/;
 
 // ─── Test setup ───────────────────────────────────────────────────────────────
 
@@ -149,8 +151,11 @@ describe("readMcpSecrets — error handling (Task 8)", () => {
 
     await readMcpSecrets();
 
-    // copyFile should be called to back up the corrupted file
-    expect(mockCopyFile).toHaveBeenCalledWith(SECRETS_PATH, SECRETS_BAK);
+    // copyFile should be called to back up the corrupted file under .harness/backups/
+    expect(mockCopyFile).toHaveBeenCalledTimes(1);
+    const [src, dest] = mockCopyFile.mock.calls[0];
+    expect(src).toBe(SECRETS_PATH);
+    expect(dest).toMatch(SECRETS_BAK_RE);
   });
 
   it("logs an error and returns {} on generic read errors (non-ENOENT, non-SyntaxError)", async () => {
