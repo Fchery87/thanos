@@ -326,16 +326,23 @@ describe("register", () => {
   });
 
   it("review shortcut is unavailable in subagent sessions", async () => {
-    const originalEnv = process.env.HARNESS_SUBAGENT;
-    process.env.HARNESS_SUBAGENT = "reviewer";
+    const originalChild = process.env.PI_SUBAGENT_CHILD;
+    const originalChildAgent = process.env.PI_SUBAGENT_CHILD_AGENT;
+    process.env.PI_SUBAGENT_CHILD = "1";
+    process.env.PI_SUBAGENT_CHILD_AGENT = "reviewer";
     const sendUserMessage = vi.fn(async () => undefined);
     const notify = vi.fn();
     const { api } = createFakePi({ sendUserMessage } as Partial<RegisterApi>);
     register(api);
-    if (originalEnv === undefined) {
-      delete process.env.HARNESS_SUBAGENT;
+    if (originalChild === undefined) {
+      delete process.env.PI_SUBAGENT_CHILD;
     } else {
-      process.env.HARNESS_SUBAGENT = originalEnv;
+      process.env.PI_SUBAGENT_CHILD = originalChild;
+    }
+    if (originalChildAgent === undefined) {
+      delete process.env.PI_SUBAGENT_CHILD_AGENT;
+    } else {
+      process.env.PI_SUBAGENT_CHILD_AGENT = originalChildAgent;
     }
 
     const registerShortcut = api.registerShortcut as ReturnType<typeof vi.fn>;
@@ -389,12 +396,23 @@ describe("register", () => {
   });
 
   it("resets report_finding state on session_start so prior findings don't leak", async () => {
-    // report_finding is only registered for reviewer subagents
-    const originalEnv = process.env.HARNESS_SUBAGENT;
-    process.env.HARNESS_SUBAGENT = "reviewer";
+    // report_finding is only registered for subagent sessions
+    const originalChild = process.env.PI_SUBAGENT_CHILD;
+    const originalChildAgent = process.env.PI_SUBAGENT_CHILD_AGENT;
+    process.env.PI_SUBAGENT_CHILD = "1";
+    process.env.PI_SUBAGENT_CHILD_AGENT = "reviewer";
     const { api, handlers } = createFakePi();
     register(api);
-    process.env.HARNESS_SUBAGENT = originalEnv;
+    if (originalChild === undefined) {
+      delete process.env.PI_SUBAGENT_CHILD;
+    } else {
+      process.env.PI_SUBAGENT_CHILD = originalChild;
+    }
+    if (originalChildAgent === undefined) {
+      delete process.env.PI_SUBAGENT_CHILD_AGENT;
+    } else {
+      process.env.PI_SUBAGENT_CHILD_AGENT = originalChildAgent;
+    }
 
     // Locate the report_finding tool executor
     const registerTool = api.registerTool as ReturnType<typeof vi.fn>;

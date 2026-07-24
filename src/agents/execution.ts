@@ -52,19 +52,16 @@ export function getPiInvocation(args: string[]): { cmd: string; args: string[] }
   return { cmd: "pi", args };
 }
 
+// 3-arg shape kept only for call-site compatibility with task-tool.ts/run.ts
+// (dormant, out of scope for this change) — type/policy are no longer used
+// for role logic.
 export function buildSubagentEnv(
-  type: AgentType,
+  _type: AgentType,
   _policy: HarnessPolicy | undefined,
   policyFile: string | undefined,
 ): NodeJS.ProcessEnv {
-  // reviewer gets its own role value so its process can register the
-  // report_finding tool. All other agent types get "1". Either value marks the
-  // process as a subagent: the task tool is gated behind !isSubagent, so every
-  // subagent (reviewer included) is a leaf and cannot spawn further subagents.
-  const role = type === "reviewer" ? "reviewer" : "1";
   return {
     ...process.env,
-    HARNESS_SUBAGENT: role,
     ...(policyFile ? { HARNESS_POLICY_FILE: policyFile } : {}),
   };
 }
