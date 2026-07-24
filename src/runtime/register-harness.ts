@@ -48,9 +48,9 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   const isSubagent = isSubagentProcess(process.env);
   // Precise live-roster role name (e.g. "reviewer-security", "explore"),
   // undefined in the parent session (PI_SUBAGENT_CHILD_AGENT is only ever set
-  // on a spawned child). Drives roleNarrowingOverlay below — undefined
-  // naturally yields no narrowing, which is exactly right for a parent
-  // session.
+  // on a spawned child). Passed to registerGovernanceHooks, where it drives
+  // roleNarrowingOverlay — undefined naturally yields no narrowing, which is
+  // exactly right for a parent session.
   const childRole = detectChildRole(process.env);
   const sessionId = crypto.randomUUID();
   const agentType = isSubagent ? "subagent" : "parent" as const;
@@ -68,20 +68,9 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   const goalSettings = resolveGoalSettings(loadGoalSettings());
   const goalController = new GoalController(goalSettings);
   const policyStatePromise = loadPolicyState(process.cwd(), process.env.HARNESS_POLICY_FILE);
-  // Resolved in BOTH parent and child processes. A subagent's cwd is a worktree
-  // of the same repo (shared git remote), so it matches the same registry entry —
-  // giving children the same delivery overlay (e.g. local-only push-deny) AND the
-  // repo's autonomy. This is what lets unattended repos run headless subagents
-  // while attended/unregistered repos correctly fail closed (writer subagents
-  // stall with no UI rather than auto-acting). resolveDeliveryState is fail-safe
-  // (never throws).
-  // CAVEAT: the registry match is by git REMOTE. A registry entry keyed only by
-  // `path` (no `match`/remote), or a repo with no `origin`, won't match for a
-  // subagent (its cwd is the worktree path), so it falls back to the safe default
-  // (local-only/attended) — fail-safe, but path-only entries don't propagate to
-  // subagents.
-  // See DeliveryRuntime's constructor docblock for the subagent-remote-match
-  // caveat and why resolution happens in both parent and child processes.
+  // Resolved in BOTH parent and child processes — see DeliveryRuntime's
+  // constructor docblock for why, plus the subagent-remote-match caveat
+  // (path-only registry entries don't propagate to a subagent's worktree cwd).
   const deliveryRuntime = new DeliveryRuntime(process.cwd());
 
   // ── MCP server management (main session only) ───────────────────────
