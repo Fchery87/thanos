@@ -23,6 +23,8 @@ import { confirmGoalCompletion } from "../goal/confirm";
 import { loadEvaluatorOverride, loadGoalSettings } from "../goal/load-settings";
 import { pickEvaluatorModel, resolveEvaluatorAuth } from "../goal/evaluator-model";
 import { resolveGoalSettings } from "../goal/types";
+import { restoreController, serializeGoal } from "../goal/persist";
+import { clearGoalState, loadGoalState, saveGoalState } from "../goal/store";
 import { makeAfterToolHandler } from "../hooks/after-tool";
 import type { TaskParams } from "../agents/task-tool";
 import { AGENT_TYPES } from "../agents/registry";
@@ -252,6 +254,35 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     todoState = reconstructTodoState(ctx.sessionManager.getBranch());
     ctx.ui.setStatus("harness-todo", todoStatusSegment(ctx, todoState));
     if (!mcpManager) return;
+
+    // ── Restore a persisted /goal across a session restart ──────────────
+    // Parent-only: guaranteed by the `if (!mcpManager) return` guard above
+    // (mcpManager is null for subagents — see its construction). We do NOT
+    // fold this into the same isSubagent check other blocks below use,
+    // since that guard is already implied here; adding a second redundant
+    // isSubagent check would only obscure that this whole handler tail is
+    // parent-only. Restore leaves the goal active/paused as stored but does
+    // NOT auto-continue it (no sendFollowUp/sendUserMessage here) — the loop
+    // only advances on agent_end, and firing work unprompted on launch would
+    // be surprising. The status line + notify below hand control back to
+    // the user (their next message, or /goal resume for a paused goal).
+    const repo = process.cwd();
+    const storedGoal = await loadGoalState(repo, repo);
+    if (storedGoal && ctx.isProjectTrusted()) {
+      const tokens = ctx.getContextUsage()?.tokens ?? 0;
+      const restored = restoreController(storedGoal, goalSettings, () => Date.now(), tokens);
+      goalController.adoptFrom(restored);
+      ctx.ui.setStatus("harness-goal", renderGoalStatusSegment(goalController.snapshot()));
+      ctx.ui.notify(
+        `◎ /goal restored (${storedGoal.status}) — ${storedGoal.condition}. ${storedGoal.status === "paused" ? "Run /goal resume to continue." : "Send a message or run /goal resume to continue working on it."}`,
+        "info",
+      );
+    } else if (storedGoal) {
+      ctx.ui.notify(
+        `◎ /goal — a stored goal exists but this project isn't trusted (trust it to restore: "${storedGoal.condition}").`,
+        "warning",
+      );
+    }
 
     const theme = ctx.ui.theme;
 
@@ -1279,13 +1310,32 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   });
 
   // ── /goal command (self-checking autonomous loop) ──────────────────
-  const recordGoalEvent = (event: { type: "goal_set" | "goal_achieved" | "goal_paused"; summary: string; outcome: string }) =>
-    appendHarnessEvent({ ...event, taskId: sessionId, createdAt: new Date().toISOString() }).catch((err) => {
+  // Persists across transitions so a goal survives a session restart.
+  // serializeGoal() already returns undefined for BOTH an achieved goal and
+  // a cleared controller, so syncGoalStateToDisk needs no type-string
+  // branching: something to persist → save it, nothing → clear the file.
+  // Restored on session_start (parent-only) below.
+  const syncGoalStateToDisk = async () => {
+    const repo = process.cwd();
+    const payload = serializeGoal(goalController);
+    if (payload) {
+      await saveGoalState(repo, { ...payload, repo }).catch((err) => {
+        console.error("[harness][goal]", "failed to persist goal state:", err instanceof Error ? err.message : String(err));
+      });
+    } else {
+      await clearGoalState(repo);
+    }
+  };
+  const recordGoalEvent = async (event: { type: "goal_set" | "goal_achieved" | "goal_paused"; summary: string; outcome: string }) => {
+    await appendHarnessEvent({ ...event, taskId: sessionId, createdAt: new Date().toISOString() }).catch((err) => {
       console.error("[harness][goal]", err instanceof Error ? err.message : String(err));
     });
+    await syncGoalStateToDisk();
+  };
   registerGoalCommand(pi, {
     controller: goalController,
     isSubagent,
+    syncState: syncGoalStateToDisk,
     sendFollowUp: async (text) => { pi.sendUserMessage(text, { deliverAs: "followUp" }); },
     recordEvent: recordGoalEvent,
   });
