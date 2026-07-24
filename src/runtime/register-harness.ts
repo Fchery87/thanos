@@ -174,6 +174,12 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   // instead of doing their own work, idling until their budget kills them.
   // See src/agents/child-role.ts for the full legacy vs. live env contract.
   const isSubagent = isSubagentProcess(process.env);
+  // Snapshot the roster ONCE per session, not per turn. loadRoster() reads
+  // mutable user/project agent files from disk; awaiting it every turn means
+  // an in-session edit to those files would change the "session-static" roster
+  // block and bust the very prompt-cache prefix stability this whole path
+  // exists to protect. One promise, resolved lazily, awaited on each turn.
+  const sessionRoster = isSubagent ? Promise.resolve([]) : loadRoster();
   // Precise live-roster role name (e.g. "reviewer-security", "explore"),
   // undefined in the parent session and for the legacy path's generic "1"
   // marker. Drives roleNarrowingOverlay below — undefined naturally yields no
@@ -1671,7 +1677,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     // dynamic so they're routed into the uncached tail message instead (see
     // assembleSystemPrompt in ./prompt-assembly for the cache-stability
     // rationale).
-    const roster = isSubagent ? [] : await loadRoster();
+    const roster = await sessionRoster;
     const rendered = assemblePrompt({ isSubagent, memories });
 
     // ── Auto-invoke: nudge the top-level agent to reach for skills ──

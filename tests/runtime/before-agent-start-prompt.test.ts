@@ -42,4 +42,17 @@ describe("assembleSystemPrompt", () => {
     const out = assembleSystemPrompt({ baseSystemPrompt: "BASE", isSubagent: true, trustedInstructions: [], skillsDirective: "", roster: "" });
     expect(out.systemPrompt).toBeUndefined();
   });
+
+  it("still delivers an active goal directive for subagents (no systemPrompt, but a tail message)", () => {
+    const out = assembleSystemPrompt({
+      baseSystemPrompt: "BASE",
+      isSubagent: true,
+      trustedInstructions: [],
+      skillsDirective: "",
+      roster: "",
+      goalDirective: "SUBAGENT-GOAL",
+    });
+    expect(out.systemPrompt).toBeUndefined();          // Pi base prompt preserved
+    expect(out.dynamicMessage).toBe("SUBAGENT-GOAL");  // goal still delivered, not dropped
+  });
 });

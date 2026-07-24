@@ -16,7 +16,16 @@ export interface AssembledPrompt {
 }
 
 export function assembleSystemPrompt(input: SystemPromptInput): AssembledPrompt {
-  if (input.isSubagent) return {};
+  const dynamicBlocks = [input.memoriesBlock, input.goalDirective].filter(Boolean) as string[];
+  const dynamicMessage = dynamicBlocks.length ? dynamicBlocks.join("\n\n") : undefined;
+
+  // Subagents keep Pi's base prompt untouched (no systemPrompt override), but a
+  // directly-set goal directive must still ride along as the tail message —
+  // returning {} here would silently drop it. Matches the "runs in parent and
+  // subagent alike" intent documented at the goal-directive call site.
+  if (input.isSubagent) {
+    return dynamicMessage ? { dynamicMessage } : {};
+  }
 
   const staticBlocks = [
     input.baseSystemPrompt,
@@ -25,10 +34,8 @@ export function assembleSystemPrompt(input: SystemPromptInput): AssembledPrompt 
     input.roster,
   ].filter(Boolean);
 
-  const dynamicBlocks = [input.memoriesBlock, input.goalDirective].filter(Boolean) as string[];
-
   return {
     systemPrompt: staticBlocks.length ? staticBlocks.join("\n\n") : undefined,
-    dynamicMessage: dynamicBlocks.length ? dynamicBlocks.join("\n\n") : undefined,
+    dynamicMessage,
   };
 }
