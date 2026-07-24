@@ -1,7 +1,6 @@
 // src/index.ts
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { matchesKey, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { join } from "node:path";
 
@@ -27,7 +26,6 @@ import { restoreController, serializeGoal } from "../goal/persist";
 import { clearGoalState, loadGoalState, saveGoalState } from "../goal/store";
 import { makeAfterToolHandler } from "../hooks/after-tool";
 import type { TaskParams } from "../agents/task-tool";
-import { AGENT_TYPES } from "../agents/registry";
 import { loadRoster, formatRoster } from "../agents/roster";
 import { loadPolicyState } from "../policy/state";
 import { loadRegistry, readRepoId, resolveDeliveryState } from "../governance/delivery";
@@ -70,12 +68,6 @@ import type { MemoryRecord } from "../memory/types";
 import { createSnapshot } from "../security/snapshot";
 // registerSearchTool removed — superseded by npm:pi-web-access
 import { AskParamsSchema, buildAskDecision, resolveHeadlessAsk, type AskQuestion } from "../interaction/ask";
-import {
-  createTodoState, applyTodoOperation, exportTodoMarkdown, reconstructTodoState,
-  makeTodoDetails, EMPTY_TODO_STATE, TodoParamsSchema,
-  type TodoOperation, type TodoState, type TodoDetails,
-} from "../interaction/todo";
-import { renderTodoLines, todoSummary } from "../interaction/todo-render";
 import { FindingParamsSchema, addFinding, formatReviewSummary, type ReviewFinding } from "../review/findings";
 import { buildJuryPrompt } from "../review/jury";
 import { LensLite, registerLensLiteCommand } from "../lens/lite";
@@ -89,6 +81,9 @@ import { consumeContinuation, issueContinuation } from "./continuation-auth";
 import { getSupportedLevels, setThinkingStatus, type ThinkingLevel } from "./thinking-levels";
 import { registerThinkingCommand } from "./commands/thinking";
 import { registerModelEvents } from "./model-events";
+import { registerModesCommand } from "./commands/modes";
+import { registerTodoCommand, registerTodoTool, TodoRuntime } from "./commands/todo";
+import { registerDesignerCommand } from "./commands/designer";
 
 
 /** Human-readable list of gate names for /ship prompts ("none" when empty). */
@@ -172,12 +167,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   const sessionId = crypto.randomUUID();
   const agentType = isSubagent ? "subagent" : "parent" as const;
   let defaultTaskType: TaskParams["type"] | undefined;
-  let todoState: TodoState = createTodoState([]);
-
-  function todoStatusSegment(ctx: ExtensionContext, state: TodoState): string | undefined {
-    const s = todoSummary(state);
-    return s ? ctx.ui.theme.fg("accent", s) : undefined;
-  }
+  const todoRuntime = new TodoRuntime();
   let reviewFindings: ReviewFinding[] = [];
   const lens = new LensLite(sessionId);
 
@@ -260,8 +250,8 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
 
   pi.on("session_start", async (event, ctx) => {
     reviewFindings = [];
-    todoState = reconstructTodoState(ctx.sessionManager.getBranch());
-    ctx.ui.setStatus("harness-todo", todoStatusSegment(ctx, todoState));
+    todoRuntime.reconstructFrom(ctx.sessionManager.getBranch());
+    ctx.ui.setStatus("harness-todo", todoRuntime.statusSegment(ctx));
     if (!mcpManager) return;
 
     // ── Restore a persisted /goal across a session restart ──────────────
@@ -425,8 +415,8 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   });
 
   pi.on("session_tree", async (_event, ctx) => {
-    todoState = reconstructTodoState(ctx.sessionManager.getBranch());
-    ctx.ui.setStatus("harness-todo", todoStatusSegment(ctx, todoState));
+    todoRuntime.reconstructFrom(ctx.sessionManager.getBranch());
+    ctx.ui.setStatus("harness-todo", todoRuntime.statusSegment(ctx));
   });
 
   // ── --spec flag ────────────────────────────────────────────────────
@@ -436,53 +426,12 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     description: "Require approval before first edit/exec when task is ambient",
   });
 
-  pi.registerCommand("modes", {
-    description: "Choose the default specialist subagent for this session",
-    getArgumentCompletions: (prefix) => {
-      const filtered = (AGENT_TYPES as readonly string[]).filter((mode) => mode.startsWith(prefix));
-      return filtered.length > 0 ? filtered.map((value) => ({ value, label: value })) : null;
-    },
-    handler: async (args, ctx) => {
-      const trimmed = args.trim();
-      const explicit = (AGENT_TYPES as readonly string[]).includes(trimmed) ? (trimmed as NonNullable<TaskParams["type"]>) : undefined;
-      if (!ctx.hasUI && !explicit) {
-        ctx.ui.notify("Modes selector requires an interactive UI", "warning");
-        return;
-      }
-
-      const selected = explicit ?? (await ctx.ui.select("Choose a default subagent mode", [...AGENT_TYPES]));
-      if (!selected) return;
-      defaultTaskType = selected as NonNullable<TaskParams["type"]>;
-      ctx.ui.setStatus("harness-mode", ctx.ui.theme.fg("accent", `modes:${selected}`));
-      ctx.ui.notify(`Default subagent mode: ${selected}`, "info");
-    },
+  registerModesCommand(pi, {
+    getDefaultTaskType: () => defaultTaskType,
+    setDefaultTaskType: (type) => { defaultTaskType = type; },
   });
 
-  pi.registerCommand("todo", {
-    description: "Show the current todo checklist for this branch",
-    handler: async (args, ctx) => {
-      const trimmed = args.trim();
-      if (trimmed === "export" || !ctx.hasUI) {
-        ctx.ui.notify(exportTodoMarkdown(todoState), "info");
-        return;
-      }
-      const theme = ctx.ui.theme;
-      await ctx.ui.custom<void>((_tui, _theme, _kb, done) => ({
-        handleInput(data: string) {
-          if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) done();
-        },
-        render(width: number) {
-          const lines = ["", ...renderTodoLines(todoState, theme), "", theme.fg("dim", "  Press Escape to close")];
-          // fitTerminalText is ANSI-aware; a plain slice would count escape codes
-          // against the width and could cut a sequence mid-byte, leaking color.
-          return lines.map((l) => fitTerminalText(l, width));
-        },
-        invalidate() {},
-      }));
-    },
-    getArgumentCompletions: (prefix) =>
-      "export".startsWith(prefix) ? [{ value: "export", label: "export markdown" }] : null,
-  });
+  registerTodoCommand(pi, todoRuntime);
 
   // ── /remember + /memory — hand-curated project preferences ────────
   // The only write path into .harness/memory.json (auto-capture was removed
@@ -1497,59 +1446,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     },
   });
 
-  const designerGoalOptions = [
-    "Implement UI changes — read the codebase, build components, cover all states",
-    "Review UI code — check for accessibility gaps, missing states, AI slop patterns",
-    "Audit design system — extract tokens, document inconsistencies, suggest consolidation",
-  ];
-
-  const runDesignerAgent = async (goal: string, ctx: ExtensionContext) => {
-    if (isSubagent) {
-      ctx.ui.notify("Designer is only available in the main session.", "warning");
-      return;
-    }
-    ctx.ui.notify("Delegating to the designer subagent…", "info");
-    // Route through the pi-subagents engine (unified delegation + rich render).
-    await pi.sendUserMessage(
-      `Use the \`subagent\` tool to run the \`designer\` agent on this task: ${goal}`,
-      { deliverAs: "followUp" },
-    );
-  };
-
-  pi.registerCommand("designer", {
-    description: "Spawn the Designer subagent for UI/UX implementation, review, or design-system audit",
-    getArgumentCompletions: (prefix) => {
-      if (prefix.trim().length > 0) return null;
-      return designerGoalOptions.map((value) => ({ value, label: value }));
-    },
-    handler: async (args, ctx) => {
-      const explicitGoal = args.trim();
-      if (explicitGoal) {
-        await runDesignerAgent(explicitGoal, ctx);
-        return;
-      }
-      if (!ctx.hasUI) {
-        ctx.ui.notify("Pass a goal: /designer <goal>", "warning");
-        return;
-      }
-      const goal = await ctx.ui.select("What should the designer do?", designerGoalOptions);
-      if (!goal) return;
-      await runDesignerAgent(goal, ctx);
-    },
-  });
-
-  pi.registerShortcut("ctrl+shift+d", {
-    description: "Spawn designer — UI/UX implementation and review",
-    handler: async (ctx) => {
-      if (!ctx.hasUI) {
-        ctx.ui.notify("Pass a goal: /designer <goal>", "warning");
-        return;
-      }
-      const goal = await ctx.ui.select("What should the designer do?", designerGoalOptions);
-      if (!goal) return;
-      await runDesignerAgent(goal, ctx);
-    },
-  });
+  registerDesignerCommand(pi, isSubagent);
 
   pi.registerShortcut("ctrl+shift+y", {
     description: "Toggle yolo mode — bypass all permission checks",
@@ -1877,37 +1774,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
       );
     }
 
-    pi.registerTool({
-      name: "todo",
-      label: "Manage todo state",
-      description: "Track phased tasks with a single in-progress item and explicit export/import.",
-      parameters: TodoParamsSchema,
-      async execute(_toolCallId, params: TodoOperation) {
-        try {
-          if (params.op === "export") {
-            return {
-              content: [{ type: "text" as const, text: exportTodoMarkdown(todoState) }],
-              details: makeTodoDetails(todoState),
-            };
-          }
-          todoState = applyTodoOperation(todoState, params);
-          return {
-            content: [{ type: "text" as const, text: exportTodoMarkdown(todoState) }],
-            details: makeTodoDetails(todoState),
-          };
-        } catch (err) {
-          return { content: [{ type: "text" as const, text: String(err) }], isError: true, details: undefined };
-        }
-      },
-      renderCall(args, theme) {
-        return new Text(theme.fg("toolTitle", theme.bold("todo ")) + theme.fg("muted", String(args.op)), 0, 0);
-      },
-      renderResult(result, _opts, theme) {
-        const details = result.details as TodoDetails | undefined;
-        const state = details?.kind === "thanos-todo" ? details.state : EMPTY_TODO_STATE;
-        return new Text(renderTodoLines(state, theme).join("\n"), 0, 0);
-      },
-    });
+    registerTodoTool(pi, todoRuntime);
 
     pi.registerTool({
       name: "ask",
