@@ -208,8 +208,10 @@ async function main() {
 
   if (args.write && added.length > 0) {
     const dest = backupPath(basename(args.modelsPath));
-    mkdirSync(dirname(dest), { recursive: true });
+    mkdirSync(dirname(dest), { recursive: true, mode: 0o700 });
+    chmodSync(dirname(dest), 0o700); // enforce even if the dir pre-existed with looser perms
     copyFileSync(args.modelsPath, dest);
+    chmodSync(dest, 0o600); // the backup holds the same config/keys as the live file
     writeFileSync(args.modelsPath, JSON.stringify(next, null, 2) + "\n", "utf-8");
     chmodSync(args.modelsPath, 0o600);
     summary.backupPath = dest;

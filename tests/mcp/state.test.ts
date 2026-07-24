@@ -47,7 +47,7 @@ const SECRETS_PATH = join(homedir(), ".pi", "mcp-secrets.json");
 const SECRETS_TMP  = SECRETS_PATH + ".tmp";
 // Backups now land under `.harness/backups/<name>.<ISO>.bak` (see
 // src/observability/backup.ts) instead of a `mcp-secrets.json.bak` sibling.
-const SECRETS_BAK_RE = /[/\\]\.harness[/\\]backups[/\\]mcp-secrets\.json\.[\d-]+T[\d-]+Z\.bak$/;
+const SECRETS_BAK_RE = /[/\\]\.harness[/\\]backups[/\\]mcp-secrets\.json\.[\d-]+T[\d-]+Z\.[0-9a-f]{8}\.bak$/;
 
 // ─── Test setup ───────────────────────────────────────────────────────────────
 

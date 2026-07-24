@@ -96,8 +96,10 @@ export async function readMcpSecrets(): Promise<McpSecrets> {
       `[harness][mcp] mcp-secrets.json is corrupted — resetting to empty. Backup at ${dest}`,
     );
     try {
-      await mkdir(dirname(dest), { recursive: true });
+      await mkdir(dirname(dest), { recursive: true, mode: 0o700 });
+      await chmod(dirname(dest), 0o700); // enforce even if the dir pre-existed with looser perms
       await copyFile(SECRETS_PATH, dest);
+      await chmod(dest, 0o600); // the backup holds the same secrets as the live file
     } catch { /* ignore */ }
     return {};
   }
