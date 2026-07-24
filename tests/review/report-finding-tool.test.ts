@@ -12,7 +12,7 @@ function fakePi(tools: Map<string, any>) {
   } as any;
 }
 
-const SUBAGENT_ENV_KEYS = ["HARNESS_SUBAGENT", "PI_SUBAGENT_CHILD", "PI_SUBAGENT_CHILD_AGENT"] as const;
+const SUBAGENT_ENV_KEYS = ["PI_SUBAGENT_CHILD", "PI_SUBAGENT_CHILD_AGENT"] as const;
 
 function withSubagentEnv(vars: Partial<Record<(typeof SUBAGENT_ENV_KEYS)[number], string>>, run: () => void) {
   const previous = Object.fromEntries(SUBAGENT_ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -41,22 +41,6 @@ describe("report_finding tool", () => {
     expect(mainTools.has("report_finding")).toBe(false);
   });
 
-  it("registers for the legacy reviewer marker (HARNESS_SUBAGENT=reviewer)", () => {
-    withSubagentEnv({ HARNESS_SUBAGENT: "reviewer" }, () => {
-      const tools = new Map<string, any>();
-      register(fakePi(tools));
-      expect(tools.has("report_finding")).toBe(true);
-    });
-  });
-
-  it("registers for the legacy generic subagent marker (HARNESS_SUBAGENT=1)", () => {
-    withSubagentEnv({ HARNESS_SUBAGENT: "1" }, () => {
-      const tools = new Map<string, any>();
-      register(fakePi(tools));
-      expect(tools.has("report_finding")).toBe(true);
-    });
-  });
-
   it("registers for any live pi-subagents child, regardless of its agent role", () => {
     withSubagentEnv({ PI_SUBAGENT_CHILD: "1", PI_SUBAGENT_CHILD_AGENT: "explore" }, () => {
       const tools = new Map<string, any>();
@@ -67,7 +51,7 @@ describe("report_finding tool", () => {
 
   it("returns aggregate verdict after a finding is reported", async () => {
     const reviewerTools = new Map<string, any>();
-    withSubagentEnv({ HARNESS_SUBAGENT: "reviewer" }, () => {
+    withSubagentEnv({ PI_SUBAGENT_CHILD: "1", PI_SUBAGENT_CHILD_AGENT: "reviewer" }, () => {
       register(fakePi(reviewerTools));
     });
     const result = await reviewerTools.get("report_finding").execute("rf-1", {
