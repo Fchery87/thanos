@@ -29,6 +29,7 @@ function deps(overrides: Partial<GoalCommandDeps> = {}): GoalCommandDeps {
     notify: vi.fn(),
     sendFollowUp: vi.fn(async () => {}),
     recordEvent: vi.fn(async () => {}),
+    syncState: vi.fn(async () => {}),
     ...overrides,
   };
 }
@@ -49,6 +50,10 @@ describe("runGoalCommand", () => {
     expect(d.recordEvent).toHaveBeenCalledWith(expect.objectContaining({ type: "goal_set" }));
     expect(d.sendFollowUp).toHaveBeenCalledTimes(1);
     expect(vi.mocked(d.sendFollowUp).mock.calls[0][0]).toContain("[harness:goal-directive]");
+    // set persists via recordEvent (which itself syncs to disk in the real
+    // wiring) — it must not also call syncState directly, or the state
+    // would be written twice per set.
+    expect(d.syncState).not.toHaveBeenCalled();
   });
 
   it("set with empty condition → error, no goal", async () => {
@@ -72,20 +77,44 @@ describe("runGoalCommand", () => {
     expect(vi.mocked(d.notify).mock.calls[0][0]).toContain("ship the feature");
   });
 
-  it("clear → removes the goal", async () => {
+  it("clear → removes the goal and syncs the (now-empty) state to disk", async () => {
     const d = deps();
     await runGoalCommand("a goal", d);
+    vi.mocked(d.syncState).mockClear();
     await runGoalCommand("clear", d);
     expect(d.controller.snapshot()).toBeUndefined();
+    expect(d.syncState).toHaveBeenCalledTimes(1);
   });
 
-  it("pause then resume", async () => {
+  it("clear with nothing to clear still syncs (wipes any stale on-disk file)", async () => {
+    const d = deps();
+    await runGoalCommand("clear", d);
+    expect(d.syncState).toHaveBeenCalledTimes(1);
+  });
+
+  it("pause then resume — each syncs state to disk", async () => {
     const d = deps();
     await runGoalCommand("a goal", d);
+    vi.mocked(d.syncState).mockClear();
     await runGoalCommand("pause", d);
     expect(d.controller.snapshot()?.status).toBe("paused");
+    expect(d.syncState).toHaveBeenCalledTimes(1);
     await runGoalCommand("resume", d);
     expect(d.controller.snapshot()?.status).toBe("active");
+    expect(d.syncState).toHaveBeenCalledTimes(2);
+  });
+
+  it("pause with no active goal does not sync", async () => {
+    const d = deps();
+    await runGoalCommand("pause", d);
+    expect(d.controller.snapshot()).toBeUndefined();
+    expect(d.syncState).not.toHaveBeenCalled();
+  });
+
+  it("resume with no paused goal does not sync", async () => {
+    const d = deps();
+    await runGoalCommand("resume", d);
+    expect(d.syncState).not.toHaveBeenCalled();
   });
 
   it("resume sends the continuation directive so work restarts without a manual nudge", async () => {

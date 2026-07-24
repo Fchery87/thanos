@@ -142,6 +142,24 @@ describe("register", () => {
     );
   });
 
+  it("folds Pi's base system prompt into the returned systemPrompt", async () => {
+    const { api, handlers } = createFakePi();
+    register(api, { initialYolo: false });
+
+    const beforeAgentStart = handlers.get("before_agent_start");
+    const result = await beforeAgentStart?.(
+      { prompt: "Add pagination with tests", systemPrompt: "BASE-SENTINEL" },
+      {
+        model: undefined,
+        ui: { setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() },
+      },
+    );
+
+    expect(result).toMatchObject({
+      systemPrompt: expect.stringContaining("BASE-SENTINEL"),
+    });
+  });
+
   it("uses failure-grade verification messaging in headless runs", async () => {
     const notify = vi.fn();
     const { api, handlers } = createFakePi();
