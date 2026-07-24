@@ -4,9 +4,11 @@ import type { HarnessPolicy } from "../../src/policy/types";
 
 /**
  * Test helper for the LIVE governance gate. `GovernanceRuntime.authorize` is the
- * real decision point wired into `pi.on("tool_call")` (register-harness) and the
- * subagent path (register-events). These helpers construct a context with safe
- * defaults so a test only states the fields it cares about.
+ * real decision point wired into `pi.on("tool_call")` for both parent and
+ * subagent sessions (see src/runtime/register-harness.ts, or its extracted
+ * src/runtime/governance-hooks.ts after the register-harness decomposition).
+ * These helpers construct a context with safe defaults so a test only states
+ * the fields it cares about.
  */
 
 export const personalPolicy: HarnessPolicy = {
