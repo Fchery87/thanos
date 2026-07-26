@@ -33,10 +33,11 @@ describe("extractLastTurn", () => {
 
   it("clips oversized tool output, keeping the tail", () => {
     const out = extractLastTurn([
-      user("go"), assistant("x"), toolResult("bash", `${"a".repeat(20000)}TAIL`),
+      user("go"), assistant("x"), toolResult("bash", `${Array.from({ length: 80 }, (_, i) => `line-${i}`).join("\n")}\nTAIL`),
     ] as never[]);
-    expect(out.toolResultsText.length).toBeLessThanOrEqual(9000);
     expect(out.toolResultsText).toContain("TAIL");
+    expect(out.toolResultsText).toContain("…(clipped)");
+    expect(out.toolResultsText).not.toContain("line-0");
   });
 
   it("handles an empty/absent turn safely", () => {

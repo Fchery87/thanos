@@ -40,6 +40,7 @@ export function renderSpecVerificationPanel(
   theme: TUITheme,
   active: FormalSpec,
   results: VerificationResult[],
+  opts: { goalActive?: boolean } = {},
 ): { panel: string; notification: "info" | "warning" } {
   const passed = results.filter((r) => r.passed).length;
   const total = results.length;
@@ -47,10 +48,13 @@ export function renderSpecVerificationPanel(
     `  ${r.passed ? theme.fg("success", "✓") : theme.fg("dim", "·")} ${theme.fg("muted", `[${r.criterion.id}]`)}  ${r.criterion.statement}`,
   );
   const statusColor = passed === total && total > 0 ? "success" : "warning";
+  const goalLine = opts.goalActive
+    ? `${active.goal} ${theme.fg("dim", "(goal active; advisory only)")}`
+    : active.goal;
   const lines = [
     `${formatLabel(theme, "Spec ID:", 10)}  ${theme.fg("dim", active.id)}`,
     `${formatLabel(theme, "Tier:", 10)}  ${formatValue(theme, active.tier, "accent")}  ${theme.fg("dim", `[${active.approvalStatus}]`)}`,
-    `${formatLabel(theme, "Goal:", 10)}  ${active.goal}`,
+    `${formatLabel(theme, "Goal:", 10)}  ${goalLine}`,
     `${formatLabel(theme, "Criteria:", 10)}  ${theme.fg(statusColor, `${passed}/${total}`)} passed`,
     ...criteriaLines,
   ];
@@ -63,7 +67,7 @@ export function renderSpecVerificationPanel(
   }
 
   return {
-    panel: formatPanel(theme, "Active Spec", lines, statusColor),
+    panel: formatPanel(theme, opts.goalActive ? "Active Spec (goal running)" : "Active Spec", lines, statusColor),
     notification: total > 0 && passed === total ? "info" : "warning",
   };
 }

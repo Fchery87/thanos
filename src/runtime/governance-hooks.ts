@@ -205,10 +205,26 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
         ? `${theme.bold(theme.fg("error", "Spec failed:"))}${approvalNote}`
         : `${theme.bold("Spec:")} ${theme.fg(hasFailures ? "warning" : "success", `${passed}/${results.length}`)} passed${approvalNote}`;
 
-      const panel = formatPanel(theme, hasFailures ? "Spec Verification Failed" : "Spec Verification", lines, hasFailures ? "error" : "success");
+      const goalActive = goalController.isActive();
+      const panel = formatPanel(
+        theme,
+        goalActive
+          ? (hasFailures ? "Spec Verification (goal active)" : "Spec Verification (goal active)")
+          : (hasFailures ? "Spec Verification Failed" : "Spec Verification"),
+        lines,
+        goalActive ? "warning" : (hasFailures ? "error" : "success"),
+      );
+      const notification = goalActive && hasFailures
+        ? "info"
+        : hasFailures
+          ? "warning"
+          : "info";
+      const header = goalActive && hasFailures
+        ? `${theme.bold("Spec:")} ${theme.fg("dim", `${passed}/${results.length}`)} checked while /goal is active`
+        : summaryHeader;
       ctx.ui.notify(
-        `${summaryHeader}\n${panel}`,
-        hasFailures ? "warning" : "info",
+        `${header}\n${panel}`,
+        notification,
       );
 
       // The gate defers to an active /goal (goalActive) so the two loops never
@@ -219,7 +235,7 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
         attempts: spec.gateAttempts,
         isSubagent,
         enabled: !gateDisabledByEnv(),
-        goalActive: goalController.isActive(),
+        goalActive,
         aborted: turnAborted,
       })) {
         const prompt = buildContinuationPrompt(results, spec.gateAttempts);

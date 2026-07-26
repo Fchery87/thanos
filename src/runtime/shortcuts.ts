@@ -33,6 +33,7 @@ export interface DiagnosticShortcutDeps {
   spec: SpecEngine;
   permissions: PermissionManager;
   getDefaultTaskType: () => TaskParams["type"] | undefined;
+  isGoalActive?: () => boolean;
 }
 
 /**
@@ -92,7 +93,7 @@ export function registerDiagnosticShortcuts(pi: ExtensionAPI, deps: DiagnosticSh
         );
         return;
       }
-      const presentation = renderSpecVerificationPanel(theme, active, deps.spec.verify());
+      const presentation = renderSpecVerificationPanel(theme, active, deps.spec.verify(), { goalActive: deps.isGoalActive?.() ?? false });
       ctx.ui.notify(presentation.panel, presentation.notification);
     },
   });
