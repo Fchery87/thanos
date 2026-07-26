@@ -40,6 +40,7 @@ describe("confirmGoalCompletion", () => {
     );
     expect(v.met).toBe(false);
     expect(v.reason).toMatch(/no verifiable evidence/i);
+    expect(v.reason).toMatch(/same turn/i);
     // The model must not be consulted at all — that is what prevents self-grading.
     expect(primary).not.toHaveBeenCalled();
     expect(fallback).not.toHaveBeenCalled();
@@ -70,6 +71,7 @@ describe("confirmGoalCompletion", () => {
     const v = await confirmGoalCompletion(input(), primary, fallback);
     expect(v.met).toBe(false);
     expect(v.reason).toMatch(/errored/i);
+    expect(v.reason).toMatch(/re-verify/i);
     expect(v.reason).toContain("boom2");
   });
 
@@ -82,5 +84,17 @@ describe("confirmGoalCompletion", () => {
     expect(v).toEqual(met);
     expect(primary.mock.calls[0][0].assistantClaim).toBe("0 failures");
     expect(primary.mock.calls[0][0].assistantClaim).not.toContain("CLAIM");
+  });
+
+  it("spells out the deterministic failure shape", async () => {
+    const verdict = await confirmGoalCompletion(
+      input({ evidence: { lastAssistantText: "done", toolResultsText: "[bash (ERROR)]\nbun run test\nexit 1" } }),
+      async () => ({ met: true, reason: "model said MET" }),
+      async () => ({ met: true, reason: "fallback said MET" }),
+    );
+
+    expect(verdict.met).toBe(false);
+    expect(verdict.reason).toContain("exit 1");
+    expect(verdict.reason).toContain("rerun the command");
   });
 });

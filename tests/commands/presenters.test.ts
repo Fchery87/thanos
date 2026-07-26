@@ -61,6 +61,16 @@ describe("command presenters", () => {
     expect(presentation.notification).toBe("info");
   });
 
+  it("renders a goal-active variant without alarming failure framing", () => {
+    const presentation = renderSpecVerificationPanel(noopTheme, spec, [
+      { criterion: spec.acceptanceCriteria[0], passed: false, evidence: [], missingEvidence: ["manual"] },
+    ], { goalActive: true });
+
+    expect(presentation.panel).toContain("goal running");
+    expect(presentation.panel).toContain("goal active");
+    expect(presentation.notification).toBe("warning");
+  });
+
   it("renders the policy panel", () => {
     const panel = renderPolicyPanel(noopTheme, policy);
 

@@ -190,6 +190,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     spec,
     permissions,
     getDefaultTaskType: () => defaultTaskType,
+    isGoalActive: () => goalController.isActive(),
   });
 
   registerDesignerCommand(pi, isSubagent);

@@ -7,7 +7,7 @@ describe("parseGoalCommand", () => {
     expect(parseGoalCommand("   ")).toEqual({ type: "status" });
   });
   it("clear + aliases", () => {
-    for (const a of ["clear", "stop", "off", "reset", "none", "cancel", "CLEAR"]) {
+    for (const a of ["clear", "stop", "off", "reset", "none", "cancel", "quit", "CLEAR"]) {
       expect(parseGoalCommand(a)).toEqual({ type: "clear" });
     }
   });

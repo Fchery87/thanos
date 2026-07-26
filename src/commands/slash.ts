@@ -136,7 +136,7 @@ export function registerSlashCommands(
         );
         return;
       }
-      const presentation = renderSpecVerificationPanel(theme, active, spec.verify());
+      const presentation = renderSpecVerificationPanel(theme, active, spec.verify(), { goalActive: false });
       ctx.ui.notify(presentation.panel, presentation.notification);
     },
   });

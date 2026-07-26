@@ -1,4 +1,5 @@
 const MAX_TOOL_TEXT = 8000;
+const MAX_TOOL_RESULT_LINES = 40;
 
 interface ExtractedTurn {
   lastAssistantText: string;
@@ -13,6 +14,12 @@ function textOf(content: unknown): string {
       typeof c === "object" && c !== null && (c as { type?: string }).type === "text")
     .map((c) => c.text)
     .join("\n");
+}
+
+function tailLines(text: string, maxLines: number): string {
+  const lines = text.split("\n");
+  if (lines.length <= maxLines) return text;
+  return ["…(clipped)", ...lines.slice(-maxLines)].join("\n");
 }
 
 /**
@@ -33,7 +40,8 @@ export function extractLastTurn(messages: readonly unknown[]): ExtractedTurn {
     if (m.role === "assistant") assistantParts.push(textOf(m.content));
     if (m.role === "toolResult") {
       const flag = m.isError ? " (ERROR)" : "";
-      toolParts.push(`[${m.toolName ?? "tool"}${flag}]\n${textOf(m.content)}`);
+      const contentText = tailLines(textOf(m.content), MAX_TOOL_RESULT_LINES);
+      toolParts.push(`[${m.toolName ?? "tool"}${flag}]\n${contentText}`);
     }
   }
   let toolResultsText = toolParts.join("\n\n");

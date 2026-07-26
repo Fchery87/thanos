@@ -17,11 +17,11 @@ export interface ConfirmInput {
 
 type RunEvaluator = (input: EvaluatorInput) => Promise<Verdict>;
 
-function hasFailedDeterministicEvidence(text: string): boolean {
-  return /\bexit\s+1\b/i.test(text)
-    || /\b(?:command|test|verification)\s+failed\b/i.test(text)
-    || /\b(?:error|error)\b[:\-]/i.test(text)
-    || /\[ERROR\]/i.test(text);
+function describeFailedDeterministicEvidence(text: string): string | undefined {
+  if (/\bexit\s+1\b/i.test(text)) return "tool output shows exit 1";
+  if (/\b(?:command|test|verification)\s+failed\b/i.test(text)) return "tool output reports a failed command/test/verification";
+  if (/\[ERROR\]/i.test(text) || /\berror\b[:\-]/i.test(text)) return "tool output contains an error marker";
+  return undefined;
 }
 
 /**
@@ -58,10 +58,11 @@ export async function confirmGoalCompletion(
     };
   }
 
-  if (hasFailedDeterministicEvidence(toolResultsText)) {
+  const deterministicFailure = describeFailedDeterministicEvidence(toolResultsText);
+  if (deterministicFailure) {
     return {
       met: false,
-      reason: "required command failed — deterministic evidence outranks any MET verdict",
+      reason: `required command failed (${deterministicFailure}) — rerun the command and surface the passing proof in the same turn`,
     };
   }
 

@@ -5,7 +5,7 @@ export type GoalCommand =
   | { type: "resume" }
   | { type: "set"; condition: string };
 
-const CLEAR_ALIASES = new Set(["clear", "stop", "off", "reset", "none", "cancel"]);
+const CLEAR_ALIASES = new Set(["clear", "stop", "off", "reset", "none", "cancel", "quit"]);
 
 export function parseGoalCommand(args: string): GoalCommand {
   const trimmed = args.trim();
