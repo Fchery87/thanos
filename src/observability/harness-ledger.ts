@@ -11,6 +11,7 @@ export type HarnessEventType =
   | "delivery_gate_failed"
   | "manual_override"
   | "harness_change"
+  | "spec_extraction"
   | "goal_set"
   | "goal_achieved"
   | "goal_paused";

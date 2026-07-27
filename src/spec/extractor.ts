@@ -5,7 +5,14 @@ import { join } from "node:path";
 import { loadEvaluatorOverride } from "../goal/load-settings";
 import { pickEvaluatorModel, resolveEvaluatorAuth } from "../goal/evaluator-model";
 import { buildContractExtractionPrompt, parseContractResponse } from "./extractor-prompt";
+import { noopExtractionReporter, type ExtractionReporter } from "./extraction-log";
 import type { SpecTier } from "./types";
+
+/** An error's class and message, bounded — never a stack, never a payload. */
+function errorLabel(err: unknown): string {
+  if (err instanceof Error) return `${err.name}: ${err.message}`.slice(0, 200);
+  return String(err).slice(0, 200);
+}
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_ROLE = "evaluator";
@@ -61,7 +68,15 @@ export type ExtractorContext = Pick<ExtensionContext, "model" | "modelRegistry">
 export class ContractExtractor {
   private context: ExtractorContext | undefined;
 
-  constructor(private readonly settings: SpecExtractionSettings = loadSpecSettings()) {}
+  constructor(
+    private readonly settings: SpecExtractionSettings = loadSpecSettings(),
+    /**
+     * Where each failure path is recorded. Defaults to silence so unit tests and
+     * any embedder stay side-effect free; the live harness wires the ledger
+     * reporter in register-harness.
+     */
+    private readonly report: ExtractionReporter = noopExtractionReporter,
+  ) {}
 
   setContext(context: ExtractorContext): void {
     this.context = context;
@@ -72,15 +87,34 @@ export class ContractExtractor {
   }
 
   async extract(prompt: string, tier: SpecTier): Promise<unknown> {
-    if (!this.settings.extraction || tier === "instant") return undefined;
+    if (!this.settings.extraction || tier === "instant") {
+      this.report({ outcome: "disabled", detail: this.settings.extraction ? `tier=${tier}` : "extraction=false" });
+      return undefined;
+    }
     const context = this.context;
-    if (!context) return undefined;
+    if (!context) {
+      this.report({ outcome: "no_context" });
+      return undefined;
+    }
 
     try {
       const model = this.resolveModel(context);
-      if (!model) return undefined;
+      if (!model) {
+        this.report({ outcome: "no_model", detail: `role=${this.settings.extractorRole}` });
+        return undefined;
+      }
 
-      const auth = await resolveEvaluatorAuth(context.modelRegistry, model);
+      // Separated from the rest of the try so an auth failure is reported as
+      // itself rather than as the catch-all "threw". It was by far the most
+      // likely silent failure: resolveEvaluatorAuth throws for every
+      // models.json-configured provider without a resolvable key.
+      let auth: Awaited<ReturnType<typeof resolveEvaluatorAuth>>;
+      try {
+        auth = await resolveEvaluatorAuth(context.modelRegistry, model);
+      } catch (err) {
+        this.report({ outcome: "auth_failed", detail: errorLabel(err) });
+        return undefined;
+      }
       const completion = completeSimple(
         model,
         {
@@ -109,20 +143,33 @@ export class ContractExtractor {
       } finally {
         if (timer) clearTimeout(timer);
       }
-      if (!message) return undefined;
+      if (!message) {
+        this.report({ outcome: "timeout", detail: `${this.settings.timeoutMs}ms` });
+        return undefined;
+      }
 
       // completeSimple resolves rather than rejects on API failure, carrying
       // stopReason "error"/"aborted" with empty content.
       const result = message as { stopReason?: string; content?: Array<{ type?: string; text?: string }> };
-      if (result.stopReason === "error" || result.stopReason === "aborted") return undefined;
+      if (result.stopReason === "error" || result.stopReason === "aborted") {
+        this.report({ outcome: "provider_error", detail: `stopReason=${result.stopReason}` });
+        return undefined;
+      }
 
       const text = (result.content ?? [])
         .filter((part) => part.type === "text" && typeof part.text === "string")
         .map((part) => part.text)
         .join("\n");
 
-      return parseContractResponse(text);
-    } catch {
+      const parsed = parseContractResponse(text);
+      if (parsed === undefined) {
+        // Length only. The response text is model output derived from the user's
+        // request, so it does not go in the ledger.
+        this.report({ outcome: "unparseable", detail: `chars=${text.length}` });
+      }
+      return parsed;
+    } catch (err) {
+      this.report({ outcome: "threw", detail: errorLabel(err) });
       return undefined;
     }
   }

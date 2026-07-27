@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import register from "../src/index";
 import { noopTheme } from "../src/ui-utils";
 
@@ -61,6 +61,23 @@ afterEach(() => {
   process.chdir(originalCwd);
 });
 
+/**
+ * Run a test somewhere that is not the repo.
+ *
+ * `register()` reads and writes cwd-relative state: it loads harness.policy.json,
+ * shells git for diff evidence, and appends to
+ * `${cwd}/.harness/evolution/events.jsonl`. Run from the repo root, this suite
+ * files synthetic gate failures and extraction outcomes into the developer's own
+ * ledger — the same ledger that is the evidence base for the
+ * harness-simplification plan. Fifteen such rows were written and removed before
+ * this was made blanket rather than per-test.
+ */
+async function inScratchRepo(prefix: string): Promise<string> {
+  const cwd = await mkdtemp(join(tmpdir(), prefix));
+  process.chdir(cwd);
+  return cwd;
+}
+
 type Handler = (...args: unknown[]) => unknown;
 type RegisterApi = Parameters<typeof register>[0];
 
@@ -83,6 +100,12 @@ function createFakePi(overrides?: Partial<RegisterApi>) {
 }
 
 describe("register", () => {
+  // Every test here calls register(), which touches cwd-relative state. None of
+  // them should touch the real repo's.
+  beforeEach(async () => {
+    await inScratchRepo("harness-register-");
+  });
+
   it("loads policy and blocks a sensitive read through the tool_call hook", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "harness-index-"));
     await writeFile(
@@ -315,8 +338,7 @@ describe("register", () => {
   });
 
   it("records a harness ledger event when the verification gate re-injects", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "harness-ledger-"));
-    process.chdir(cwd);
+    const cwd = await inScratchRepo("harness-ledger-");
     const sendUserMessage = vi.fn(async () => undefined);
     const { api, handlers } = createFakePi({ sendUserMessage } as Partial<RegisterApi>);
     register(api);
@@ -335,15 +357,28 @@ describe("register", () => {
     );
 
     const raw = await readFile(join(cwd, ".harness", "evolution", "events.jsonl"), "utf-8");
-    const event = JSON.parse(raw.trim());
+    // JSONL, and since Phase 2 this turn writes two rows: the spec_extraction
+    // outcome and then the gate_failure. Parse it as the line-delimited format
+    // it is rather than assuming a single object.
+    const events = raw.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 
-    expect(event).toMatchObject({
+    const gateFailure = events.find((entry) => entry.type === "gate_failure");
+    expect(gateFailure).toMatchObject({
       type: "gate_failure",
       model: "model-id",
       outcome: "needs_work",
     });
-    expect(event.summary).toContain("verification gate re-injected");
-    expect(raw).not.toContain("Add pagination with tests");
+    expect(gateFailure.summary).toContain("verification gate re-injected");
+
+    // The extraction outcome is recorded on the same turn — this is what made
+    // the 0-for-48 invisible for as long as it was.
+    expect(events.find((entry) => entry.type === "spec_extraction")).toMatchObject({
+      summary: "semantic extraction: accepted",
+      outcome: "ok",
+    });
+
+    // Neither row may carry the user's prompt.
+    expect(raw).not.toContain(GATE_PROMPT);
   });
 
   it("uses the final assistant message as manual completion evidence", async () => {

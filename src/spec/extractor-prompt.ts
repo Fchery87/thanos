@@ -61,7 +61,13 @@ export function buildContractExtractionPrompt(request: string): string {
         "return ONLY a JSON object, no prose and no code fence: {\"objective\": string, \"criteria\": [...]}",
         "each criterion has id, kind, statement, targets, evidence, expectedExecutables, expectedArgs, mustNot, source",
         "kind is one of rename|fix|build|audit|secure|investigate|manual; source is always \"semantic_extraction\"",
-        "return {\"objective\":\"\",\"criteria\":[]} when the request is too vague to contract — the deterministic fallback beats a guess",
+        // The escape hatch that used to sit here — "return {objective:'',criteria:[]}
+        // when the request is too vague" — is gone. settleContract() discards an
+        // empty-objective contract, so the instruction was an invitation to
+        // produce nothing, offered on every turn. A vague request still has an
+        // observable outcome; write the loosest criterion that would prove it
+        // rather than declining. The deterministic fallback is the floor if this
+        // call fails, not a preferred answer.
       ]),
     },
   ]);

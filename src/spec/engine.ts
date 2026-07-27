@@ -2,7 +2,8 @@ import { generateSpec } from "./generator";
 import { evidenceFromToolResult, type ToolResultEventLike } from "./evidence";
 import type { EvidenceRecord } from "./claims";
 import { verifyCriteria, type VerificationResult } from "./verification";
-import { validateTaskContract } from "./contract-schema";
+import { validateTaskContractDetailed } from "./contract-schema";
+import { noopExtractionReporter, type ExtractionReporter } from "./extraction-log";
 import { buildContractFromTaskContract } from "./contract";
 import type { TaskContract } from "./task-contract";
 import type { WorkingTreeSnapshot } from "./diff-evidence";
@@ -34,6 +35,15 @@ export class SpecEngine {
 
   constructor(
     private readonly extractContractCandidate?: (prompt: string, tier: SpecTier) => Promise<unknown>,
+    /**
+     * Records what happened to an extraction candidate after it came back.
+     *
+     * The extractor cannot report these: schema rejection, an empty objective
+     * and a stale result all happen here, and schema rejection is the one that
+     * produced the 0-for-48. Defaults to silence so unit tests stay side-effect
+     * free.
+     */
+    private readonly report: ExtractionReporter = noopExtractionReporter,
   ) {}
 
   classify(prompt: string, explicitFlag: boolean): SpecTier {
@@ -64,7 +74,14 @@ export class SpecEngine {
     }
     this.pendingContractFor = this.activeSpec.id;
     this.pendingContract = candidate
-      .then((value) => validateTaskContract(value))
+      .then((value) => {
+        // `undefined` means the extractor already reported its own reason; only
+        // a candidate that came back and then failed validation is news here.
+        if (value === undefined) return undefined;
+        const { contract, reason } = validateTaskContractDetailed(value);
+        if (!contract) this.report({ outcome: "schema_rejected", detail: reason });
+        return contract;
+      })
       .catch(() => undefined);
   }
 
@@ -85,14 +102,22 @@ export class SpecEngine {
     this.pendingContractFor = undefined;
 
     const contract = await pending;
+    if (!contract) return; // already reported, by the extractor or above
+    if (contract.objective.length === 0) {
+      this.report({ outcome: "empty_objective" });
+      return;
+    }
     // A new turn (or a rejection) may have replaced the spec while extraction was
     // in flight; a stale result must not land on it.
-    if (!contract || contract.objective.length === 0) return;
-    if (!this.activeSpec || this.activeSpec.id !== specId) return;
+    if (!this.activeSpec || this.activeSpec.id !== specId) {
+      this.report({ outcome: "stale" });
+      return;
+    }
 
     // Mutated in place so references captured by callers stay valid.
     this.activeSpec.taskContract = contract;
     this.activeSpec.acceptanceCriteria = buildContractFromTaskContract(contract).acceptanceCriteria;
+    this.report({ outcome: "accepted", criteriaCount: contract.criteria.length });
   }
 
   startTurn(prompt: string, explicitFlag: boolean): FormalSpec | undefined {

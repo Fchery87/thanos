@@ -19,8 +19,19 @@ describe("buildContractExtractionPrompt", () => {
     expect(buildContractExtractionPrompt("Add pagination")).toContain("CANNOT PRODUCE THIS");
   });
 
-  it("tells the model how to decline", () => {
-    expect(buildContractExtractionPrompt("do something")).toContain('{"objective":"","criteria":[]}');
+  // The prompt used to end with "return {"objective":"","criteria":[]} when the
+  // request is too vague to contract". settleContract() discards exactly that
+  // shape, so the instruction was a standing invitation to produce nothing —
+  // offered on every single turn, to a subsystem that went 0-for-48.
+  it("offers the model no way to decline", () => {
+    const prompt = buildContractExtractionPrompt("do something");
+
+    expect(prompt).not.toContain('{"objective":"","criteria":[]}');
+    expect(prompt).not.toContain("too vague");
+  });
+
+  it("still asks for the smallest useful set of criteria", () => {
+    expect(buildContractExtractionPrompt("do something")).toContain("Emit 1-3 criteria");
   });
 });
 

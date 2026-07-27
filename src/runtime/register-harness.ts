@@ -4,7 +4,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { PermissionManager } from "../permissions/manager";
 import { yoloDisabledByEnv } from "../permissions/yolo-config";
 import { SpecEngine } from "../spec/engine";
-import { ContractExtractor } from "../spec/extractor";
+import { ContractExtractor, loadSpecSettings } from "../spec/extractor";
+import { createLedgerExtractionReporter } from "../spec/extraction-log";
 import { GoalController } from "../goal/controller";
 import { registerGoalCommand } from "../goal/command";
 import { loadGoalSettings } from "../goal/load-settings";
@@ -68,8 +69,16 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   // Semantic contract extraction. The extractor holds no context at construction
   // — before_agent_start hands it the live one each turn. Every failure path
   // returns undefined, leaving the deterministic contract standing.
-  const contractExtractor = new ContractExtractor();
-  const spec = new SpecEngine((prompt, tier) => contractExtractor.extract(prompt, tier));
+  //
+  // Both halves report to the same ledger reporter: the extractor owns the paths
+  // before a candidate exists (no model, no auth, timeout, unparseable), the
+  // engine owns the ones after (schema rejection, empty objective, stale,
+  // accepted). Fail-safe is unchanged; it is merely no longer silent. Subagents
+  // are excluded — their turns are not the measurement, and a fan-out would
+  // otherwise write one row per child.
+  const extractionReporter = isSubagent ? undefined : createLedgerExtractionReporter(sessionId);
+  const contractExtractor = new ContractExtractor(loadSpecSettings(), extractionReporter);
+  const spec = new SpecEngine((prompt, tier) => contractExtractor.extract(prompt, tier), extractionReporter);
   const goalSettings = resolveGoalSettings(loadGoalSettings());
   const goalController = new GoalController(goalSettings);
   const policyStatePromise = loadPolicyState(process.cwd(), process.env.HARNESS_POLICY_FILE);
