@@ -155,6 +155,105 @@ describe("SpecEngine lifecycle", () => {
     expect(results[1]?.evidence[0]).toContain("vitest");
   });
 
+  it("is a no-op to settle when no extractor is wired", async () => {
+    const spec = new SpecEngine();
+    const active = spec.startTurn("Add pagination with tests", false);
+    const before = JSON.stringify(active?.acceptanceCriteria);
+
+    await spec.settleContract();
+
+    expect(JSON.stringify(spec.activeSpec?.acceptanceCriteria)).toBe(before);
+    expect(spec.activeSpec?.taskContract.criteria[0]?.source).toBe("deterministic_fallback");
+  });
+
+  it("installs the deterministic contract synchronously while extraction is in flight", () => {
+    let release: (value: unknown) => void = () => {};
+    const spec = new SpecEngine(() => new Promise((resolve) => { release = resolve; }));
+
+    // No await: the spec must exist the instant the turn starts.
+    const active = spec.startTurn("Add pagination with tests", false);
+
+    expect(active?.acceptanceCriteria.length).toBeGreaterThan(0);
+    expect(active?.taskContract.criteria[0]?.source).toBe("deterministic_fallback");
+    release(undefined);
+  });
+
+  it("upgrades the spec in place when extraction validates", async () => {
+    const semantic = {
+      objective: "Add pagination to the reporting module",
+      criteria: [{
+        id: "semantic-primary",
+        kind: "build",
+        statement: "Pagination lands in the reporting module",
+        targets: ["src/reporting"],
+        evidence: ["diff"],
+        expectedExecutables: [],
+        expectedArgs: [],
+        mustNot: [],
+        source: "semantic_extraction",
+      }],
+    };
+    const spec = new SpecEngine(async () => semantic);
+    const active = spec.startTurn("Add pagination with tests", false);
+    const idBefore = active?.id;
+
+    await spec.settleContract();
+
+    expect(spec.activeSpec?.id).toBe(idBefore); // same object, mutated in place
+    expect(spec.activeSpec?.taskContract.criteria[0]?.source).toBe("semantic_extraction");
+    expect(spec.activeSpec?.acceptanceCriteria.map((c) => c.id)).toEqual(["semantic-primary"]);
+  });
+
+  it("keeps the deterministic contract when extraction rejects, throws, or is malformed", async () => {
+    const cases: Array<() => Promise<unknown>> = [
+      async () => { throw new Error("model unavailable"); },
+      async () => undefined,
+      async () => ({ objective: "", criteria: [] }),
+      async () => ({ objective: "x", criteria: [{ id: "c", kind: "not-a-kind", statement: "s", targets: [], evidence: ["diff"], expectedExecutables: [], expectedArgs: [], mustNot: [], source: "semantic_extraction" }] }),
+      async () => ({ objective: "x", criteria: [{ id: "c", kind: "build", statement: "s", targets: ["/etc"], evidence: ["diff"], expectedExecutables: [], expectedArgs: [], mustNot: [], source: "semantic_extraction" }] }),
+    ];
+
+    for (const extractor of cases) {
+      const spec = new SpecEngine(extractor);
+      spec.startTurn("Add pagination with tests", false);
+      await spec.settleContract();
+
+      expect(spec.activeSpec?.taskContract.criteria[0]?.source).toBe("deterministic_fallback");
+      expect(spec.activeSpec?.acceptanceCriteria.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("discards an extraction that lands after the turn moved on", async () => {
+    // Each startTurn kicks off its own extraction, so resolvers are collected
+    // positionally — resolving by closure would settle the wrong promise.
+    const resolvers: Array<(value: unknown) => void> = [];
+    const spec = new SpecEngine(() => new Promise((resolve) => { resolvers.push(resolve); }));
+    spec.startTurn("Add pagination with tests", false);
+
+    const settling = spec.settleContract();
+    spec.startTurn("Add a different feature with tests", false); // new turn, new spec
+
+    resolvers[0]?.({
+      objective: "stale",
+      criteria: [{ id: "stale", kind: "build", statement: "stale", targets: [], evidence: ["diff"], expectedExecutables: [], expectedArgs: [], mustNot: [], source: "semantic_extraction" }],
+    });
+    await settling;
+
+    expect(spec.activeSpec?.acceptanceCriteria.some((c) => c.id === "stale")).toBe(false);
+    resolvers[1]?.(undefined);
+  });
+
+  it("settles at most once", async () => {
+    let calls = 0;
+    const spec = new SpecEngine(async () => { calls += 1; return undefined; });
+    spec.startTurn("Add pagination with tests", false);
+
+    await spec.settleContract();
+    await spec.settleContract();
+
+    expect(calls).toBe(1);
+  });
+
   it("replaces tool-input diff evidence with git ground truth", () => {
     const spec = new SpecEngine();
     spec.startTurn("Add a pagination helper to the billing module", false);

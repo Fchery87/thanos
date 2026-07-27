@@ -2,6 +2,9 @@ import { generateSpec } from "./generator";
 import { evidenceFromToolResult, type ToolResultEventLike } from "./evidence";
 import type { EvidenceRecord } from "./claims";
 import { verifyCriteria, type VerificationResult } from "./verification";
+import { validateTaskContract } from "./contract-schema";
+import { buildContractFromTaskContract } from "./contract";
+import type { TaskContract } from "./task-contract";
 import type { WorkingTreeSnapshot } from "./diff-evidence";
 import type { FormalSpec, SpecTier } from "./types";
 
@@ -16,8 +19,22 @@ export class SpecEngine {
    */
   turnBaseline: Promise<WorkingTreeSnapshot | undefined> | undefined;
   private evidence: EvidenceRecord[] = [];
+  /**
+   * In-flight semantic extraction for the active spec, if an extractor is wired.
+   *
+   * The spec is never absent while this is pending: `generate` installs the
+   * deterministic contract synchronously, and {@link settleContract} upgrades it
+   * in place if and when extraction returns something valid. Any failure — model
+   * error, timeout, schema rejection — simply leaves the deterministic contract
+   * standing, which is the floor this design guarantees.
+   */
+  private pendingContract: Promise<TaskContract | undefined> | undefined;
+  /** Spec id the pending extraction belongs to, so a stale result cannot land. */
+  private pendingContractFor: string | undefined;
 
-  constructor(private readonly extractContractCandidate?: (prompt: string, tier: SpecTier) => unknown) {}
+  constructor(
+    private readonly extractContractCandidate?: (prompt: string, tier: SpecTier) => Promise<unknown>,
+  ) {}
 
   classify(prompt: string, explicitFlag: boolean): SpecTier {
     const lower = prompt.trim().toLowerCase();
@@ -31,7 +48,51 @@ export class SpecEngine {
   generate(prompt: string, tier: SpecTier): void {
     this.reset();
     if (tier === "instant") return;
-    this.activeSpec = generateSpec(prompt, tier, { extractContractCandidate: this.extractContractCandidate });
+    // Deterministic contract first and synchronously: callers must never observe
+    // a turn without a spec, and this is the floor extraction can only improve on.
+    this.activeSpec = generateSpec(prompt, tier);
+
+    if (!this.extractContractCandidate) return;
+    // Started synchronously so extraction begins when the turn does, rather than a
+    // microtask later. A synchronous throw is treated exactly like a rejection:
+    // no pending contract, deterministic stands.
+    let candidate: Promise<unknown>;
+    try {
+      candidate = Promise.resolve(this.extractContractCandidate(prompt, tier));
+    } catch {
+      return;
+    }
+    this.pendingContractFor = this.activeSpec.id;
+    this.pendingContract = candidate
+      .then((value) => validateTaskContract(value))
+      .catch(() => undefined);
+  }
+
+  /**
+   * Fold a completed extraction into the active spec, if one arrived and validated.
+   *
+   * Idempotent, and safe to call when no extractor is wired — then it is a no-op,
+   * which is what keeps this seam behaviour-neutral until an extractor exists.
+   * Must be awaited before anything reads the contract as final: verification at
+   * agent_end, and the explicit-tier approval prompt (a user has to approve the
+   * contract that will actually be enforced, not a placeholder swapped afterwards).
+   */
+  async settleContract(): Promise<void> {
+    const pending = this.pendingContract;
+    if (!pending) return;
+    const specId = this.pendingContractFor;
+    this.pendingContract = undefined;
+    this.pendingContractFor = undefined;
+
+    const contract = await pending;
+    // A new turn (or a rejection) may have replaced the spec while extraction was
+    // in flight; a stale result must not land on it.
+    if (!contract || contract.objective.length === 0) return;
+    if (!this.activeSpec || this.activeSpec.id !== specId) return;
+
+    // Mutated in place so references captured by callers stay valid.
+    this.activeSpec.taskContract = contract;
+    this.activeSpec.acceptanceCriteria = buildContractFromTaskContract(contract).acceptanceCriteria;
   }
 
   startTurn(prompt: string, explicitFlag: boolean): FormalSpec | undefined {
@@ -43,7 +104,8 @@ export class SpecEngine {
   preview(prompt: string, explicitFlag: boolean): FormalSpec | undefined {
     const tier = this.classify(prompt, explicitFlag);
     if (tier === "instant") return undefined;
-    return generateSpec(prompt, tier, { extractContractCandidate: this.extractContractCandidate });
+    // Deterministic only: a preview must not spend a model call or block.
+    return generateSpec(prompt, tier);
   }
 
   reset(): void {
@@ -51,6 +113,8 @@ export class SpecEngine {
     this.evidence = [];
     this.gateAttempts = 0;
     this.turnBaseline = undefined;
+    this.pendingContract = undefined;
+    this.pendingContractFor = undefined;
   }
 
   /**

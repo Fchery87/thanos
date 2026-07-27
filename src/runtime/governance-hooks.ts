@@ -99,6 +99,11 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
       if (!ctx.hasUI) {
         return { block: true, reason: "Explicit spec needs approval but no UI available" };
       }
+      // Approval must be given against the contract that will actually be
+      // enforced. Blocking here is deliberate: showing a deterministic placeholder
+      // and upgrading it after the user clicked "approve" would make the approval
+      // meaningless. A no-op when no extractor is wired.
+      await spec.settleContract();
       const approved = await ctx.ui.confirm(
         "Spec Approval Required",
         formatSpecForApproval(active, ctx.ui.theme ?? noopTheme),
@@ -204,6 +209,10 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
     // stand. Never allowed to throw: a verification detail must not fail the turn.
     if (spec.activeSpec) {
       try {
+        // Fold in any semantic contract before verifying against it. No-op when no
+        // extractor is wired, and when one is, the turn's own work has already
+        // hidden the latency.
+        await spec.settleContract();
         const baseline = await spec.turnBaseline;
         const groundTruth = await collectTurnDiffEvidence(process.cwd(), baseline);
         if (groundTruth) spec.replaceDiffEvidence(groundTruth);
