@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { GoalController } from "../goal/controller";
 import type { SpecEngine } from "../spec/engine";
 import { snapshotWorkingTree } from "../spec/diff-evidence";
+import type { ContractExtractor } from "../spec/extractor";
 import type { LensLite } from "../lens/lite";
 import type { MemoryRecord } from "../memory/types";
 import type { PermissionManager } from "../permissions/manager";
@@ -41,6 +42,8 @@ export interface BeforeAgentStartDeps {
   spec: SpecEngine;
   lens: LensLite;
   goalController: GoalController;
+  /** Receives the live ExtensionContext each turn; omitted in tests. */
+  contractExtractor?: ContractExtractor;
 }
 
 /**
@@ -52,7 +55,7 @@ export interface BeforeAgentStartDeps {
  * tail).
  */
 export function registerBeforeAgentStart(pi: ExtensionAPI, deps: BeforeAgentStartDeps): void {
-  const { sessionId, isSubagent, permissions, spec, lens, goalController } = deps;
+  const { sessionId, isSubagent, permissions, spec, lens, goalController, contractExtractor } = deps;
 
   // Thinking escape hatch: /goal and --spec run at the model's max, restored when
   // neither is active. State persists across turns (parent session only) — this
@@ -76,6 +79,9 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: BeforeAgentStar
       consumeContinuation(sessionId, "spec", event.prompt) ||
       consumeContinuation(sessionId, "goal", event.prompt);
     if (!isHarnessContinuation) {
+      // Hand the extractor this turn's model + registry before generation kicks
+      // it off. Without a context it degrades to deterministic-only.
+      contractExtractor?.setContext(ctx);
       spec.startTurn(event.prompt, pi.getFlag("spec") === true);
       // Working-tree state before this turn touches anything, so agent_end can
       // tell what this turn changed from what was already dirty. Kept as an

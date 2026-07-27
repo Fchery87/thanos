@@ -152,7 +152,11 @@ export function verifyCriteria(spec: FormalSpec, evidence: EvidenceRecord[]): Ve
 
     const missingEvidence = [...missingRequired, ...missingGroups];
 
-    const mustNotViolation = taskCriterion ? !mustNotIsSatisfied(taskCriterion.mustNot ?? [], evidence) : false;
+    // Scoped to THIS criterion's matching evidence, not the whole turn's. Until
+    // the extractor landed, `mustNot` only ever held one hardcoded phrase and so
+    // could not fire; with real values it becomes live, and an unscoped scan
+    // would fail a criterion because of evidence belonging to a different one.
+    const mustNotViolation = taskCriterion ? !mustNotIsSatisfied(taskCriterion.mustNot ?? [], matchingEvidence) : false;
     const passed = missingEvidence.length === 0 && !mustNotViolation;
 
     return {

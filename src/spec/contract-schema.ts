@@ -14,6 +14,19 @@ const VALID_KINDS = new Set<TaskCriterionKind>(["rename", "fix", "build", "audit
 const VALID_SOURCES = new Set<TaskCriterionSource>(["user", "deterministic_fallback", "semantic_extraction"]);
 const VALID_EVIDENCE = new Set<TaskEvidenceIdentity>(["diff", "test", "command", "manual"]);
 const VALID_VERIFICATION_MODES = new Set<TaskVerificationMode>(["advisory", "gated"]);
+
+/**
+ * Kinds whose correctness genuinely cannot be proved from tool telemetry, and so
+ * the only ones allowed to be advisory.
+ *
+ * `advisory` means "never enforced", which makes it the one field an extractor
+ * could use to weaken the gate — and the extractor's input is an untrusted user
+ * request. A request that talks the model into marking a build criterion advisory
+ * would produce a spec that verifies nothing. Rather than trusting the value, it
+ * is clamped: advisory survives only where the deterministic ladder would also
+ * have chosen it. Extraction can still upgrade gating, never relax it.
+ */
+const ADVISORY_ELIGIBLE_KINDS = new Set<TaskCriterionKind>(["audit", "investigate", "manual"]);
 const VALID_TARGET = /^(src|tests|docs|scripts|packages|lib|app)(?:[\/].+)?$|^(README|CHANGELOG|CONTRIBUTING|package\.json|tsconfig\.json|vitest\.config\.[cm]?js)$/i;
 // Single-token programs. Multi-word normalized forms ("go test", "node --test")
 // cannot be expressed here and are checked against MULTI_WORD_EXECUTABLES, which
@@ -59,6 +72,10 @@ function normalizeCriterion(value: unknown): TaskCriterion | undefined {
       return undefined;
     }
     verificationMode = raw.verificationMode as TaskVerificationMode;
+  }
+  const kind = raw.kind as TaskCriterionKind;
+  if (verificationMode === "advisory" && !ADVISORY_ELIGIBLE_KINDS.has(kind)) {
+    verificationMode = "gated";
   }
   // Optional anyOf groups: an array of non-empty groups, each of valid evidence
   // kinds. A malformed value is rejected outright, not coerced.
