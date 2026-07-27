@@ -20,7 +20,7 @@
     "test:installer": "vitest run tests/scripts",
     "test:perf": "vitest run tests/performance",
     "benchmark:prompts": "bun scripts/benchmark-prompts.mjs",
-    "eval:prompts": "bun scripts/eval-prompts.mjs",
+    "measure": "bun scripts/measure-harness.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src tests",
     "ci": "bun run typecheck && bun run lint && bun run test"

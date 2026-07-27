@@ -116,18 +116,47 @@ the deletions in Phase 4, so the benefit of those deletions is measurable.
 
 **Task 1.2 — Delete the line-count benchmarks**
 - Remove the `src/index.ts line count` / `import count` / `architectural metrics`
-  entries from `scripts/benchmark-prompts.mjs`. Measuring file length in
-  milliseconds is not a benchmark.
+  entries. Measuring file length in milliseconds is not a benchmark.
+- **Correction:** these live in `tests/performance/baseline.test.ts:21-41`, not in
+  `scripts/benchmark-prompts.mjs` as originally written. That script measures
+  prompt sizes deterministically and is left alone.
 
 **Task 1.3 — Fix the SLO gate or delete it**
 - `.harness/slo-results.json` reports cold load at 32,339ms against a 10,000ms
-  target and has been `passed: false` indefinitely. Actual is 1,818ms.
-- Either fix the measurement so it reflects reality, or delete the target. A gate
-  that is permanently red trains you to ignore gates.
+  target and has been `passed: false` indefinitely. Actual is ~1,530ms.
+- **The defect is worse than recorded here.** The target timed
+  `await import("../../src/index")` *from inside vitest*, so it measured the test
+  runner's TypeScript transform of the whole module graph. And its only assertion
+  was `expect(totalMs).toBeGreaterThan(0)` — it could never fail. The JSON carried
+  `passed: false` while `bun run test` stayed green, so the gate was not
+  ignored-because-red, it was never read at all.
+- Resolution: the target is removed from the vitest file (it cannot be measured
+  correctly there) and moved to Task 1.4's script. The four remaining SLO targets
+  assert their own thresholds honestly and now report `passed: true`.
 
 **Task 1.4 — Keep exactly one honest number**
 - A single measurement of real cold-import time plus per-turn harness overhead,
   recorded before Phase 4 and again after.
+- Shipped as `scripts/measure-harness.mjs` (`bun run measure`). Cold import is
+  measured in five fresh `bun` processes — the shape pi actually loads in — never
+  in-process. `TRUSTED_INSTRUCTIONS` and `SKILLS_DIRECTIVE` are exported from
+  `before-agent-start.ts` so the prompt measurement weighs the live directives
+  rather than a copy that drifts.
+
+**Recorded baseline — 2026-07-27, before Phase 4:**
+
+```
+cold import     1596ms median (1493-1775ms over 5 fresh processes)
+turn overhead   ~839 tok cached prefix + ~301 tok per-turn tail
+                (of the prefix, ~478 tok is the agent roster)
+source          160 files, 16582 lines
+```
+
+Independently confirms the ~840 tok/turn figure in the evidence table.
+
+**Not fixed, deliberately:** suite wall-clock is unusable as a gate. Two full runs
+on an unchanged tree measured 222s and 294s — 32% variance — against a 118s figure
+that does not reproduce. Phase 4 reports it descriptively; nothing gates on it.
 
 ---
 
@@ -176,6 +205,19 @@ Run one day with Phase 2 in place, then read the ledger.
   now gates on genuine criteria and the subsystem is earning its keep.
 - **Still zero after repair** → delete `src/spec/` entirely (~1,800 LOC + tests),
   along with the extractor call on every ambient turn.
+
+**Threshold, pinned before the observation day so it is not decided by vibes:**
+**≥50% of ambient turns must yield a validated semantic contract.** Below that,
+`src/spec/` is deleted. Measured from the Task 2.4 extraction-outcome log, not
+from recollection.
+
+**Why Phases 2–3 were kept rather than collapsed into an immediate deletion:**
+Phase 0 added a register()-level test that drives the full pipeline — extract →
+validate → build contract → gate — and it passes. The machinery works when the
+model returns a well-formed contract. So 0-for-48 is not evidence that the design
+fails; it is evidence of the prompt/schema contradiction, which Phase 2 fixes in
+a few lines. Repair is cheap and Phase 3 is binding, so the subsystem gets one
+fair run before deletion.
 
 This gate is binding. Verifying against git ground truth rather than the model's
 self-report is a genuinely good idea and better than what Claude Code or OpenCode

@@ -27,13 +27,30 @@ import { projectMemory } from "./commands/memory";
 // fresh cold-started child (seconds of startup, often minutes of wall-clock),
 // so reflexively delegating ordinary work makes the session slower, not
 // smarter. Delegate only when it genuinely pays.
-const TRUSTED_INSTRUCTIONS: readonly string[] = [
+export const TRUSTED_INSTRUCTIONS: readonly string[] = [
   "Specialist subagents are available via the `subagent` tool.",
   "Do non-trivial work inline yourself by default — you are a capable generalist and inline work has no cold-start cost. Delegate to a specialist ONLY when the work is genuinely parallel (independent slices worth running at once), needs a capability you lack, or the user explicitly asked for deep review or /waves. A specialist run cold-starts a fresh child (seconds to load, often minutes of wall-clock), so reflexive delegation of ordinary work makes the session slower, not smarter.",
   "When you do delegate independent or pipelined tasks, use the parallel/chain modes.",
   "Read-only specialists cannot edit or run commands by design.",
   "Do NOT pass timeoutMs/maxRuntimeMs when delegating — every agent has its own maxExecutionTimeMs budget, and short caller timeouts kill healthy runs mid-flight, wasting all their work. If you must bound a run, use at least 600000 (10 minutes).",
 ];
+
+// ── Auto-invoke: nudge the top-level agent to reach for skills ──
+// Pi core injects an <available_skills> block into the system prompt but only
+// softly ("use the read tool when it matches"). Non-Claude models routinely
+// ignore that hint, so restate it as a hard directive. Parent only — subagents
+// receive their curated skill set via pi-subagents.
+//
+// Exported alongside TRUSTED_INSTRUCTIONS so scripts/measure-harness.mjs weighs
+// the real per-turn prompt rather than a copy that drifts out of date.
+export const SKILLS_DIRECTIVE =
+  "Specialized skills are listed in the <available_skills> block of this " +
+  "system prompt. Before doing non-trivial work, scan that block: if any " +
+  "skill's description matches the task, `read` its SKILL.md file FIRST and " +
+  "follow its instructions — do not improvise work a skill already covers. " +
+  "A skill gives you a procedure to run inline; by default run it inline " +
+  "yourself. Delegating skill-guided work to a subagent is only worth the " +
+  "cold-start when the work is independent/parallel or genuinely needs fresh context.";
 
 export interface BeforeAgentStartDeps {
   sessionId: string;
@@ -142,14 +159,7 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: BeforeAgentStar
     // only softly ("use the read tool when it matches"). Non-Claude models
     // routinely ignore that hint, so restate it as a hard directive. Parent
     // only — subagents receive their curated skill set via pi-subagents.
-    const skillsDirective = isSubagent ? "" :
-      "Specialized skills are listed in the <available_skills> block of this " +
-      "system prompt. Before doing non-trivial work, scan that block: if any " +
-      "skill's description matches the task, `read` its SKILL.md file FIRST and " +
-      "follow its instructions — do not improvise work a skill already covers. " +
-      "A skill gives you a procedure to run inline; by default run it inline " +
-      "yourself. Delegating skill-guided work to a subagent is only worth the " +
-      "cold-start when the work is independent/parallel or genuinely needs fresh context.";
+    const skillsDirective = isSubagent ? "" : SKILLS_DIRECTIVE;
 
     // ── Goal mode: persistence rules for the whole active-goal turn ─────
     // Stands in the system prompt (not just the follow-up directive) so the
