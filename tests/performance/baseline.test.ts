@@ -2,7 +2,13 @@ import { describe, it } from "vitest";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
-const OUTPUT_PATH = join(process.cwd(), "benchmark-results.json");
+// Named after its producer, and inside the ignored .harness/ directory with the
+// other generated artifacts. It used to land in the repo root, so every test run
+// left the working tree dirty with a fresh timestamp; and the obvious fix —
+// moving it to .harness/benchmark-results.json — would have collided with
+// scripts/benchmark-prompts.mjs, which writes a different schema to that exact
+// path. One file, one writer.
+const OUTPUT_PATH = join(process.cwd(), ".harness", "perf-baseline.json");
 
 interface BenchmarkEntry {
   name: string;

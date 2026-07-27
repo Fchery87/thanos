@@ -5,7 +5,13 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-const OUTPUT = join(process.cwd(), ".harness", "benchmark-results.json");
+// Was .harness/benchmark-results.json — the same path scripts/benchmark-prompts.mjs
+// writes, with an incompatible schema ({ metrics } here, { results } there).
+// Running this script overwrote that file and broke
+// tests/performance/prompt-budget.test.ts, which reads it and asserts on
+// `results`. Nothing wired this script to an npm script, so the landmine had
+// never gone off.
+const OUTPUT = join(process.cwd(), ".harness", "benchmark-harness.json");
 
 interface Metric {
   name: string;
