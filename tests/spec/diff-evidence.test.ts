@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, unlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -8,7 +8,11 @@ import { collectTurnDiffEvidence, snapshotWorkingTree } from "../../src/spec/dif
 const created: string[] = [];
 
 function makeRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), "thanos-diff-"));
+  // realpath, because `git rev-parse --show-toplevel` resolves symlinks and macOS
+  // hands out /var/folders/... which is a link to /private/var/folders/...
+  // Comparing a resolved toplevel against an unresolved root makes every path
+  // look like it escapes the repo, and all evidence is dropped.
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "thanos-diff-")));
   created.push(dir);
   const run = (...args: string[]) => execFileSync("git", ["-C", dir, ...args], { stdio: "pipe" });
   run("init", "--initial-branch=main");
@@ -48,7 +52,7 @@ describe("snapshotWorkingTree", () => {
   });
 
   it("returns undefined outside a git repository", async () => {
-    const plain = mkdtempSync(join(tmpdir(), "thanos-plain-"));
+    const plain = realpathSync(mkdtempSync(join(tmpdir(), "thanos-plain-")));
     created.push(plain);
     expect(await snapshotWorkingTree(plain)).toBeUndefined();
   });
@@ -120,7 +124,7 @@ describe("collectTurnDiffEvidence", () => {
   });
 
   it("returns undefined outside a git repository, leaving tool-input evidence to stand", async () => {
-    const plain = mkdtempSync(join(tmpdir(), "thanos-plain-"));
+    const plain = realpathSync(mkdtempSync(join(tmpdir(), "thanos-plain-")));
     created.push(plain);
     expect(await collectTurnDiffEvidence(plain, undefined)).toBeUndefined();
   });

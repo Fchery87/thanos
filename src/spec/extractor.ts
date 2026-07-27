@@ -94,11 +94,21 @@ export class ContractExtractor {
       );
 
       // Hard bound: the contract is only read at agent_end, but a hung provider
-      // must never be what decides when a turn can finish.
-      const message = await Promise.race([
-        completion,
-        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), this.settings.timeoutMs)),
-      ]);
+      // must never be what decides when a turn can finish. The loser's timer is
+      // cleared — otherwise a completion that wins the race leaves it live for the
+      // full timeout, once per turn, for the life of the session.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let message: Awaited<typeof completion> | undefined;
+      try {
+        message = await Promise.race([
+          completion,
+          new Promise<undefined>((resolve) => {
+            timer = setTimeout(() => resolve(undefined), this.settings.timeoutMs);
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
       if (!message) return undefined;
 
       // completeSimple resolves rather than rejects on API failure, carrying

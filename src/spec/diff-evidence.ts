@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { DiffEvidence } from "./claims";
@@ -33,9 +33,31 @@ const UNREADABLE = "<unreadable>";
 /** Repo-root-relative path → content hash, for every path git considers dirty. */
 export type WorkingTreeSnapshot = Map<string, string>;
 
+/**
+ * agent_end awaits this path before a turn can finish, so a hang here hangs the
+ * turn. Every other failure mode degrades to undefined; without a timeout, a git
+ * blocked on index.lock contention, a slow network filesystem, or a credential
+ * prompt would not.
+ */
+const GIT_TIMEOUT_MS = 10_000;
+
+/**
+ * `--untracked-files=all` on a tree with a large un-ignored directory (a stray
+ * node_modules) overflows the 1 MiB default, which would make git() return
+ * undefined and evidence silently vanish — in exactly the large repos where
+ * MAX_CHANGED_FILES was supposed to be the deciding guard.
+ */
+const GIT_MAX_BUFFER = 16 * 1024 * 1024;
+
+/** Bound on concurrent file reads, so hashing a dirty tree is not one big spike. */
+const HASH_CONCURRENCY = 16;
+
 async function git(repoDir: string, args: string[]): Promise<string | undefined> {
   try {
-    const { stdout } = await execFileAsync("git", ["-C", repoDir, ...args]);
+    const { stdout } = await execFileAsync("git", ["-C", repoDir, ...args], {
+      timeout: GIT_TIMEOUT_MS,
+      maxBuffer: GIT_MAX_BUFFER,
+    });
     return stdout;
   } catch {
     return undefined;
@@ -88,10 +110,14 @@ export async function snapshotWorkingTree(repoDir: string = process.cwd()): Prom
   const paths = parsePorcelain(status);
   if (paths.length > MAX_CHANGED_FILES) return undefined;
 
+  // Chunked rather than one Promise.all over every path: up to MAX_CHANGED_FILES
+  // whole files read into memory at once is a needless spike on a hot path.
   const snapshot: WorkingTreeSnapshot = new Map();
-  await Promise.all(paths.map(async (path) => {
-    snapshot.set(path, await hashFile(join(top, path)));
-  }));
+  for (let i = 0; i < paths.length; i += HASH_CONCURRENCY) {
+    const chunk = paths.slice(i, i + HASH_CONCURRENCY);
+    const hashes = await Promise.all(chunk.map((path) => hashFile(join(top, path))));
+    chunk.forEach((path, index) => snapshot.set(path, hashes[index] ?? UNREADABLE));
+  }
 
   return snapshot;
 }
@@ -126,7 +152,11 @@ export async function collectTurnDiffEvidence(
   // same base contract targets are matched against. When cwd is the repo root
   // these are identical; when it is a subdirectory, paths outside it drop out —
   // matching how tool-input paths outside cwd are already handled.
-  const paths = normalizeClaimedPaths(changed.map(([path]) => join(top, path)), repoDir);
+  // git reports paths under the RESOLVED toplevel. If repoDir reaches us through
+  // a symlink, comparing against it unresolved makes every joined path look like
+  // it escapes the root, and all evidence is dropped.
+  const resolvedRepoDir = await realpath(repoDir).catch(() => repoDir);
+  const paths = normalizeClaimedPaths(changed.map(([path]) => join(top, path)), resolvedRepoDir);
   if (paths.length === 0) return undefined;
 
   const patchHash = createHash("sha256")
