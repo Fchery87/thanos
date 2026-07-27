@@ -43,15 +43,38 @@ export function normalizeIdentity(config: {
   };
 }
 
+/**
+ * Stable identity for an approval record.
+ *
+ * Exported so the approval store and the trust check cannot drift into two
+ * spellings of the same key — an approval that fails to match is a silent
+ * downgrade to "untrusted", which reads as the gate being broken.
+ */
+export function trustKey(identity: McpServerIdentity): string {
+  return `${identity.type}:${identity.origin}:${identity.command ?? ""}`;
+}
+
+/**
+ * Decide whether a configured MCP server may be connected.
+ *
+ * The distinction that matters is where the config came from. `~/.pi/mcp.json`
+ * is the user's own file and is trusted outright. `${cwd}/mcp.json` ships inside
+ * whatever repository happens to be open, and for a stdio server it names a
+ * command that gets spawned — so cloning a repo and opening it here is enough to
+ * run its author's chosen binary. That is what this gate is for.
+ *
+ * @param projectApproved Whether the human has vouched for this project (pi's own
+ *   `isProjectTrusted()`). Previously named `hasPolicy`, for the presence of a
+ *   harness policy file; an explicit human trust decision is both a stronger
+ *   signal and the one the runtime already has.
+ */
 export function evaluateMcpTrust(
   identity: McpServerIdentity,
   source: "global" | "user" | "project",
   approvedSet: Set<string>,
-  hasPolicy: boolean,
+  projectApproved: boolean,
 ): McpTrustDecision {
-  const key = `${identity.type}:${identity.origin}:${identity.command ?? ""}`;
-
-  if (approvedSet.has(key)) {
+  if (approvedSet.has(trustKey(identity))) {
     return { allowed: true, trustLevel: "trusted", identity };
   }
 
@@ -59,7 +82,7 @@ export function evaluateMcpTrust(
     return { allowed: true, trustLevel: "trusted", identity };
   }
 
-  if (source === "project" && hasPolicy) {
+  if (source === "project" && projectApproved) {
     return { allowed: true, trustLevel: "project", identity };
   }
 
@@ -67,7 +90,7 @@ export function evaluateMcpTrust(
     allowed: false,
     trustLevel: "untrusted",
     identity,
-    reason: `project MCP server "${identity.origin}" requires explicit trust approval`,
+    reason: `project MCP server "${identity.origin}" requires explicit trust approval (/mcp → trust)`,
   };
 }
 

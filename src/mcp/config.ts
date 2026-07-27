@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 export interface MCPServerConfig {
   type?: "stdio" | "sse";
@@ -44,9 +44,19 @@ async function tryReadJson(path: string): Promise<Record<string, MCPServerConfig
 
 export async function loadMcpConfigs(cwd: string): Promise<MCPConfigResult> {
   const paths = mcpConfigPaths(cwd);
+
+  // When the harness is run from ~/.pi itself — which is exactly what a user
+  // editing their own harness does — the project path IS the global path. Read
+  // once and classify everything as global in that case. Reading the same file
+  // twice would tag the user's own servers "project", and since `source` now
+  // decides whether a server is allowed to launch at all, that would refuse
+  // every server in the user's personal config on the grounds that the user
+  // could not be trusted with it.
+  const sameFile = resolve(paths.global) === resolve(paths.project);
+
   const [global_, project] = await Promise.all([
     tryReadJson(paths.global),
-    tryReadJson(paths.project),
+    sameFile ? Promise.resolve({}) : tryReadJson(paths.project),
   ]);
 
   const merged: Record<string, MCPServerConfig> = { ...global_, ...project };

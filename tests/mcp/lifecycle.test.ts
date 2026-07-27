@@ -58,7 +58,10 @@ describe("mcp lifecycle", () => {
 
     const result = await initializeMcpSession({ manager, pi, cwd: "/work" });
 
-    expect(manager.initialize).toHaveBeenCalledWith(pi, "/work");
+    // Trust inputs are always forwarded, and an omitted projectApproved must
+    // arrive as an explicit false — the manager's fail-closed default depends on
+    // this call never leaving the question open.
+    expect(manager.initialize).toHaveBeenCalledWith(pi, "/work", { projectApproved: false });
     expect(result).toMatchObject({
       kind: "ok",
       action: "session-init",

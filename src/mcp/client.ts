@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import type { MCPServerConfig, MCPTool, MCPToolResult } from "./types";
+import { validateFrameSize, validateResultSize } from "./validation";
 
 export interface MCPClient {
   connect(): Promise<void>;
@@ -72,11 +73,29 @@ export class StdioMCPClient implements MCPClient {
     const proc = this.proc!;
     proc.stdout!.on("data", (chunk: Buffer | string) => {
       this.buffer += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+
+      // The frame cap is the reason this check exists. A server that never emits
+      // a newline grew this buffer without limit — a stdio MCP server is a child
+      // process the user's own config launched, so this was not a remote attack
+      // so much as an unbounded allocation waiting for a buggy server. Past the
+      // cap the connection is unrecoverable (the framing is lost), so tear it
+      // down rather than keep reading.
+      const frameError = validateFrameSize(this.buffer.length);
+      if (frameError) {
+        this.buffer = "";
+        this._failAllPending(new Error(`StdioMCPClient: ${frameError.message}`));
+        this.disconnect();
+        return;
+      }
+
       let nl: number;
       while ((nl = this.buffer.indexOf("\n")) !== -1) {
         const line = this.buffer.slice(0, nl).trim();
         this.buffer = this.buffer.slice(nl + 1);
         if (!line) continue;
+        // One oversized frame is dropped rather than parsed; the stream stays
+        // usable because framing is still intact at the newline.
+        if (validateResultSize(line.length)) continue;
         try {
           const msg = JSON.parse(line) as JsonRpcResponse;
           if (msg.id !== undefined) {
@@ -91,6 +110,11 @@ export class StdioMCPClient implements MCPClient {
         }
       }
     });
+  }
+
+  private _failAllPending(err: Error): void {
+    for (const [, { reject }] of this.pending) reject(err);
+    this.pending.clear();
   }
 
   private _sendRequest(method: string, params?: unknown): Promise<JsonRpcResponse> {
@@ -212,7 +236,15 @@ export class HttpMCPClient implements MCPClient {
       throw new Error(`HttpMCPClient: HTTP ${response.status} — ${excerpt.slice(0, 200)}`);
     }
 
-    return response.json() as Promise<JsonRpcResponse>;
+    // Read as text and measure before parsing. `response.json()` would buffer and
+    // deserialize the whole body first, so the size cap has to sit in front of it
+    // to mean anything — an unbounded remote body is the one thing a remote MCP
+    // server fully controls.
+    const text = await response.text();
+    const sizeError = validateResultSize(text.length);
+    if (sizeError) throw new Error(`HttpMCPClient: ${sizeError.message}`);
+
+    return JSON.parse(text) as JsonRpcResponse;
   }
 
   async initialize(): Promise<void> {

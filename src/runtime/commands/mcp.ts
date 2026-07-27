@@ -8,6 +8,7 @@ import {
   disableMcpServer,
   disconnectMcpServer,
   enableMcpServer,
+  readProjectTrust,
   reloadMcpSession,
 } from "../../mcp/lifecycle";
 import {
@@ -71,7 +72,7 @@ export function registerMcpCommand(pi: ExtensionAPI, deps: McpCommandDeps): void
       if (sub === "reload") {
         if (isSubagent) { ctx.ui.notify("/mcp reload is only available in the main session.", "warning"); return; }
         if (!mcpManager) return;
-        const result = await reloadMcpSession({ manager: mcpManager, pi, cwd: ctx.cwd });
+        const result = await reloadMcpSession({ manager: mcpManager, pi, cwd: ctx.cwd, projectApproved: readProjectTrust(ctx) });
         if (result.kind === "failed") {
           ctx.ui.notify(`MCP reload failed: ${result.error}`, "warning");
         } else {
@@ -257,6 +258,9 @@ export function registerMcpCommand(pi: ExtensionAPI, deps: McpCommandDeps): void
         // Build labelled options showing server state inline
         const optionDetails = statuses.map((s) => {
           if (s.disabled) return `○  ${s.name}  [${s.source}]  disabled`;
+          // Blocked is not an error: nothing went wrong, the server just has no
+          // permission to run. Shown distinctly so it does not read as a bug.
+          if (s.blocked) return `⚠  ${s.name}  [${s.source}]  untrusted`;
           const icon   = s.error ? "✗" : "✓";
           const detail = s.error ? `error` : `${s.toolCount} tools`;
           return `${icon}  ${s.name}  [${s.source}]  ${detail}`;
@@ -274,7 +278,10 @@ export function registerMcpCommand(pi: ExtensionAPI, deps: McpCommandDeps): void
 
         // Build contextual action list based on current state
         const actions: string[] = [];
-        if (status.disabled) {
+        if (status.blocked) {
+          actions.push("trust — approve this server, then connect");
+          actions.push("disable — mark disabled");
+        } else if (status.disabled) {
           actions.push("enable — reconnect this server");
         } else {
           if (status.connected) {
@@ -293,7 +300,37 @@ export function registerMcpCommand(pi: ExtensionAPI, deps: McpCommandDeps): void
         const verb = action.split(" ")[0]!;
 
         // Dispatch via the same lifecycle helpers used by explicit subcommands
-        if (verb === "enable") {
+        if (verb === "trust") {
+          // Show the exact command line being authorized. Approving a name
+          // rather than a command is how a repo gets to swap what runs under a
+          // server the user already said yes to.
+          const target = mcpManager.describeServer(sName) ?? "(unknown)";
+          const confirmed = await ctx.ui.confirm(
+            "Trust this MCP server?",
+            [
+              `${sName} is configured by this project, not by you.`,
+              "",
+              `Approving lets it run:`,
+              `  ${target}`,
+              "",
+              "The approval is recorded against that exact command. If the project",
+              "later points this server somewhere else, it will ask again.",
+            ].join("\n"),
+          );
+          if (!confirmed) {
+            ctx.ui.notify(`Left ${theme.fg("accent", sName)} untrusted.`, "info");
+            return;
+          }
+          await mcpManager.approveServer(sName);
+          const result = await connectMcpServer({ manager: mcpManager, pi, name: sName });
+          ctx.ui.notify(
+            result.kind === "ok"
+              ? formatPanel(theme, "MCP Trusted", `${theme.fg("success", sName)} — ${result.status?.toolCount ?? 0} tool(s).`, "dim")
+              : formatPanel(theme, "Connect Failed", `${theme.fg("error", sName)}: ${result.status?.error ?? "unknown error"}`, "error"),
+            result.kind === "ok" ? "info" : "warning",
+          );
+
+        } else if (verb === "enable") {
           ctx.ui.notify(`Connecting ${theme.fg("accent", sName)}…`, "info");
           const result = await enableMcpServer({ manager: mcpManager, pi, name: sName });
           if (result.kind === "unknown-server") {

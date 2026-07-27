@@ -22,6 +22,15 @@ const SECRETS_PATH = join(homedir(), ".pi", "mcp-secrets.json");
 export interface McpState {
   /** Server names that have been explicitly disabled. */
   disabled: string[];
+  /**
+   * Trust keys (see `trust.ts::trustKey`) the user has explicitly approved.
+   *
+   * Keyed by identity rather than by server name on purpose: a project's
+   * mcp.json can name its server anything, so approving "docs" once must not
+   * silently approve a different command that a later commit gives the same
+   * name.
+   */
+  approved: string[];
 }
 
 export interface ServerSecrets {
@@ -45,10 +54,31 @@ export async function readMcpState(): Promise<McpState> {
   try {
     const raw = await readFile(STATE_PATH, "utf-8");
     const parsed = JSON.parse(raw) as Partial<McpState>;
-    return { disabled: Array.isArray(parsed.disabled) ? parsed.disabled : [] };
+    return {
+      disabled: Array.isArray(parsed.disabled) ? parsed.disabled : [],
+      // A missing or malformed list reads as "nothing approved". Failing toward
+      // an empty approval set means the worst case is being asked to approve
+      // again, never a server connecting because the file was unreadable.
+      approved: Array.isArray(parsed.approved) ? parsed.approved.filter((k): k is string => typeof k === "string") : [],
+    };
   } catch {
-    return { disabled: [] };
+    return { disabled: [], approved: [] };
   }
+}
+
+/** Record an explicit trust approval for a server identity. Idempotent. */
+export async function approveMcpIdentity(key: string): Promise<void> {
+  const state = await readMcpState();
+  if (state.approved.includes(key)) return;
+  state.approved.push(key);
+  await writeMcpState(state);
+}
+
+/** Withdraw a previously granted approval. */
+export async function revokeMcpIdentity(key: string): Promise<void> {
+  const state = await readMcpState();
+  state.approved = state.approved.filter((entry) => entry !== key);
+  await writeMcpState(state);
 }
 
 export async function writeMcpState(state: McpState): Promise<void> {
