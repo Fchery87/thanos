@@ -22,26 +22,60 @@ extractor's async result without making generation async.
 
 ### Honest completion ledger
 
-**Done & committed (branch `restore-pre-sync`):**
+**All ten tasks complete on branch `restore-pre-sync`.** Suite 1152 passed,
+typecheck and lint clean.
 
-- **Task 1** — `76742f7`. `SpecEngine.rejectActiveSpec()` + `ReinjectInputs.specApproved`.
-  Deviations from the task as written, both deliberate: the
-  `status = "abandoned"` assignment was dropped (`FormalSpec.status` is
-  write-only across the codebase — set in `generator.ts:46`, read nowhere), and
-  the now-unreachable `"(spec was rejected)"` panel note was removed. The manual
-  check (`pi --spec`, decline the prompt) is **not yet run** — it needs a live
-  session.
-- **Task 2** — `622967c`. All three symbols deleted; `src/spec/` 13 modules → 11.
+| Task | Commit | Notes |
+|---|---|---|
+| 1 consent | `76742f7` | dropped the write-only `status` assignment; removed the now-unreachable "(spec was rejected)" note |
+| 2 dead code | `622967c` | `src/spec/` 13 modules → 11 |
+| 3 seam tests | `bc0db7b` | `it.fails` instead of literal red — see below |
+| 4 commands | `cecea2b` | scope widened to non-JS runners, which forced two schema fixes |
+| 5 paths | `a48a9d6` | |
+| 6 git truth | `a464b55` | `diff-evidence.ts` rewritten, not revived — see below |
+| 7 reporting | `f62adfd` | renderers not merged — see below |
+| 8 promise seam | `9e75aad` | behaviour-neutral, ships separately per Principle 4 |
+| 9 extractor | `227cf5d` | + `mustNot` scoping, same commit as required |
+| 10 residuals | `7dcd9f4` | `classify()` deliberately unchanged — see below |
 
-**Correction to §1.1 D7:** the table lists `buildEvaluatorPrompt` as referenced
-by "its own test only". That was wrong — `scripts/benchmark-prompts.mjs:6`
-imported it and recorded it as `"spec evaluator prompt"`. The original grep
-covered only `src/` and `tests/`. It was still deleted, with the benchmark entry
-(28 records, was 29), because the prompt is never sent to a model in production
-— but the stated justification was inaccurate, and later tasks should re-grep
-`scripts/` and `evals/` before trusting any "unreferenced" claim here.
+**Deviations from this plan, all deliberate:**
 
-**Not started:** Tasks 3-10.
+- **Task 3** used `it.fails` rather than committing literally-red tests. CI runs
+  `test:unit` over `tests/spec` on every push, so red commits would have broken
+  the branch from Task 3 until Task 6 — a cost this document understated. Each
+  marker is self-enforcing: it starts failing the moment its task fixes the
+  behaviour, forcing the flip to `it`.
+- **Task 6** rewrote `diff-evidence.ts` instead of reviving `validateDiffEvidence`.
+  That function parsed `git diff HEAD` and hand-synthesized patches for untracked
+  files, had no notion of a baseline, and produced far more than the path list and
+  hash actually consumed. Snapshot-and-compare over `git status --porcelain -z`
+  handles untracked files natively and makes deletions and reverts fall out.
+- **Task 7** did not merge the two panels. They serve different purposes (compact
+  turn summary vs. full spec panel); the drift was in how a criterion *line* was
+  spelled, so `renderCriteriaLines` was extracted instead.
+- **Task 10** kept `REJECTED_COMMAND_EXECUTABLES` as a denylist rather than
+  inverting it, **reversing this document's own recommendation**. Over-restriction
+  here rejects genuine evidence and re-creates the retry loop the whole plan
+  exists to remove. The first attempt at a flat denylist broke the audit fast-lane
+  regression test, because `rg` is how an audit corroborates findings — the
+  rejection is now scoped to gated criteria only.
+- **Task 10** left `classify()`'s 20-char threshold alone. Measured, as this plan
+  required: across the 54 prompts in `tests/fixtures/contracts/requests.json` the
+  shortest is 24 characters, so the threshold binds on none of them.
+
+**Correction to §1.1 D7:** the table lists `buildEvaluatorPrompt` as referenced by
+"its own test only". That was wrong — `scripts/benchmark-prompts.mjs:6` imported
+it. The original grep covered only `src/` and `tests/`. It was still deleted, with
+its benchmark entry, because the prompt is never sent to a model in production —
+but re-grep `scripts/` and `evals/` before trusting any "unreferenced" claim here.
+
+**Not verified — needs a live session:**
+
+- Declining an approval in `pi --spec` (Task 1's manual check).
+- A real extraction round-trip. Every test stubs at the model boundary, so no
+  contract has been extracted by an actual model. Failure degrades silently to the
+  deterministic contract, which is correct but invisible: confirm via `/spec` that
+  a real task shows `source: "semantic_extraction"` and non-empty `targets`.
 
 ---
 
