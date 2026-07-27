@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { formatMemoriesForInjection } from "../src/memory/injector.ts";
 import { formatRoster, loadRoster } from "../src/agents/roster.ts";
 import { buildGoalSystemPrompt, buildEvaluatorContext } from "../src/goal/prompts.ts";
-import { buildWaveWorkerPrompt } from "../src/waves/prompt.ts";
 import { extractTaskContract } from "../src/spec/contract-extractor.ts";
 import { parseSubagentResult } from "../src/agents/result.ts";
 
@@ -52,7 +51,11 @@ for (const agentType of ["build", "designer", "evaluator", "explore", "oracle", 
 
 promptResults.push(record("goal system prompt", buildGoalSystemPrompt("All tests pass")));
 promptResults.push(record("goal evaluator context", JSON.stringify(buildEvaluatorContext({ condition: "All tests pass", assistantClaim: "done", toolResultsText: "exit 0" }))));
-promptResults.push(record("waves prompt", buildWaveWorkerPrompt({ id: "docs", agent: "explore", goal: "Audit docs", paths: ["docs"], mode: "read" }, "Strengthen the harness")));
+// The "waves prompt" entry is gone with the WAVES worker prompt itself. It was
+// the only importer of src/waves/prompt.ts, so a benchmark was the sole thing
+// keeping a prompt alive for an orchestration engine that has not run since
+// pi-subagents took over delegation — measuring the size of something nothing
+// sends.
 
 const contractSamples = requests.map((request) => ({
   request,

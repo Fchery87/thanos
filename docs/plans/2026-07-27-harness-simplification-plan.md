@@ -241,6 +241,15 @@ from `src/index.ts` and `scripts/thanos-launch.mjs`'s entry into
 `buildJuryPrompt` — both stay. This tier is a second orchestration engine sitting
 beside `pi-subagents`, which commit `f8321c8` already chose. Both cannot be right.
 
+> **Correction — the trace was rerun with script entry points included.**
+> `buildWavesCommandPrompt` lives in `waves/command.ts` (14 LOC, imported by
+> `commands/slash.ts`) and `buildJuryPrompt` in `review/jury.ts`. Both survive, as
+> stated. But `waves/prompt.ts` and `waves/types.ts` were **not** unreachable: they
+> were held alive solely by `scripts/benchmark-prompts.mjs`, which measured the
+> size of the WAVES worker prompt. A benchmark was the only consumer of a prompt
+> for an engine that has not run since `f8321c8` — the Phase 1 pattern again. The
+> benchmark entry was removed first, then both files deleted with the tier.
+
 **Task 4.2 — Legacy agent spawn machinery (~684 LOC)**
 `agents/run.ts`, `agents/run-store.ts`, `agents/process.ts`,
 `agents/change-handoff.ts`, `agents/artifacts.ts`, `agents/selector.ts`.
@@ -280,9 +289,41 @@ user's call, not a cleanup decision.
 ~23 files / ~1,836 LOC match these modules. Each is checked individually before
 removal — a file may cover a surviving module too.
 
-**Verification for the whole phase:** `bun run ci` green; suite wall-clock
-recorded against the 118s baseline; reachability trace re-run showing 0
-unreachable files outside `src/spec/` (pending Phase 3) and the two MCP modules.
+**Verification for the whole phase:** `bun run ci` green; reachability trace
+re-run showing 0 unreachable files outside the two MCP modules.
+
+**Result — 2026-07-27:**
+
+```
+                  before          after
+src files         161             132        (-29)
+src lines         16,582          14,273     (-2,309)
+test files        148             129        (-19)
+tests             1,193           1,088      (-105)
+unreachable       29              2          (mcp/trust, mcp/validation — Phase 5)
+cold import       1596ms          1517-1909ms  (unchanged, as predicted)
+```
+
+Cold import did not move, and should not have: unreachable code is by definition
+never imported, so deleting it cannot shorten the import path. Reporting it as a
+win would have been the same species of dishonesty Phase 1 removed. What the
+deletion buys is the code not being there to read, search, or maintain.
+
+Note on measurement: a `bun run measure` taken immediately after a full test run
+read 4107ms — machine contention, not a regression. Cold import is load-sensitive
+enough that it needs an idle machine to mean anything.
+
+**Also settled here:**
+- **Task 4.6 — `config/resolve.ts` deleted**, per the default recommendation.
+  `docs/configuration.md` documented it as live infrastructure; that section now
+  records what actually resolves configuration, and why the module existed.
+- `tsconfig.strict-boundaries.json` listed nine now-deleted modules. Rebuilt
+  around what survives, with `spec/contract-schema.ts` and `spec/extraction-log.ts`
+  added — the untrusted-payload boundary belongs in the strict set.
+- Two tests in `tests/security/bypass.test.ts` exercised
+  `AgentOrchestrator.validateBatch`. Write-scope isolation for real subagents is
+  enforced by `pi-subagents` and the per-agent tool grants, not by that class, so
+  they guarded nothing reachable and went with it.
 
 ---
 
