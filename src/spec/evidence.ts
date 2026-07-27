@@ -1,5 +1,6 @@
 import type { EvidenceRecord } from "./claims";
 import { classifyTestCommand, normalizeCommand, normalizeExecutable } from "./command-normalize";
+import { toRepoRelative } from "./repo-paths";
 
 export type { EvidenceRecord } from "./claims";
 
@@ -24,8 +25,13 @@ function textFromContent(content: TextPart[] | undefined): string {
     .trim() ?? "";
 }
 
+/**
+ * pi's edit/write schema names this parameter `path` (dist/core/tools/edit.js).
+ * There is deliberately no `file_path` fallback — that is Claude Code's parameter
+ * name, and accepting it here could only mask a genuine schema mismatch.
+ */
 function pathFromInput(input: Record<string, unknown> | undefined): string | undefined {
-  const p = input?.path ?? input?.file_path;
+  const p = input?.path;
   return typeof p === "string" ? p : undefined;
 }
 
@@ -67,9 +73,14 @@ export function evidenceFromToolResult(event: ToolResultEventLike): EvidenceReco
   if (event.toolName === "edit" || event.toolName === "write") {
     const filePath = pathFromInput(event.input);
     if (!filePath) return undefined;
+    // Stored repo-relative so it can bind to a contract target, which is always
+    // repo-relative. A path outside the repo yields no evidence at all: it could
+    // never match a target, so recording it would only add an unmatchable record.
+    const repoPath = toRepoRelative(filePath);
+    if (!repoPath) return undefined;
     return {
       kind: "diff",
-      paths: [filePath],
+      paths: [repoPath],
       base: "",
       patchHash: "",
       passed,

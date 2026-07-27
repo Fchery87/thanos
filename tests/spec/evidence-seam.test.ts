@@ -133,18 +133,25 @@ describe("evidence seam: path binding", () => {
     expect(result.passed).toBe(true);
   });
 
-  // TASK 5 — pi's edit/write schema declares `path` as "relative or absolute", and
-  // the recognizer stores whatever the model sent. An absolute path matches none of
-  // pathsMatchTargets' three clauses, so the diff is silently discarded.
-  it.fails("[TASK 5] binds an absolute-path edit to its target", () => {
+  // pi's edit/write schema declares `path` as "relative or absolute", and models
+  // routinely send absolute. Before Task 5 the recognizer stored whatever arrived,
+  // so an absolute path matched none of pathsMatchTargets' three clauses and the
+  // diff was silently discarded.
+  it("binds an absolute-path edit to its target", () => {
     const absolute = join(process.cwd(), "src/billing/pagination.ts");
     const result = resultFor(spec(), "build-primary", [toolResult("write", { path: absolute })]);
     expect(result.passed).toBe(true);
   });
 
-  it.fails("[TASK 5] binds a ./-prefixed edit to its target", () => {
+  it("binds a ./-prefixed edit to its target", () => {
     const result = resultFor(spec(), "build-primary", [toolResult("edit", { path: "./src/billing/pagination.ts" })]);
     expect(result.passed).toBe(true);
+  });
+
+  it("produces no evidence for an edit outside the repo", () => {
+    // Contract targets are always repo-relative, so such a path could never match
+    // one — recording it would only add an unmatchable record to the evidence set.
+    expect(evidenceFromToolResult(toolResult("write", { path: "/etc/passwd" }))).toBeUndefined();
   });
 
   it("does not bind an edit outside the target tree", () => {

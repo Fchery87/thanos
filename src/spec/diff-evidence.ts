@@ -2,12 +2,11 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import type { DiffEvidence } from "./claims";
+import { normalizeClaimedPaths } from "./repo-paths";
 
 const execFileAsync = promisify(execFile);
 
-export function normalizeClaimedPaths(claimedPaths: string[]): string[] {
-  return Array.from(new Set(claimedPaths.map((path) => path.replace(/\/+$/, "")).filter(Boolean)));
-}
+export { normalizeClaimedPaths };
 
 export async function validateDiffEvidence(
   repoDir: string,
