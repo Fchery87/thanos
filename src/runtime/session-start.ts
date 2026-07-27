@@ -4,7 +4,7 @@ import type { PermissionManager } from "../permissions/manager";
 import type { PolicyLoadState } from "../policy/state";
 import type { LensLite } from "../lens/lite";
 import type { MCPManager } from "../mcp/manager";
-import { initializeMcpSession } from "../mcp/lifecycle";
+import { initializeMcpSession, readProjectTrust } from "../mcp/lifecycle";
 import { readRepoId } from "../governance/delivery";
 import type { TaskParams } from "../agents/task-tool";
 import type { GoalController } from "../goal/controller";
@@ -187,7 +187,16 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
       }).catch(() => {});
     }
 
-    initializeMcpSession({ manager: mcpManager, pi, cwd: ctx.cwd }).then((init) => {
+    // Project trust decides whether a repo's own mcp.json may launch its
+    // servers — for a stdio server that means spawning a command the repo
+    // chose. Pi already asks the human this question; the answer is reused
+    // rather than a second trust model being invented beside it.
+    initializeMcpSession({
+      manager: mcpManager,
+      pi,
+      cwd: ctx.cwd,
+      projectApproved: readProjectTrust(ctx),
+    }).then((init) => {
       mcpSummary = {
         configured: init.statuses.length,
         connected: init.connectedCount,

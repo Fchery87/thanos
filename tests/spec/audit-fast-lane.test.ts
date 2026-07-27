@@ -15,7 +15,7 @@ import type { EvidenceRecord } from "../../src/spec/claims";
  * with unmet, machine-verifiable criteria still does.
  */
 const gate = (results: ReturnType<typeof verifyCriteria>) =>
-  shouldReinject({ results, attempts: 0, isSubagent: false, enabled: true, goalActive: false });
+  shouldReinject({ results, attempts: 0, isSubagent: false, enabled: true, goalActive: false, specApproved: true });
 
 describe("audit/investigate fast lane", () => {
   it("does not re-inject on the exact audit prompt even with zero evidence", () => {
@@ -31,7 +31,7 @@ describe("audit/investigate fast lane", () => {
     const results = verifyCriteria(spec, []);
 
     for (let attempts = 0; attempts <= GATE_MAX_ATTEMPTS; attempts++) {
-      expect(shouldReinject({ results, attempts, isSubagent: false, enabled: true, goalActive: false })).toBe(false);
+      expect(shouldReinject({ results, attempts, isSubagent: false, enabled: true, goalActive: false, specApproved: true })).toBe(false);
     }
   });
 
@@ -46,11 +46,20 @@ describe("audit/investigate fast lane", () => {
     expect(gate(results)).toBe(false);
   });
 
-  it("still re-injects a mutating task whose gated criteria are unmet (same empty-evidence input)", () => {
+  // The gated/advisory split still exists at the verification layer — a mutating
+  // task's criteria are NOT marked advisory, and they are correctly reported
+  // unmet. Phase 0 added a second, independent filter on top: every criterion
+  // here carries source "deterministic_fallback", and those never drive a
+  // continuation regardless of their verification mode. Only a criterion the
+  // extractor actually derived from the user's request can force a turn now.
+  it("reports a mutating task's gated criteria as unmet but does not re-inject on templates", () => {
     const spec = generateSpec("implement the parser module and add tests", "ambient");
     const results = verifyCriteria(spec, []);
 
-    expect(results.some((result) => !result.advisory && !result.passed)).toBe(true);
-    expect(gate(results)).toBe(true);
+    const unmetGated = results.filter((result) => !result.advisory && !result.passed);
+    expect(unmetGated.length).toBeGreaterThan(0);
+    expect(unmetGated.every((result) => result.source === "deterministic_fallback")).toBe(true);
+
+    expect(gate(results)).toBe(false);
   });
 });

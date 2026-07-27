@@ -4,7 +4,6 @@ import { classifyRisk } from "../../src/permissions/risk";
 import { parseSubagentResult } from "../../src/agents/result";
 import { redactSensitive } from "../../src/observability/redaction";
 import { scanContent } from "../../src/security/scanner";
-import { AgentOrchestrator } from "../../src/agents/orchestrator";
 import { agentWrites } from "../../src/agents/catalog";
 
 describe("egress bypass attempts", () => {
@@ -119,20 +118,10 @@ describe("cross-agent privilege escalation", () => {
   it("unknown agent returns false", () => {
     expect(agentWrites("SUPER_ROOT")).toBe(false);
   });
-  it("write scope overlap rejected (parent)", () => {
-    const orch = new AgentOrchestrator();
-    const r = orch.validateBatch([
-      { id: "a", type: "build", goal: "top", writeScope: ["src/"] },
-      { id: "b", type: "build", goal: "child", writeScope: ["src/components/"] },
-    ]);
-    expect(r.valid).toBe(false);
-  });
-  it("write scope overlap rejected (shared)", () => {
-    const orch = new AgentOrchestrator();
-    const r = orch.validateBatch([
-      { id: "a", type: "build", goal: "a", writeScope: ["src/shared/"] },
-      { id: "b", type: "build", goal: "b", writeScope: ["src/shared/"] },
-    ]);
-    expect(r.valid).toBe(false);
-  });
+  // Two write-scope overlap tests stood here, exercising
+  // AgentOrchestrator.validateBatch. The orchestrator was a second delegation
+  // engine sitting beside pi-subagents, unreachable from any entry point since
+  // f8321c8 chose pi-subagents; write-scope isolation for real subagents is
+  // enforced by that engine and by the per-agent tool grants, not here. The
+  // tests guarded a code path nothing could reach, so they went with it.
 });

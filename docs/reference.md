@@ -22,7 +22,7 @@
 | `/run designer <task>` | Run Designer through `pi-subagents` directly; also appears in `/run` completions after reload |
 | `/lens` | Thanos Lens Lite: changed files, read-before-modify guard, secret scan, manual diagnostics |
 | `/goal [condition\|pause\|resume\|clear]` | Set a self-checking goal; the agent auto-continues until it signals completion via `goal_complete` and a fresh checker confirms it. No arg shows status. Main session only; pauses on ceilings. See [`/goal`](guide.md#goal--self-checking-autonomous-loop) |
-| `/waves <goal>` | Run a bounded WAVES orchestration: discover the shape, plan independent slices, fan out parallel workers, verify handoffs, synthesize one deliverable. See [Bounded waves](governance.md#bounded-waves-waves) |
+| `/waves <goal>` | Send a decomposition prompt: plan independent slices, fan out parallel workers, synthesize one deliverable. A prompt, not an enforced runtime — see [Bounded waves](governance.md#bounded-waves-waves) |
 | `/todo` | Show the current todo checklist for this branch (Escape to close); `/todo export` prints the markdown |
 | `/modes` | Select the default specialist mode for the **legacy** `task` tool (`explore`, `plan`, `build`, `reviewer`, `designer`, `oracle`, `researcher`, `evaluator`) — only meaningful with `THANOS_LEGACY_TASK=1` |
 | `/yolo` | Toggle yolo mode for this session — available in every delivery mode. Skips permission prompts and risk gating, but never crosses an explicit deny, the local-only egress/push guards, the Lens Lite secret scan, or the pre-critical snapshot. Refuses when yolo is locked by config (see [Yolo lockout](governance.md#yolo-lockout)) or when the repo is `unattended` |
@@ -58,7 +58,7 @@ All shortcuts use `Ctrl+Shift+<key>` for cross-platform consistency. On macOS, p
 | `Ctrl+Shift+E` | Show active spec and verification state | **E** = **e**xpand spec |
 | `Ctrl+Shift+G` | Show active policy rules | **G** = **g**overnance |
 | `Ctrl+Shift+A` | Show last 10 audit log entries | **A** = **a**udit |
-| `Ctrl+Shift+R` | Run code review (heterogeneous critic jury + devil's advocate) | **R** = **r**eview |
+| `Ctrl+Shift+R` | Send a code-review prompt (critic jury + devil's advocate). A prompt, not an enforced runtime — see [Code review jury](governance.md#code-review-jury-ctrlshiftr) | **R** = **r**eview |
 | `Ctrl+Shift+D` | Spawn designer agent | **D** = **d**esigner |
 | `Ctrl+Shift+Y` | Toggle yolo mode | **Y** = **y**olo |
 

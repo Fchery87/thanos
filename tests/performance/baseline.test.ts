@@ -1,8 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
-const OUTPUT_PATH = join(process.cwd(), "benchmark-results.json");
+// Named after its producer, and inside the ignored .harness/ directory with the
+// other generated artifacts. It used to land in the repo root, so every test run
+// left the working tree dirty with a fresh timestamp; and the obvious fix —
+// moving it to .harness/benchmark-results.json — would have collided with
+// scripts/benchmark-prompts.mjs, which writes a different schema to that exact
+// path. One file, one writer.
+const OUTPUT_PATH = join(process.cwd(), ".harness", "perf-baseline.json");
 
 interface BenchmarkEntry {
   name: string;
@@ -17,29 +23,14 @@ function record(name: string, start: number): void {
   results.push({ name, durationMs: Math.round(durationMs * 100) / 100, timestamp: new Date().toISOString() });
 }
 
+// Every entry here must be a real elapsed-time measurement. Three "architectural
+// metrics" used to live at the top of this file: they read src/index.ts, counted
+// its lines and its `import` statements, and wrote those integers into a field
+// named `durationMs`. src/index.ts has been a 5-line re-export shim since
+// register-harness was extracted, so the benchmark report claimed a 7ms
+// operation that was really the number 7. Counts are not durations; if a file's
+// size is worth tracking, `wc -l` tracks it.
 describe("performance baseline", () => {
-  it("measures src/index.ts line count and import count as architectural metrics", async () => {
-    const t0 = performance.now();
-    const { readFileSync } = await import("node:fs");
-    const { join } = await import("node:path");
-    const content = readFileSync(join(process.cwd(), "src", "index.ts"), "utf-8");
-    const lines = content.split("\n").length;
-    const imports = (content.match(/^import /gm) ?? []).length;
-    results.push({
-      name: "src/index.ts line count",
-      durationMs: lines,
-      timestamp: new Date().toISOString(),
-    });
-    results.push({
-      name: "src/index.ts import count",
-      durationMs: imports,
-      timestamp: new Date().toISOString(),
-    });
-    expect(lines).toBeGreaterThan(0);
-    expect(imports).toBeGreaterThan(0);
-    record("architectural metrics capture", t0);
-  });
-
   it("measures low-risk tool_call classification latency", async () => {
     const t0 = performance.now();
     const { classifyRisk } = await import("../../src/permissions/risk");

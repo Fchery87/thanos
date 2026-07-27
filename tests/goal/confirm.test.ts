@@ -94,7 +94,38 @@ describe("confirmGoalCompletion", () => {
     );
 
     expect(verdict.met).toBe(false);
-    expect(verdict.reason).toContain("exit 1");
+    expect(verdict.reason).toContain("non-zero exit code");
     expect(verdict.reason).toContain("rerun the command");
+  });
+
+  // This path exists to fail CLOSED. It matched only `[ERROR]` and `exit 1`,
+  // while extract.ts actually formats a failed tool result as `[bash (ERROR)]` —
+  // so a genuinely failed command could reach the model evaluator and be graded
+  // MET on the strength of the agent's own summary.
+  it("treats every non-zero exit and the real failure marker as failed evidence", async () => {
+    const cases = [
+      "[bash (ERROR)]\nbun run test\nexit 2",
+      "[bash (ERROR)]\nmissing-binary\nexit 127",
+      "[bash (ERROR)]\nsomething broke",
+    ];
+
+    for (const toolResultsText of cases) {
+      const verdict = await confirmGoalCompletion(
+        input({ evidence: { lastAssistantText: "all good", toolResultsText } }),
+        async () => ({ met: true, reason: "model said MET" }),
+        async () => ({ met: true, reason: "fallback said MET" }),
+      );
+      expect(verdict.met, toolResultsText).toBe(false);
+    }
+  });
+
+  it("does not treat a clean exit 0 as failed evidence", async () => {
+    const verdict = await confirmGoalCompletion(
+      input({ evidence: { lastAssistantText: "all good", toolResultsText: "[bash]\nbun run test\nexit 0\n42 passed" } }),
+      async () => ({ met: true, reason: "model said MET" }),
+      async () => ({ met: true, reason: "fallback said MET" }),
+    );
+
+    expect(verdict.met).toBe(true);
   });
 });

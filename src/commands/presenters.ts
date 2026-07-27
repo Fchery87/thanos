@@ -3,7 +3,7 @@ import type { HarnessPolicy } from "../policy/types";
 import type { FormalSpec } from "../spec/types";
 import type { VerificationResult } from "../spec/verification";
 import type { TUITheme } from "../ui-utils";
-import { formatBadge, formatLabel, formatPanel, formatValue } from "../ui-utils";
+import { formatBadge, formatLabel, formatPanel, formatValue, renderCriteriaLines } from "../ui-utils";
 
 export function renderSessionSnapshotPanel(
   theme: TUITheme,
@@ -44,9 +44,7 @@ export function renderSpecVerificationPanel(
 ): { panel: string; notification: "info" | "warning" } {
   const passed = results.filter((r) => r.passed).length;
   const total = results.length;
-  const criteriaLines = results.map((r) =>
-    `  ${r.passed ? theme.fg("success", "✓") : theme.fg("dim", "·")} ${theme.fg("muted", `[${r.criterion.id}]`)}  ${r.criterion.statement}`,
-  );
+  const criteriaLines = renderCriteriaLines(theme, results, { showIds: true });
   const statusColor = passed === total && total > 0 ? "success" : "warning";
   const goalLine = opts.goalActive
     ? `${active.goal} ${theme.fg("dim", "(goal active; advisory only)")}`

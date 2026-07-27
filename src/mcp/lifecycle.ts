@@ -6,7 +6,7 @@ export type McpLifecycleAction = "session-init" | "reload" | "enable" | "disable
 export type McpServerLifecycleAction = Exclude<McpLifecycleAction, "session-init" | "reload">;
 
 export interface McpLifecycleManagerLike {
-  initialize(pi: ExtensionAPI, cwd: string): Promise<void>;
+  initialize(pi: ExtensionAPI, cwd: string, trust?: { projectApproved?: boolean }): Promise<void>;
   disconnect(): void;
   enableServer(pi: ExtensionAPI, name: string): Promise<boolean>;
   disableServer(name: string): Promise<boolean>;
@@ -77,6 +77,23 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * Pi's project-trust answer, or `false` if it cannot be obtained.
+ *
+ * The only caller that previously used `isProjectTrusted` did so behind another
+ * condition, so an absent method never surfaced. Reading it unconditionally has
+ * to tolerate a host that does not provide it — and the tolerant answer here is
+ * "not trusted", since the alternative is launching a repo's chosen command
+ * because a capability check threw.
+ */
+export function readProjectTrust(ctx: { isProjectTrusted?: () => boolean }): boolean {
+  try {
+    return typeof ctx.isProjectTrusted === "function" && ctx.isProjectTrusted() === true;
+  } catch {
+    return false;
+  }
+}
+
 function okResult(action: McpLifecycleAction, manager: McpLifecycleManagerLike, extra?: Partial<McpLifecycleOkResult>): McpLifecycleOkResult {
   const { statuses, connectedCount: count } = snapshot(manager);
   return { kind: "ok", action, statuses, connectedCount: count, ...extra };
@@ -96,10 +113,16 @@ export async function initializeMcpSession(params: {
   manager: McpLifecycleManagerLike;
   pi: ExtensionAPI;
   cwd: string;
+  /**
+   * Whether the human has vouched for this project (pi's `isProjectTrusted()`).
+   * Governs whether a project-supplied mcp.json may launch its servers. Omitted
+   * means no, which is the answer that cannot go wrong.
+   */
+  projectApproved?: boolean;
 }): Promise<McpLifecycleResult> {
-  const { manager, pi, cwd } = params;
+  const { manager, pi, cwd, projectApproved } = params;
   try {
-    await manager.initialize(pi, cwd);
+    await manager.initialize(pi, cwd, { projectApproved: projectApproved === true });
     return okResult("session-init", manager);
   } catch (err) {
     return failedResult("session-init", manager, { error: errorMessage(err) });
@@ -110,11 +133,15 @@ export async function reloadMcpSession(params: {
   manager: McpLifecycleManagerLike;
   pi: ExtensionAPI;
   cwd: string;
+  /** Same meaning as in `initializeMcpSession`, and it must be passed here too:
+   * a reload re-runs initialize, so omitting it would silently downgrade a
+   * trusted project to untrusted and block servers that were working. */
+  projectApproved?: boolean;
 }): Promise<McpLifecycleResult> {
-  const { manager, pi, cwd } = params;
+  const { manager, pi, cwd, projectApproved } = params;
   manager.disconnect();
   try {
-    await manager.initialize(pi, cwd);
+    await manager.initialize(pi, cwd, { projectApproved: projectApproved === true });
     return okResult("reload", manager);
   } catch (err) {
     return failedResult("reload", manager, { error: errorMessage(err) });

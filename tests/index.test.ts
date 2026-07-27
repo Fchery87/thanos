@@ -1,15 +1,82 @@
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import register from "../src/index";
 import { noopTheme } from "../src/ui-utils";
+
+// ── Semantic contract stub ────────────────────────────────────────────────
+// Since Phase 0 the continuation gate only acts on criteria the extractor
+// derived from the user's actual request; a deterministic keyword template is
+// reported but never re-injected. So the gate tests below have to drive a real
+// semantic contract, which means standing in for the one model call the
+// extractor makes. The stub fires ONLY for GATE_PROMPT — every other test in
+// this file passes `model: undefined`, so its extractor resolves no model,
+// returns undefined, and keeps the deterministic path it was written against.
+const GATE_PROMPT = "Add pagination with tests";
+
+const SEMANTIC_STATEMENT = "Pagination is implemented in the listing module";
+
+const SEMANTIC_CONTRACT = {
+  objective: GATE_PROMPT,
+  criteria: [{
+    id: "pagination-1",
+    kind: "build",
+    statement: SEMANTIC_STATEMENT,
+    // A path this repo does not have, so no incidental working-tree diff can
+    // satisfy the criterion and accidentally close the gate under test.
+    targets: ["src/listing"],
+    evidence: ["diff"],
+    expectedExecutables: [],
+    expectedArgs: [],
+    mustNot: [],
+    source: "semantic_extraction",
+  }],
+};
+
+vi.mock("@earendil-works/pi-ai/compat", () => ({
+  completeSimple: vi.fn(async (_model: unknown, request: { messages?: Array<{ content?: Array<{ text?: string }> }> }) => {
+    const text = request.messages?.[0]?.content?.[0]?.text ?? "";
+    if (!text.includes(GATE_PROMPT)) return { stopReason: "error", content: [] };
+    return { stopReason: "stop", content: [{ type: "text", text: JSON.stringify(SEMANTIC_CONTRACT) }] };
+  }),
+}));
+
+/** A ctx the ContractExtractor can actually resolve a model and auth from. */
+function extractorCtx(ui: Record<string, unknown>) {
+  return {
+    model: { provider: "test", id: "test-model" },
+    modelRegistry: {
+      getAll: () => [],
+      hasConfiguredAuth: () => false,
+      getApiKeyAndHeaders: async () => ({ ok: true as const, apiKey: "test-key" }),
+    },
+    ui,
+  };
+}
 
 const originalCwd = process.cwd();
 
 afterEach(() => {
   process.chdir(originalCwd);
 });
+
+/**
+ * Run a test somewhere that is not the repo.
+ *
+ * `register()` reads and writes cwd-relative state: it loads harness.policy.json,
+ * shells git for diff evidence, and appends to
+ * `${cwd}/.harness/evolution/events.jsonl`. Run from the repo root, this suite
+ * files synthetic gate failures and extraction outcomes into the developer's own
+ * ledger — the same ledger that is the evidence base for the
+ * harness-simplification plan. Fifteen such rows were written and removed before
+ * this was made blanket rather than per-test.
+ */
+async function inScratchRepo(prefix: string): Promise<string> {
+  const cwd = await mkdtemp(join(tmpdir(), prefix));
+  process.chdir(cwd);
+  return cwd;
+}
 
 type Handler = (...args: unknown[]) => unknown;
 type RegisterApi = Parameters<typeof register>[0];
@@ -33,6 +100,12 @@ function createFakePi(overrides?: Partial<RegisterApi>) {
 }
 
 describe("register", () => {
+  // Every test here calls register(), which touches cwd-relative state. None of
+  // them should touch the real repo's.
+  beforeEach(async () => {
+    await inScratchRepo("harness-register-");
+  });
+
   it("loads policy and blocks a sensitive read through the tool_call hook", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "harness-index-"));
     await writeFile(
@@ -168,10 +241,10 @@ describe("register", () => {
     const beforeAgentStart = handlers.get("before_agent_start");
     const agentEnd = handlers.get("agent_end");
 
-    await beforeAgentStart?.({ prompt: "Add pagination with tests" }, {
-      model: undefined,
-      ui: { setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() },
-    });
+    await beforeAgentStart?.(
+      { prompt: GATE_PROMPT },
+      extractorCtx({ setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() }),
+    );
     await agentEnd?.(
       {},
       {
@@ -191,10 +264,10 @@ describe("register", () => {
     const { api, handlers } = createFakePi();
     register(api);
 
-    await handlers.get("before_agent_start")?.({ prompt: "Add pagination with tests" }, {
-      model: undefined,
-      ui: { setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() },
-    });
+    await handlers.get("before_agent_start")?.(
+      { prompt: GATE_PROMPT },
+      extractorCtx({ setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() }),
+    );
     await handlers.get("agent_end")?.(
       { messages: [] },
       {
@@ -210,12 +283,12 @@ describe("register", () => {
     const continuation = (api.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as string | undefined;
     expect(continuation).toContain("[harness:verify-continue]");
 
-    await handlers.get("before_agent_start")?.({ prompt: continuation ?? "" }, {
-      model: undefined,
-      ui: { setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() },
-    });
+    await handlers.get("before_agent_start")?.(
+      { prompt: continuation ?? "" },
+      extractorCtx({ setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() }),
+    );
 
-    expect(notify).toHaveBeenCalledWith(expect.stringContaining("Relevant tests or verification commands pass"), "warning");
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining(SEMANTIC_STATEMENT), "warning");
   });
 
   it("re-injects a follow-up when verification fails and the gate is enabled", async () => {
@@ -223,10 +296,10 @@ describe("register", () => {
     const { api, handlers } = createFakePi({ sendUserMessage } as Partial<RegisterApi>);
     register(api);
 
-    await handlers.get("before_agent_start")?.({ prompt: "Add pagination with tests" }, {
-      model: undefined,
-      ui: { setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() },
-    });
+    await handlers.get("before_agent_start")?.(
+      { prompt: GATE_PROMPT },
+      extractorCtx({ setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() }),
+    );
     await handlers.get("agent_end")?.(
       { messages: [] },
       {
@@ -241,17 +314,39 @@ describe("register", () => {
     );
   });
 
-  it("records a harness ledger event when the verification gate re-injects", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "harness-ledger-"));
-    process.chdir(cwd);
+  // The other half of Phase 0, and the reason the gate was costing a turn a
+  // day: the same prompt with only the deterministic keyword contract behind it
+  // must NOT re-inject. (No model on the ctx → no extraction → template only.)
+  it("does not re-inject when only the deterministic template contract is unmet", async () => {
     const sendUserMessage = vi.fn(async () => undefined);
     const { api, handlers } = createFakePi({ sendUserMessage } as Partial<RegisterApi>);
     register(api);
 
-    await handlers.get("before_agent_start")?.({ prompt: "Add pagination with tests" }, {
-      model: { id: "model-id", name: "Model Name" },
+    await handlers.get("before_agent_start")?.({ prompt: GATE_PROMPT }, {
+      model: undefined,
       ui: { setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() },
     });
+    await handlers.get("agent_end")?.(
+      { messages: [] },
+      {
+        hasUI: true,
+        ui: { notify: vi.fn(), setStatus: vi.fn(), theme: noopTheme },
+      },
+    );
+
+    expect(sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("records a harness ledger event when the verification gate re-injects", async () => {
+    const cwd = await inScratchRepo("harness-ledger-");
+    const sendUserMessage = vi.fn(async () => undefined);
+    const { api, handlers } = createFakePi({ sendUserMessage } as Partial<RegisterApi>);
+    register(api);
+
+    await handlers.get("before_agent_start")?.(
+      { prompt: GATE_PROMPT },
+      extractorCtx({ setHeader: vi.fn(), setStatus: vi.fn(), notify: vi.fn() }),
+    );
     await handlers.get("agent_end")?.(
       { messages: [] },
       {
@@ -262,15 +357,28 @@ describe("register", () => {
     );
 
     const raw = await readFile(join(cwd, ".harness", "evolution", "events.jsonl"), "utf-8");
-    const event = JSON.parse(raw.trim());
+    // JSONL, and since Phase 2 this turn writes two rows: the spec_extraction
+    // outcome and then the gate_failure. Parse it as the line-delimited format
+    // it is rather than assuming a single object.
+    const events = raw.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 
-    expect(event).toMatchObject({
+    const gateFailure = events.find((entry) => entry.type === "gate_failure");
+    expect(gateFailure).toMatchObject({
       type: "gate_failure",
       model: "model-id",
       outcome: "needs_work",
     });
-    expect(event.summary).toContain("verification gate re-injected");
-    expect(raw).not.toContain("Add pagination with tests");
+    expect(gateFailure.summary).toContain("verification gate re-injected");
+
+    // The extraction outcome is recorded on the same turn — this is what made
+    // the 0-for-48 invisible for as long as it was.
+    expect(events.find((entry) => entry.type === "spec_extraction")).toMatchObject({
+      summary: "semantic extraction: accepted",
+      outcome: "ok",
+    });
+
+    // Neither row may carry the user's prompt.
+    expect(raw).not.toContain(GATE_PROMPT);
   });
 
   it("uses the final assistant message as manual completion evidence", async () => {

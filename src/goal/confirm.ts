@@ -18,9 +18,16 @@ export interface ConfirmInput {
 type RunEvaluator = (input: EvaluatorInput) => Promise<Verdict>;
 
 function describeFailedDeterministicEvidence(text: string): string | undefined {
-  if (/\bexit\s+1\b/i.test(text)) return "tool output shows exit 1";
+  // Any non-zero exit, not just 1 — `exit 2` and `exit 127` are failures too.
+  if (/\bexit\s+(?!0\b)\d+\b/i.test(text)) return "tool output shows a non-zero exit code";
   if (/\b(?:command|test|verification)\s+failed\b/i.test(text)) return "tool output reports a failed command/test/verification";
-  if (/\[ERROR\]/i.test(text) || /\berror\b[:\-]/i.test(text)) return "tool output contains an error marker";
+  // extract.ts marks a failed tool result as `[bash (ERROR)]`, so the parenthesised
+  // form is the one that actually appears. Matching only `[ERROR]` let a failed
+  // tool call reach the evaluator and be graded MET — in a path whose whole job is
+  // to fail closed.
+  if (/\(ERROR\)/i.test(text) || /\[ERROR\]/i.test(text) || /\berror\b[:\-]/i.test(text)) {
+    return "tool output contains an error marker";
+  }
   return undefined;
 }
 

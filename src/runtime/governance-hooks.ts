@@ -5,7 +5,8 @@ import { AuditLogger } from "../audit/logger";
 import type { PermissionManager } from "../permissions/manager";
 import { gateDisabledByEnv } from "../permissions/yolo-config";
 import type { SpecEngine } from "../spec/engine";
-import { buildContinuationPrompt, shouldReinject } from "../spec/gate";
+import { buildContinuationPrompt, gatedFailures, shouldReinject } from "../spec/gate";
+import { collectTurnDiffEvidence } from "../spec/diff-evidence";
 import type { GoalController } from "../goal/controller";
 import { renderGoalStatusSegment } from "../goal/command";
 import { handleAgentEnd as handleGoalAgentEnd, type GoalEventRecord } from "../goal/loop";
@@ -17,7 +18,7 @@ import { roleNarrowingOverlay } from "../governance/role-overlay";
 import { GovernanceRuntime } from "./governance-runtime";
 import { createSnapshot } from "../security/snapshot";
 import { issueContinuation } from "./continuation-auth";
-import { formatSpecForApproval, formatPanel, noopTheme } from "../ui-utils";
+import { formatSpecForApproval, formatPanel, noopTheme, renderCriteriaLines } from "../ui-utils";
 import type { DeliveryRuntime } from "./commands/delivery";
 import type { PolicyLoadState } from "../policy/state";
 
@@ -98,6 +99,11 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
       if (!ctx.hasUI) {
         return { block: true, reason: "Explicit spec needs approval but no UI available" };
       }
+      // Approval must be given against the contract that will actually be
+      // enforced. Blocking here is deliberate: showing a deterministic placeholder
+      // and upgrading it after the user clicked "approve" would make the approval
+      // meaningless. A no-op when no extractor is wired.
+      await spec.settleContract();
       const approved = await ctx.ui.confirm(
         "Spec Approval Required",
         formatSpecForApproval(active, ctx.ui.theme ?? noopTheme),
@@ -107,6 +113,11 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
       } else {
         active.approvalStatus = "rejected";
         permissions.remember("*", "*", "deny");
+        // Terminal: drop the spec so agent_end has nothing to verify and the
+        // gate cannot restart the refused work. The session-wide deny above is
+        // only a turn-scoped stop (clearSessionRules() drops it next turn),
+        // which is correct precisely because the loop can no longer resume.
+        spec.rejectActiveSpec();
         return { block: true, reason: `User rejected spec: ${active.goal}` };
       }
     }
@@ -191,19 +202,43 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
     // ESC must win over both continuation drivers below: an aborted turn ends
     // with a final assistant message whose stopReason is "aborted".
     const turnAborted = readAborted(event);
-    const results = spec.finishTurn(event.messages, { aborted: turnAborted });
+
+    // Ground truth before verifying: what the working tree says changed, not what
+    // the edit/write tool arguments claimed. Only replaces the intent-based
+    // records when git actually answered — outside a repo the tool-input diffs
+    // stand. Never allowed to throw: a verification detail must not fail the turn.
+    if (spec.activeSpec) {
+      try {
+        // Fold in any semantic contract before verifying against it. No-op when no
+        // extractor is wired, and when one is, the turn's own work has already
+        // hidden the latency.
+        await spec.settleContract();
+        const baseline = await spec.turnBaseline;
+        const groundTruth = await collectTurnDiffEvidence(process.cwd(), baseline);
+        if (groundTruth) spec.replaceDiffEvidence(groundTruth);
+      } catch (err) {
+        console.error("[harness][diff-evidence]", err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    // Abort is not consulted here: verification is a pure read of collected
+    // evidence. Whether an aborted turn may continue is the gate's decision, and
+    // shouldReinject takes `aborted` directly.
+    const results = spec.verify();
     if (results.length > 0) {
       const theme = ctx.ui.theme ?? noopTheme;
       const passed = results.filter((r) => r.passed).length;
-      const lines = results.map((r) => `  ${r.passed ? theme.fg("success", "✓") : theme.fg("error", "✗")}  ${r.criterion.statement}`);
-      const approvalNote =
-        spec.activeSpec?.approvalStatus === "rejected"
-          ? `\n${theme.fg("dim", "(spec was rejected)")}`
-          : "";
-      const hasFailures = passed !== results.length;
+      const lines = renderCriteriaLines(theme, results);
+      // (A "(spec was rejected)" note used to hang here. A rejected spec is now
+      // dropped at the approval gate, so finishTurn returns no results and this
+      // whole block is skipped — the note had become unreachable.)
+      // "Failed" must mean the gate will act. An unmet advisory criterion is
+      // reported in the lines above but is not a failure of this turn.
+      const blocking = gatedFailures(results);
+      const hasFailures = blocking.length > 0;
       const summaryHeader = !ctx.hasUI && hasFailures
-        ? `${theme.bold(theme.fg("error", "Spec failed:"))}${approvalNote}`
-        : `${theme.bold("Spec:")} ${theme.fg(hasFailures ? "warning" : "success", `${passed}/${results.length}`)} passed${approvalNote}`;
+        ? `${theme.bold(theme.fg("error", "Spec failed:"))}`
+        : `${theme.bold("Spec:")} ${theme.fg(hasFailures ? "warning" : "success", `${passed}/${results.length}`)} passed`;
 
       const goalActive = goalController.isActive();
       const panel = formatPanel(
@@ -237,9 +272,14 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
         enabled: !gateDisabledByEnv(),
         goalActive,
         aborted: turnAborted,
+        specApproved: spec.activeSpec?.approvalStatus !== "rejected",
       })) {
         const prompt = buildContinuationPrompt(results, spec.gateAttempts);
-        const failedCriteria = results.filter((result) => !result.passed).map((result) => result.criterion.statement);
+        // Exactly what the continuation prompt asked for. Deriving this from a raw
+        // !passed filter made the ledger claim advisory criteria had been
+        // re-injected when the prompt had excluded them — and this event feeds the
+        // eval bench and generated model profiles.
+        const failedCriteria = blocking.map((result) => result.criterion.statement);
         await appendHarnessEvent({
           type: "gate_failure",
           taskId: sessionId,

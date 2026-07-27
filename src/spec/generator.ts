@@ -8,8 +8,15 @@ import type { Capability } from "../permissions/rules";
 import { buildContractFromTaskContract } from "./contract";
 import { extractTaskContract } from "./contract-extractor";
 
+/**
+ * Spec generation is synchronous by contract: a turn must never observe a missing
+ * spec. Semantic extraction is asynchronous and therefore lives on SpecEngine,
+ * which installs this deterministic result immediately and upgrades it in place
+ * via `settleContract()` if extraction returns something the schema accepts.
+ */
 export interface GenerateSpecOptions {
-  extractContractCandidate?: (prompt: string, tier: SpecTier) => unknown;
+  /** A pre-resolved contract candidate, when the caller already has one. */
+  candidate?: unknown;
 }
 
 let counter = 0;
@@ -36,14 +43,13 @@ function approvalFor(tier: SpecTier): ApprovalStatus {
 export function generateSpec(message: string, tier: SpecTier, options?: GenerateSpecOptions): FormalSpec {
   const taskContract = extractTaskContract(message, {
     tier,
-    extractCandidate: options?.extractContractCandidate,
+    candidate: options?.candidate,
   });
   const contract = buildContractFromTaskContract(taskContract);
 
   return {
     id: newId(),
     tier,
-    status: "active",
     approvalStatus: approvalFor(tier),
     goal: message,
     taskContract,

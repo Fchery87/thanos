@@ -1,16 +1,9 @@
 import type { EvidenceRecord } from "./claims";
+import { classifyTestCommand, normalizeCommand, normalizeExecutable } from "./command-normalize";
+import { toRepoRelative } from "./repo-paths";
+import { commandAuditTarget } from "../audit/target";
 
 export type { EvidenceRecord } from "./claims";
-
-const KNOWN_TEST_RUNNERS = new Set([
-  "vitest", "jest", "mocha", "bats", "pytest", "playwright",
-  "cargo test", "go test", "bun test", "node --test",
-]);
-
-const KNOWN_RUNNER_BINARIES = new Set([
-  "vitest", "jest", "mocha", "pytest", "playwright", "bats",
-  "cargo", "go", "bun", "node",
-]);
 
 type TextPart = { type: string; text?: string };
 
@@ -33,40 +26,14 @@ function textFromContent(content: TextPart[] | undefined): string {
     .trim() ?? "";
 }
 
+/**
+ * pi's edit/write schema names this parameter `path` (dist/core/tools/edit.js).
+ * There is deliberately no `file_path` fallback — that is Claude Code's parameter
+ * name, and accepting it here could only mask a genuine schema mismatch.
+ */
 function pathFromInput(input: Record<string, unknown> | undefined): string | undefined {
-  const p = input?.path ?? input?.file_path;
+  const p = input?.path;
   return typeof p === "string" ? p : undefined;
-}
-
-function classifyTestCommand(argv: string[]): { isTest: boolean; runner?: string } {
-  if (argv.length === 0) return { isTest: false };
-  const cmd = argv[0] ?? "";
-
-  if (KNOWN_TEST_RUNNERS.has(cmd)) {
-    return { isTest: true, runner: cmd };
-  }
-
-  if (KNOWN_RUNNER_BINARIES.has(cmd)) {
-    const subCmd = argv[1] ?? "";
-    if (subCmd === "test") {
-      return { isTest: true, runner: `${cmd} test` };
-    }
-  }
-
-  return { isTest: false };
-}
-
-function normalizeExecutable(argv: string[]): string {
-  if (argv.length === 0) return "unknown";
-  const cmd = argv[0] ?? "unknown";
-  const sub = argv[1] ?? "";
-  if ((cmd === "bun" || cmd === "node" || cmd === "cargo" || cmd === "go") && sub === "test") {
-    return `${cmd} test`;
-  }
-  if (cmd === "git" && sub === "grep") {
-    return "git grep";
-  }
-  return cmd;
 }
 
 export function evidenceFromToolResult(event: ToolResultEventLike): EvidenceRecord | undefined {
@@ -76,7 +43,11 @@ export function evidenceFromToolResult(event: ToolResultEventLike): EvidenceReco
     const command = typeof event.input?.command === "string" ? event.input.command : "";
     if (!command) return undefined;
 
-    const argv = command.trim().split(/\s+/);
+    // The argv that characterises the command, not its first raw token: wrappers
+    // stripped, package.json scripts resolved, the significant clause of a
+    // compound command chosen. `bun run test` arrives here as `vitest run`.
+    const argv = normalizeCommand(command);
+    if (argv.length === 0) return undefined;
     const { isTest, runner } = classifyTestCommand(argv);
 
     if (isTest) {
@@ -90,9 +61,12 @@ export function evidenceFromToolResult(event: ToolResultEventLike): EvidenceReco
       };
     }
 
+    // `family` was hardcoded "" while mustNotIsSatisfied interpolated it into the
+    // text it matches against — commandAuditTarget already computes exactly this.
+    const target = commandAuditTarget(command);
     return {
       kind: "command",
-      family: "",
+      family: target.kind === "bash-command" ? target.family ?? "" : "",
       normalizedExecutable: normalizeExecutable(argv),
       argv,
       exitCode: event.isError ? 1 : 0,
@@ -103,9 +77,14 @@ export function evidenceFromToolResult(event: ToolResultEventLike): EvidenceReco
   if (event.toolName === "edit" || event.toolName === "write") {
     const filePath = pathFromInput(event.input);
     if (!filePath) return undefined;
+    // Stored repo-relative so it can bind to a contract target, which is always
+    // repo-relative. A path outside the repo yields no evidence at all: it could
+    // never match a target, so recording it would only add an unmatchable record.
+    const repoPath = toRepoRelative(filePath);
+    if (!repoPath) return undefined;
     return {
       kind: "diff",
-      paths: [filePath],
+      paths: [repoPath],
       base: "",
       patchHash: "",
       passed,

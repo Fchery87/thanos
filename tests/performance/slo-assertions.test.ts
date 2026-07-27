@@ -45,13 +45,19 @@ describe("release SLOs", () => {
     expect(perCallMs).toBeLessThan(25);
   });
 
-  it("registration module loads without errors", { timeout: 60000 }, async () => {
-    const t0 = performance.now();
-    await import("../../src/index");
-    const totalMs = performance.now() - t0;
-    record("extension import (cold load)", totalMs, 10000);
-    expect(totalMs).toBeGreaterThan(0);
-  });
+  // Cold-load is deliberately NOT measured here, and this comment is the only
+  // thing left of the target that was.
+  //
+  // It timed `await import("../../src/index")` from inside vitest and compared
+  // the result to a 10s budget. That number was vitest transforming the entire
+  // TypeScript module graph on demand — it reported 31,578ms against a real cold
+  // load of ~1,530ms in the fresh bun process pi actually uses. Worse, its only
+  // assertion was `toBeGreaterThan(0)`, so it could not fail: .harness/slo-results.json
+  // carried `passed: false` for weeks while `bun run test` stayed green, which
+  // is how a gate teaches you to stop reading it.
+  //
+  // The honest measurement needs a process that isn't a test runner, so it lives
+  // in scripts/measure-harness.mjs (`bun run measure`).
 
   it("session rule evaluation is sub-millisecond", async () => {
     const t0 = performance.now();

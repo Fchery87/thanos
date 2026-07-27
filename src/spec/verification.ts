@@ -1,7 +1,27 @@
 import type { EvidenceRecord } from "./claims";
+import type { TaskCriterionSource } from "./task-contract";
 import type { FormalSpec, AcceptanceCriterion } from "./types";
 
-const REJECTED_COMMAND_EXECUTABLES = new Set(["printf", "echo", "git grep", "grep"]);
+/**
+ * Commands that inspect or print rather than verify.
+ *
+ * Rejected only for GATED criteria, where a command stands in as proof that the
+ * work is correct — `echo done` must never satisfy "the fix is verified". For an
+ * advisory criterion the command merely corroborates analysis, and there
+ * inspection is the entire point: an audit's evidence genuinely is ripgrep.
+ *
+ * Deliberately a denylist, not an allowlist. `risk.ts` fails safe toward asking
+ * permission, where over-restriction merely costs a prompt; here over-restriction
+ * means rejecting genuine evidence, which sends the gate into exactly the retry
+ * loop this whole plan exists to eliminate. An unrecognized command is far more
+ * likely to be a real build tool than a trick, so unknown stays accepted.
+ */
+const REJECTED_COMMAND_EXECUTABLES = new Set([
+  "echo", "printf", "true", "false", ":", "sleep",
+  "cat", "head", "tail", "wc", "ls", "pwd", "cd", "which", "file", "stat",
+  "realpath", "basename", "dirname", "tree", "date", "whoami", "env", "printenv",
+  "grep", "egrep", "fgrep", "rg", "find", "git grep",
+]);
 
 export interface VerificationResult {
   criterion: AcceptanceCriterion;
@@ -14,6 +34,12 @@ export interface VerificationResult {
    * to gated (false/undefined) when the source task criterion is unknown.
    */
   advisory?: boolean;
+  /**
+   * Provenance of {@link criterion}, surfaced here so the gate never has to
+   * reach back into the task contract. `deterministic_fallback` criteria are
+   * reported but never drive a continuation — see `gatedFailures`.
+   */
+  source?: TaskCriterionSource;
 }
 
 /** Every evidence kind this criterion can be satisfied by: the required set plus
@@ -58,7 +84,8 @@ function commandMatchesTaskCriterion(
 ): boolean {
   const expectedExecutables = taskCriterion.expectedExecutables ?? [];
   const expectedArgs = taskCriterion.expectedArgs ?? [];
-  if (REJECTED_COMMAND_EXECUTABLES.has(record.normalizedExecutable)) return false;
+  const gated = taskCriterion.verificationMode !== "advisory";
+  if (gated && REJECTED_COMMAND_EXECUTABLES.has(record.normalizedExecutable)) return false;
   return executableMatchesExpected(expectedExecutables, record.normalizedExecutable)
     && argsMatchExpected(expectedArgs, record.argv)
     && argvMatchesTargets(taskCriterion.targets, record.argv);
@@ -152,13 +179,18 @@ export function verifyCriteria(spec: FormalSpec, evidence: EvidenceRecord[]): Ve
 
     const missingEvidence = [...missingRequired, ...missingGroups];
 
-    const mustNotViolation = taskCriterion ? !mustNotIsSatisfied(taskCriterion.mustNot ?? [], evidence) : false;
+    // Scoped to THIS criterion's matching evidence, not the whole turn's. Until
+    // the extractor landed, `mustNot` only ever held one hardcoded phrase and so
+    // could not fire; with real values it becomes live, and an unscoped scan
+    // would fail a criterion because of evidence belonging to a different one.
+    const mustNotViolation = taskCriterion ? !mustNotIsSatisfied(taskCriterion.mustNot ?? [], matchingEvidence) : false;
     const passed = missingEvidence.length === 0 && !mustNotViolation;
 
     return {
       criterion,
       passed,
       advisory: taskCriterion?.verificationMode === "advisory",
+      source: criterion.source ?? taskCriterion?.source,
       evidence: matchingEvidence.map(evidenceSummary),
       missingEvidence: mustNotViolation ? [...missingEvidence, "mustNot"] : missingEvidence,
     };

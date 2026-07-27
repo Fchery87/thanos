@@ -17,7 +17,7 @@ const test: EvidenceRecord = { kind: "test", runner: "bun test", normalizedExecu
 const command: EvidenceRecord = { kind: "command", family: "", normalizedExecutable: "make", argv: ["make", "check"], exitCode: 0, passed: true };
 
 const gate = (results: ReturnType<typeof verifyCriteria>) =>
-  shouldReinject({ results, attempts: 0, isSubagent: false, enabled: true, goalActive: false });
+  shouldReinject({ results, attempts: 0, isSubagent: false, enabled: true, goalActive: false, specApproved: true });
 
 describe("anyOf evidence for mutating criteria", () => {
   it("accepts a fix verified by a test even though the prompt never said 'test'", () => {
@@ -36,12 +36,18 @@ describe("anyOf evidence for mutating criteria", () => {
     expect(gate(results)).toBe(false);
   });
 
-  it("still re-injects a fix that landed a diff but ran no verification at all", () => {
+  // The anyOf group is still reported unmet — that is what this file covers.
+  // Phase 0 changed only what the GATE does with it: this contract is a
+  // deterministic keyword template ("fix" matched a regex, nothing more), so it
+  // is surfaced in the turn panel but no longer buys itself an extra model turn.
+  it("reports the unmet anyOf group for a fix that ran no verification at all", () => {
     const spec = generateSpec("fix the login bug", "ambient");
     const results = verifyCriteria(spec, [diff("src/login.ts")]);
 
-    expect(gate(results)).toBe(true);
+    expect(results.some((result) => !result.passed)).toBe(true);
     const unmet = results.flatMap((result) => result.missingEvidence);
     expect(unmet).toContain("test|command");
+
+    expect(gate(results)).toBe(false);
   });
 });

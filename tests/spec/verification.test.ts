@@ -7,7 +7,6 @@ function makeSpec(): FormalSpec {
   return {
     id: "spec-1",
     tier: "ambient",
-    status: "active",
     approvalStatus: "not_required",
     goal: "Build the billing flow",
     taskContract: {
@@ -87,7 +86,6 @@ describe("verifyCriteria", () => {
     const emptySpec: FormalSpec = {
       id: "spec-empty",
       tier: "ambient",
-      status: "active",
       approvalStatus: "not_required",
       goal: "Some goal",
       taskContract: {
@@ -107,5 +105,65 @@ describe("verifyCriteria", () => {
     expect(results).toHaveLength(1);
     expect(results[0]?.passed).toBe(false);
     expect(results[0]?.criterion.statement).toContain("No verifiable criteria");
+  });
+});
+
+describe("mustNot scoping", () => {
+  // mustNot was inert while inferMustNot emitted a single hardcoded phrase. The
+  // extractor can emit real values, so it is live now — and an unscoped scan
+  // over the whole turn's evidence fails a criterion because of evidence that
+  // belongs to a different one.
+  function specWithMustNot(): FormalSpec {
+    return {
+      id: "spec-mustnot",
+      tier: "ambient",
+      approvalStatus: "not_required",
+      goal: "Harden the auth flow",
+      taskContract: {
+        objective: "Harden the auth flow",
+        criteria: [
+          { id: "auth-change", kind: "secure", statement: "Auth hardening lands", targets: ["src/auth"], evidence: ["diff"], expectedExecutables: [], expectedArgs: [], mustNot: ["src/legacy"], source: "semantic_extraction" },
+          { id: "docs-change", kind: "build", statement: "Docs updated", targets: ["docs"], evidence: ["diff"], expectedExecutables: [], expectedArgs: [], mustNot: [], source: "semantic_extraction" },
+        ],
+      },
+      allowedCapabilities: ["read", "edit"],
+      constraints: [],
+      acceptanceCriteria: [
+        { id: "auth-change", statement: "Auth hardening lands", evidenceRequired: ["diff"] },
+        { id: "docs-change", statement: "Docs updated", evidenceRequired: ["diff"] },
+      ],
+      targetFiles: [],
+      risks: [],
+      createdAt: 1,
+    };
+  }
+
+  it("fails a criterion whose own evidence violates its prohibition", () => {
+    const results = verifyCriteria(specWithMustNot(), [
+      { kind: "diff", paths: ["src/auth/login.ts", "src/legacy/shim.ts"], base: "", patchHash: "", passed: true },
+    ]);
+
+    const auth = results.find((r) => r.criterion.id === "auth-change");
+    expect(auth?.passed).toBe(false);
+    expect(auth?.missingEvidence).toContain("mustNot");
+  });
+
+  it("does not fail a criterion because a DIFFERENT criterion's evidence matches", () => {
+    const results = verifyCriteria(specWithMustNot(), [
+      { kind: "diff", paths: ["src/auth/login.ts"], base: "", patchHash: "", passed: true },
+      { kind: "diff", paths: ["src/legacy/shim.ts"], base: "", patchHash: "", passed: true },
+    ]);
+
+    const auth = results.find((r) => r.criterion.id === "auth-change");
+    expect(auth?.passed).toBe(true);
+    expect(auth?.missingEvidence).not.toContain("mustNot");
+  });
+
+  it("passes when nothing violates the prohibition", () => {
+    const results = verifyCriteria(specWithMustNot(), [
+      { kind: "diff", paths: ["src/auth/login.ts"], base: "", patchHash: "", passed: true },
+    ]);
+
+    expect(results.find((r) => r.criterion.id === "auth-change")?.passed).toBe(true);
   });
 });

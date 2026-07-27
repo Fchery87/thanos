@@ -9,7 +9,6 @@ describe("deterministic-first verification", () => {
     const spec: FormalSpec = {
       id: "spec-det-1",
       tier: "ambient",
-      status: "active",
       approvalStatus: "not_required",
       goal: "Run the required verification command",
       taskContract: {

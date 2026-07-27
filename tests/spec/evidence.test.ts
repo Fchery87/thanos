@@ -44,12 +44,21 @@ describe("evidenceFromToolResult", () => {
   it("classifies edit/write as diff evidence", () => {
     const ev = evidenceFromToolResult({
       toolName: "edit",
-      input: { file_path: "src/foo.ts" },
+      input: { path: "src/foo.ts" },
     });
     expect(ev?.kind).toBe("diff");
     if (ev?.kind === "diff") {
       expect(ev.paths).toContain("src/foo.ts");
     }
+  });
+
+  // `file_path` is Claude Code's parameter name; pi's edit/write schema uses
+  // `path`. Honouring both would only mask a real schema mismatch.
+  it("ignores a Claude Code-shaped file_path input", () => {
+    expect(evidenceFromToolResult({
+      toolName: "edit",
+      input: { file_path: "src/foo.ts" },
+    })).toBeUndefined();
   });
 
   it("returns undefined for bash with no command", () => {

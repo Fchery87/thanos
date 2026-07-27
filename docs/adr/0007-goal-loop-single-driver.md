@@ -61,3 +61,23 @@ Review of the completion path surfaced fragilities now fixed:
 1. **Confirmation fails CLOSED on missing evidence.** The tool reads the last work turn from the session branch via a private `sessionManager.getBranch()` probe; if that read comes back empty (API-shape drift, or `goal_complete` called before any proof turn), the evaluator would have judged the agent's *own* summary claim alone — silently reinstating the self-grading the fresh checker exists to prevent, and able to close a goal on a fabricated `MET`. The confirmation policy is now a pure, tested unit (`src/goal/confirm.ts` → `confirmGoalCompletion`): with no surfaced turn evidence it returns `NOT_MET` **without consulting the model**, so "no evidence" can never yield `MET`. The retry-once-then-fail-safe-to-`NOT_MET` policy moved into the same unit and is covered by `tests/goal/confirm.test.ts`.
 2. **Framing lives in one place.** The active condition, goal-mode rules, completion protocol, and evidence contract ride in the system prompt (`buildGoalSystemPrompt`, injected every active-goal turn via `before_agent_start`). The per-turn/resume directive (`buildContinueDirective`) is now a terse sentinel nudge instead of re-sending the full condition + contract each turn — which had duplicated that text into the transcript and burned the very token-growth ceiling the loop guards. The stale `buildDirective` (which never mentioned `goal_complete` and still spoke the removed per-turn-evaluator model) is deleted; `/goal resume` now sends the same `buildContinueDirective`.
 3. **The evidence contract describes the real mechanism.** `EVIDENCE_CONTRACT` no longer claims a checker runs "after each of your turns"; it states that the checker runs when `goal_complete` is called and judges only that turn's final message + last tool outputs. The `goal_complete` instruction is single-sourced (`COMPLETION_CONTRACT`) rather than hand-copied across builders.
+
+## Verified still holding (2026-07-27)
+
+ADR 0006 was amended so that only non-template acceptance criteria may drive a
+continuation. That amendment narrows *what the gate acts on*; it does not touch
+*when the gate stands down*. The single-driver invariant this ADR exists to
+protect is unaffected:
+
+- `shouldReinject` still returns false on `goalActive`, ahead of any inspection
+  of the results (`src/spec/gate.ts`) — the goal loop remains the sole
+  continuation driver while a goal is active.
+- The two sentinels are unchanged, so a goal turn still never regenerates the
+  spec.
+- Narrowing the gate can only ever reduce the set of turns on which it would
+  have queued a follow-up, so it cannot introduce the double-drive this ADR
+  forbids.
+
+No amendment required. Recorded because "verify 0007 still holds after the gate
+change" was a scheduled check, and a check that ran deserves the same durable
+record as one that found something.

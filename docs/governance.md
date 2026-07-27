@@ -68,6 +68,16 @@ Governance rules live in `harness.policy.json`, or in the file pointed to by `HA
 
 Audit events are written to `.harness/audit.jsonl` (gitignored). View entries with `Ctrl+Shift+A`.
 
+> **Dormant by design.** The audit writer and the policy evaluator are live and
+> load-bearing — `policy/evaluator.ts` decides every governed tool call, and
+> `audit/target.ts` computes the safe target that risk classification, push
+> guarding and spec evidence all depend on. What is dormant is *accumulation and
+> switching*: `.harness/audit.jsonl` holds 2 rows, both seed data from
+> 2026-05-13, across 669 sessions, and a single operator never switches policy
+> presets. That is the expected shape for one person, not a defect. Both cost no
+> per-turn latency and are the bridge to a multi-operator story if there is ever
+> one; neither should be read as actively used infrastructure.
+
 **Rule precedence:** Policy File rules use **first-match-wins**. Session-remembered rules use **last-match-wins**. The two layers are intentionally different: policy is deterministic; session overrides are recency-weighted.
 
 ## Delivery modes
@@ -176,13 +186,39 @@ Each role maps to a markdown file in `agent/agents/` defining its system prompt,
 
 In addition to the roles above, three **focused review critics** ship as agent files for the code-review jury: `reviewer-correctness`, `reviewer-security`, and `reviewer-tests`. They are read-only and each scoped to one concern.
 
-### Code review jury
+### Code review jury (`Ctrl+Shift+R`)
 
-`Ctrl+Shift+R` no longer spawns a single reviewer. It dispatches a **heterogeneous critic jury**: `reviewer-correctness`, `reviewer-security`, and `reviewer-tests` run in **parallel** on the session diff (each pinnable to a different model family for independent blind spots — see [Per-role model routing](#per-role-model-routing)), an `oracle` runs as a **devil's advocate that challenges the findings even when the reviewers report nothing**, and a synthesis pass de-duplicates and ranks into one verdict (APPROVE / COMMENT / REQUEST_CHANGES). The main agent acts as judge and does not write findings itself. Independent confirmation across model families is the strongest review signal.
+**This is a prompt, not a runtime.** The shortcut composes an instruction asking
+the agent to dispatch `reviewer-correctness`, `reviewer-security` and
+`reviewer-tests` in parallel over the session diff, run an `oracle` as a devil's
+advocate, and synthesize one verdict (APPROVE / COMMENT / REQUEST_CHANGES). Those
+agents exist and the delegation works, but nothing enforces that all three ran,
+that the oracle ran after them, or that the verdict reflects what they returned.
+
+A `jury-runtime` module did the result-shaping and synthesis. It became
+unreachable when delegation moved to `pi-subagents`, sat that way, and was
+deleted on 2026-07-27. What is left is the prompt and the agents it names.
+
+Read a jury verdict as the agent's own work, on the same evidence bar as any
+other turn — not as a structurally guaranteed multi-critic result.
 
 ### Bounded waves (`/waves`)
 
-`/waves <goal>` is an explicit opt-in orchestration for large research, analysis, audit, or carefully isolated implementation work. Rather than one linear pass, the main agent **discovers the problem shape, decomposes it into independent slices, fans out bounded parallel workers, verifies each structured handoff, and synthesizes one deliverable**. Waves are bounded — width and depth are capped, read slices may overlap but **write slices must own disjoint paths** and run in worktree-isolated writer agents (`build`/`worker`) — so parallelism never corrupts shared state. Verification of the handoffs is the stop function, not a fixed iteration count. See [main-agent-orchestrator-workflow.md](main-agent-orchestrator-workflow.md).
+**This is a prompt, not a runtime.** `/waves <goal>` composes an instruction to
+decompose work into independent slices, fan out bounded parallel workers, verify
+each handoff, and synthesize one deliverable.
+
+The guarantees this section used to claim — width and depth caps, disjoint write
+ownership across slices, handoff verification as the stop function — were
+implemented in `waves/runtime.ts`, `waves/plan.ts` and `waves/verify.ts`. None of
+it was reachable after delegation moved to `pi-subagents`; all of it was deleted
+on 2026-07-27. Write isolation for delegated work is real, but it comes from
+worktree-isolated writer agents and the per-agent tool grants, not from anything
+reconciling one slice's paths against another's.
+
+Use `/waves` as a decomposition prompt. Do not rely on it to keep two parallel
+writers off the same file. See
+[main-agent-orchestrator-workflow.md](main-agent-orchestrator-workflow.md).
 
 ### Per-role model routing
 

@@ -47,6 +47,8 @@ agent/skills/
 agent/agents.bak/
 
 # ── Harness audit and runtime data ───────────────────────────────────
+# Every generated artifact lives here — perf baselines, benchmark output, the
+# audit log, the evolution ledger. Nothing generated belongs in the repo root.
 .harness/
 
 # ── Worktrees ────────────────────────────────────────────────────────
