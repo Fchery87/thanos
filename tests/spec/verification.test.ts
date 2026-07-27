@@ -7,7 +7,6 @@ function makeSpec(): FormalSpec {
   return {
     id: "spec-1",
     tier: "ambient",
-    status: "active",
     approvalStatus: "not_required",
     goal: "Build the billing flow",
     taskContract: {
@@ -87,7 +86,6 @@ describe("verifyCriteria", () => {
     const emptySpec: FormalSpec = {
       id: "spec-empty",
       tier: "ambient",
-      status: "active",
       approvalStatus: "not_required",
       goal: "Some goal",
       taskContract: {
@@ -119,7 +117,6 @@ describe("mustNot scoping", () => {
     return {
       id: "spec-mustnot",
       tier: "ambient",
-      status: "active",
       approvalStatus: "not_required",
       goal: "Harden the auth flow",
       taskContract: {

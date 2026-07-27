@@ -1,7 +1,26 @@
 import type { EvidenceRecord } from "./claims";
 import type { FormalSpec, AcceptanceCriterion } from "./types";
 
-const REJECTED_COMMAND_EXECUTABLES = new Set(["printf", "echo", "git grep", "grep"]);
+/**
+ * Commands that inspect or print rather than verify.
+ *
+ * Rejected only for GATED criteria, where a command stands in as proof that the
+ * work is correct — `echo done` must never satisfy "the fix is verified". For an
+ * advisory criterion the command merely corroborates analysis, and there
+ * inspection is the entire point: an audit's evidence genuinely is ripgrep.
+ *
+ * Deliberately a denylist, not an allowlist. `risk.ts` fails safe toward asking
+ * permission, where over-restriction merely costs a prompt; here over-restriction
+ * means rejecting genuine evidence, which sends the gate into exactly the retry
+ * loop this whole plan exists to eliminate. An unrecognized command is far more
+ * likely to be a real build tool than a trick, so unknown stays accepted.
+ */
+const REJECTED_COMMAND_EXECUTABLES = new Set([
+  "echo", "printf", "true", "false", ":", "sleep",
+  "cat", "head", "tail", "wc", "ls", "pwd", "cd", "which", "file", "stat",
+  "realpath", "basename", "dirname", "tree", "date", "whoami", "env", "printenv",
+  "grep", "egrep", "fgrep", "rg", "find", "git grep",
+]);
 
 export interface VerificationResult {
   criterion: AcceptanceCriterion;
@@ -58,7 +77,8 @@ function commandMatchesTaskCriterion(
 ): boolean {
   const expectedExecutables = taskCriterion.expectedExecutables ?? [];
   const expectedArgs = taskCriterion.expectedArgs ?? [];
-  if (REJECTED_COMMAND_EXECUTABLES.has(record.normalizedExecutable)) return false;
+  const gated = taskCriterion.verificationMode !== "advisory";
+  if (gated && REJECTED_COMMAND_EXECUTABLES.has(record.normalizedExecutable)) return false;
   return executableMatchesExpected(expectedExecutables, record.normalizedExecutable)
     && argsMatchExpected(expectedArgs, record.argv)
     && argvMatchesTargets(taskCriterion.targets, record.argv);

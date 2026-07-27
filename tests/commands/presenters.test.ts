@@ -17,7 +17,6 @@ const policy = {
 const spec = {
   id: "spec-1",
   tier: "ambient",
-  status: "active",
   approvalStatus: "not_required",
   goal: "Build the billing flow",
   taskContract: {

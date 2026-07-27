@@ -121,22 +121,19 @@ describe("SpecEngine lifecycle", () => {
     }
   });
 
-  it("does NOT create evidence from assistant prose", () => {
+  // Previously this guarded against verification reading the assistant's own
+  // prose as evidence. The engine no longer accepts messages at all, so the
+  // guarantee is now structural rather than behavioural: an agent's claim that it
+  // finished cannot reach the verifier, because there is no path for it to.
+  it("has no way for assistant prose to become evidence", () => {
     const spec = new SpecEngine();
-
-    expect(
-      spec.finishTurn([
-        { role: "assistant", content: [{ type: "text", text: "done" }] },
-      ]),
-    ).toEqual([]);
+    expect(spec.verify()).toEqual([]);
 
     spec.startTurn("Complete the billing task with clear updates", false);
-    const results = spec.finishTurn([
-      { role: "assistant", content: [{ type: "text", text: "done" }] },
-    ]);
+    const results = spec.verify();
 
-    // Assistant prose does NOT create passing evidence
-    expect(results.every((r) => !r.passed || r.evidence.length === 0)).toBe(true);
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.every((r) => r.evidence.length === 0)).toBe(true);
   });
 
   it("returns evidence results from recorded tool evidence (not assistant prose)", () => {
@@ -146,7 +143,7 @@ describe("SpecEngine lifecycle", () => {
     spec.recordEvidence({ kind: "diff", paths: ["src/billing/index.ts"], base: "abc", patchHash: "h1", passed: true });
     spec.recordEvidence({ kind: "test", runner: "vitest", normalizedExecutable: "vitest", args: ["run", "tests/billing"], exitCode: 0, passed: true });
 
-    const results = spec.finishTurn([]);
+    const results = spec.verify();
 
     expect(results).toHaveLength(2);
     expect(results[0]?.passed).toBe(true);
@@ -314,7 +311,7 @@ describe("SpecEngine lifecycle", () => {
     // sees no wall of red ✗ for criteria they deliberately prevented.
     expect(spec.activeSpec).toBeUndefined();
     expect(spec.verify()).toEqual([]);
-    expect(spec.finishTurn([])).toEqual([]);
+    expect(spec.verify()).toEqual([]);
   });
 
   it("stops collecting evidence once the spec is rejected", () => {
@@ -333,16 +330,14 @@ describe("SpecEngine lifecycle", () => {
     expect(spec.activeSpec).toBeUndefined();
   });
 
-  it("does not record assistant text from an aborted turn as evidence", () => {
+  // Verification is a pure read of collected evidence and never consulted the
+  // abort flag — both branches of the old finishTurn(aborted) returned the same
+  // thing. Whether an aborted turn may continue is the gate's call, via
+  // shouldReinject's own `aborted` input.
+  it("fails every criterion when a turn produced no evidence", () => {
     const spec = new SpecEngine();
     spec.startTurn("Complete the billing task with clear updates", false);
 
-    const results = spec.finishTurn(
-      [{ role: "assistant", content: [{ type: "text", text: "done" }] }],
-      { aborted: true },
-    );
-
-    // With no tool evidence collected, should fail on all criteria
-    expect(results.every((result) => !result.passed)).toBe(true);
+    expect(spec.verify().every((result) => !result.passed)).toBe(true);
   });
 });

@@ -8,7 +8,6 @@ function makeContractSpec(): FormalSpec {
   return {
     id: "spec-contract-bind",
     tier: "ambient",
-    status: "active",
     approvalStatus: "not_required",
     goal: "Fix auth regression",
     taskContract: {

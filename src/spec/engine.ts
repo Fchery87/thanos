@@ -155,13 +155,6 @@ export class SpecEngine {
     this.evidence.push(evidence);
   }
 
-  finishTurn(_messages: unknown, opts?: { aborted?: boolean }): VerificationResult[] {
-    if (opts?.aborted) {
-      return this.verify();
-    }
-    return this.verify();
-  }
-
   verify(): VerificationResult[] {
     if (!this.activeSpec) return [];
     return verifyCriteria(this.activeSpec, this.evidence);

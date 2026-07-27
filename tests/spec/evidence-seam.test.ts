@@ -21,12 +21,10 @@ import type { FormalSpec } from "../../src/spec/types";
  * `tool_result` events, run them through `evidenceFromToolResult`, and assert on
  * the resulting `VerificationResult`.
  *
- * Cases marked `it.fails` encode a known defect: they pass *because* the
- * assertion inside them currently throws. When the named task fixes the
- * behavior, the assertion starts succeeding, `it.fails` starts failing, and
- * whoever runs the suite is forced to flip it to `it`. That keeps CI green at
- * every commit (`.github/workflows/ci.yml` runs `test:unit`, which includes this
- * directory) without pretending the defect is not there.
+ * Several of these were first committed as `it.fails` — passing precisely
+ * because the assertion inside them threw — and were flipped to `it` by the task
+ * that fixed each defect. Each one therefore records a bug that actually shipped,
+ * not a hypothetical.
  */
 
 /** A pi `tool_result` event, shaped as the SDK emits it. */
@@ -177,5 +175,52 @@ describe("evidence seam: advisory criteria never drive the gate", () => {
       goalActive: false,
       specApproved: true,
     })).toBe(false);
+  });
+});
+
+describe("evidence seam: what counts as verification", () => {
+  const spec = () => generateSpec("Fix the pagination off-by-one error", "ambient");
+
+  // Inspection and printing are not verification. Kept as a denylist rather than
+  // an allowlist on purpose: over-rejecting real evidence sends the gate back
+  // into the retry loop this whole plan exists to remove, so an unrecognized
+  // command — far more likely a real build tool than a trick — still counts.
+  it("rejects commands that only inspect or print", () => {
+    for (const command of ["echo ok", "printf done", "true", "cat src/x.ts", "ls -la", "rg pattern", "find . -name x", "git grep foo", "wc -l src/x.ts"]) {
+      const result = resultFor(spec(), "fix-primary", [
+        toolResult("write", { path: "src/pagination.ts" }),
+        toolResult("bash", { command }),
+      ]);
+      expect(result.passed, command).toBe(false);
+    }
+  });
+
+  it("accepts a real verification command", () => {
+    for (const command of ["tsc --noEmit", "eslint src", "cargo build", "make check"]) {
+      const result = resultFor(spec(), "fix-primary", [
+        toolResult("write", { path: "src/pagination.ts" }),
+        toolResult("bash", { command }),
+      ]);
+      expect(result.passed, command).toBe(true);
+    }
+  });
+
+  it("accepts an unrecognized command rather than guessing it is a trick", () => {
+    const result = resultFor(spec(), "fix-primary", [
+      toolResult("write", { path: "src/pagination.ts" }),
+      toolResult("bash", { command: "some-project-specific-verifier --strict" }),
+    ]);
+    expect(result.passed).toBe(true);
+  });
+
+  // The rejection is scoped to gated criteria. For an advisory audit the command
+  // corroborates analysis rather than standing in as proof, and inspection is the
+  // entire point — an audit's evidence genuinely is ripgrep.
+  it("accepts inspection commands as corroboration for an advisory criterion", () => {
+    const auditSpec = generateSpec("audit the auth flow", "ambient");
+    for (const command of ["rg token src/auth", "grep -r token src/auth", "cat src/auth/session.ts"]) {
+      const result = resultFor(auditSpec, "audit-primary", [toolResult("bash", { command })]);
+      expect(result.passed, command).toBe(true);
+    }
   });
 });

@@ -221,7 +221,10 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
       }
     }
 
-    const results = spec.finishTurn(event.messages, { aborted: turnAborted });
+    // Abort is not consulted here: verification is a pure read of collected
+    // evidence. Whether an aborted turn may continue is the gate's decision, and
+    // shouldReinject takes `aborted` directly.
+    const results = spec.verify();
     if (results.length > 0) {
       const theme = ctx.ui.theme ?? noopTheme;
       const passed = results.filter((r) => r.passed).length;

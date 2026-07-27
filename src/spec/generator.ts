@@ -50,7 +50,6 @@ export function generateSpec(message: string, tier: SpecTier, options?: Generate
   return {
     id: newId(),
     tier,
-    status: "active",
     approvalStatus: approvalFor(tier),
     goal: message,
     taskContract,
