@@ -20,6 +20,31 @@ extractor's async result without making generation async.
 **Tech Stack:** TypeScript, vitest, bun. Existing modules: `src/spec`, `src/runtime`,
 `src/hooks`, `src/audit`, `src/goal`.
 
+### Honest completion ledger
+
+**Done & committed (branch `restore-pre-sync`):**
+
+- **Task 1** — `76742f7`. `SpecEngine.rejectActiveSpec()` + `ReinjectInputs.specApproved`.
+  Deviations from the task as written, both deliberate: the
+  `status = "abandoned"` assignment was dropped (`FormalSpec.status` is
+  write-only across the codebase — set in `generator.ts:46`, read nowhere), and
+  the now-unreachable `"(spec was rejected)"` panel note was removed. The manual
+  check (`pi --spec`, decline the prompt) is **not yet run** — it needs a live
+  session.
+- **Task 2** — `622967c`. All three symbols deleted; `src/spec/` 13 modules → 11.
+
+**Correction to §1.1 D7:** the table lists `buildEvaluatorPrompt` as referenced
+by "its own test only". That was wrong — `scripts/benchmark-prompts.mjs:6`
+imported it and recorded it as `"spec evaluator prompt"`. The original grep
+covered only `src/` and `tests/`. It was still deleted, with the benchmark entry
+(28 records, was 29), because the prompt is never sent to a model in production
+— but the stated justification was inaccurate, and later tasks should re-grep
+`scripts/` and `evals/` before trusting any "unreferenced" claim here.
+
+**Not started:** Tasks 3-10.
+
+---
+
 **Predecessor:** `docs/plans/2026-07-22-harness-speed-and-spec-gate-fix-plan.md` —
 read its §3 principles first. That plan repaired the *contract* plane (W1 advisory
 modes, W4.1 `evidenceAnyOf`). This plan repairs the *evidence* plane it feeds.
