@@ -1,16 +1,7 @@
 import type { EvidenceRecord } from "./claims";
+import { classifyTestCommand, normalizeCommand, normalizeExecutable } from "./command-normalize";
 
 export type { EvidenceRecord } from "./claims";
-
-const KNOWN_TEST_RUNNERS = new Set([
-  "vitest", "jest", "mocha", "bats", "pytest", "playwright",
-  "cargo test", "go test", "bun test", "node --test",
-]);
-
-const KNOWN_RUNNER_BINARIES = new Set([
-  "vitest", "jest", "mocha", "pytest", "playwright", "bats",
-  "cargo", "go", "bun", "node",
-]);
 
 type TextPart = { type: string; text?: string };
 
@@ -38,37 +29,6 @@ function pathFromInput(input: Record<string, unknown> | undefined): string | und
   return typeof p === "string" ? p : undefined;
 }
 
-function classifyTestCommand(argv: string[]): { isTest: boolean; runner?: string } {
-  if (argv.length === 0) return { isTest: false };
-  const cmd = argv[0] ?? "";
-
-  if (KNOWN_TEST_RUNNERS.has(cmd)) {
-    return { isTest: true, runner: cmd };
-  }
-
-  if (KNOWN_RUNNER_BINARIES.has(cmd)) {
-    const subCmd = argv[1] ?? "";
-    if (subCmd === "test") {
-      return { isTest: true, runner: `${cmd} test` };
-    }
-  }
-
-  return { isTest: false };
-}
-
-function normalizeExecutable(argv: string[]): string {
-  if (argv.length === 0) return "unknown";
-  const cmd = argv[0] ?? "unknown";
-  const sub = argv[1] ?? "";
-  if ((cmd === "bun" || cmd === "node" || cmd === "cargo" || cmd === "go") && sub === "test") {
-    return `${cmd} test`;
-  }
-  if (cmd === "git" && sub === "grep") {
-    return "git grep";
-  }
-  return cmd;
-}
-
 export function evidenceFromToolResult(event: ToolResultEventLike): EvidenceRecord | undefined {
   const passed = event.isError !== true;
 
@@ -76,7 +36,11 @@ export function evidenceFromToolResult(event: ToolResultEventLike): EvidenceReco
     const command = typeof event.input?.command === "string" ? event.input.command : "";
     if (!command) return undefined;
 
-    const argv = command.trim().split(/\s+/);
+    // The argv that characterises the command, not its first raw token: wrappers
+    // stripped, package.json scripts resolved, the significant clause of a
+    // compound command chosen. `bun run test` arrives here as `vitest run`.
+    const argv = normalizeCommand(command);
+    if (argv.length === 0) return undefined;
     const { isTest, runner } = classifyTestCommand(argv);
 
     if (isTest) {

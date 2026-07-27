@@ -69,20 +69,34 @@ describe("evidence seam: command recognition", () => {
     expect(result.passed).toBe(true);
   });
 
-  // TASK 4 — `package.json` declares `"test": "vitest run"`, and this project must
-  // be run as `bun run test`. `classifyTestCommand` requires argv[1] === "test",
-  // sees "run", and files it as generic command evidence, so the criterion that
-  // demands `test` evidence can never be satisfied on this repo.
-  it.fails("[TASK 4] satisfies a test criterion from `bun run test`", () => {
+  // `package.json` declares `"test": "vitest run"`, and this project must be run as
+  // `bun run test`. Before Task 4, classifyTestCommand required argv[1] === "test",
+  // saw "run", and filed this as generic command evidence — so the criterion that
+  // demands `test` evidence could never be satisfied on this repo.
+  it("satisfies a test criterion from `bun run test`", () => {
     const result = resultFor(spec(), "build-tests", [toolResult("bash", { command: "bun run test" })]);
     expect(result.passed).toBe(true);
   });
 
-  it.fails("[TASK 4] classifies package-manager and wrapper invocations as test evidence", () => {
+  it("classifies package-manager and wrapper invocations as test evidence", () => {
     for (const command of ["npm test", "pnpm test", "yarn test", "npx vitest run", "cd packages/core && vitest run"]) {
       const evidence = evidenceFromToolResult(toolResult("bash", { command }));
       expect(evidence?.kind, command).toBe("test");
     }
+  });
+
+  // `bun test` invokes bun's own built-in runner, not the package script — the two
+  // must never be conflated, since this repo reports phantom failures under it.
+  it("does not resolve bare `bun test` through package.json scripts", () => {
+    const evidence = evidenceFromToolResult(toolResult("bash", { command: "bun test" }));
+    expect(evidence?.kind).toBe("test");
+    if (evidence?.kind === "test") expect(evidence.runner).toBe("bun test");
+  });
+
+  it("finds a test run buried inside an aggregate script", () => {
+    // "ci": "bun run typecheck && bun run lint && bun run test"
+    const evidence = evidenceFromToolResult(toolResult("bash", { command: "bun run ci" }));
+    expect(evidence?.kind).toBe("test");
   });
 
   it("does not accept a trivially-satisfiable command as verification", () => {

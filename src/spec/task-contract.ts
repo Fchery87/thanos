@@ -1,3 +1,5 @@
+import { KNOWN_TEST_EXECUTABLES } from "./command-normalize";
+
 export type TaskCriterionKind = "rename" | "fix" | "build" | "audit" | "secure" | "investigate" | "manual";
 export type TaskCriterionSource = "user" | "deterministic_fallback" | "semantic_extraction";
 export type TaskEvidenceIdentity = "diff" | "test" | "command" | "manual";
@@ -230,7 +232,12 @@ export function buildTaskContract(request: string): TaskContract {
 
 function inferExpectedExecutables(lower: string): string[] {
   if (/\b(tests?|verify|verification|regression|coverage|policy)\b/.test(lower)) {
-    return ["vitest", "bun test", "pytest", "jest"];
+    // Matched exactly against `normalizeExecutable`'s output, so the vocabulary
+    // lives beside that function rather than being spelled out again here. The
+    // harness runs on arbitrary user projects, so non-JS runners belong in it too:
+    // a Go repo whose agent runs `go test ./...` otherwise fails a criterion it
+    // genuinely satisfied.
+    return [...KNOWN_TEST_EXECUTABLES];
   }
   // Audits/investigations are open-ended — there is no single "correct"
   // executable, and `normalizeExecutable` never emits the literal "bash"

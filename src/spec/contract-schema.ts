@@ -1,17 +1,30 @@
 import type { TaskContract, TaskCriterion, TaskCriterionKind, TaskCriterionSource, TaskEvidenceIdentity, TaskVerificationMode } from "./task-contract";
+import { KNOWN_TEST_EXECUTABLES, MULTI_WORD_EXECUTABLES } from "./command-normalize";
 
 const MAX_CRITERIA = 8;
 const MAX_TARGETS = 8;
 const MAX_MUST_NOT = 8;
 const MAX_EXPECTED_ARGS = 8;
-const MAX_EXPECTED_EXECUTABLES = 8;
+// Must never sit below what the deterministic contract itself emits, or the
+// harness generates contracts it then rejects. These caps bound untrusted
+// extractor payloads; the exact ceiling is immaterial at this scale.
+const MAX_EXPECTED_EXECUTABLES = Math.max(12, KNOWN_TEST_EXECUTABLES.length);
 
 const VALID_KINDS = new Set<TaskCriterionKind>(["rename", "fix", "build", "audit", "secure", "investigate", "manual"]);
 const VALID_SOURCES = new Set<TaskCriterionSource>(["user", "deterministic_fallback", "semantic_extraction"]);
 const VALID_EVIDENCE = new Set<TaskEvidenceIdentity>(["diff", "test", "command", "manual"]);
 const VALID_VERIFICATION_MODES = new Set<TaskVerificationMode>(["advisory", "gated"]);
 const VALID_TARGET = /^(src|tests|docs|scripts|packages|lib|app)(?:[\/].+)?$|^(README|CHANGELOG|CONTRIBUTING|package\.json|tsconfig\.json|vitest\.config\.[cm]?js)$/i;
-const VALID_EXECUTABLE = /^(?:[a-z][a-z0-9_.-]*|bun test|npm test|pnpm test|yarn test|git grep)$/i;
+// Single-token programs. Multi-word normalized forms ("go test", "node --test")
+// cannot be expressed here and are checked against MULTI_WORD_EXECUTABLES, which
+// is owned by the module that emits them — this regex previously carried a stale
+// partial copy of that list, so a contract the harness generated itself could
+// fail its own validation.
+const VALID_EXECUTABLE = /^[a-z][a-z0-9_.-]*$/i;
+
+function isValidExecutable(item: string): boolean {
+  return VALID_EXECUTABLE.test(item) || MULTI_WORD_EXECUTABLES.has(item.toLowerCase());
+}
 const VALID_ARG = /^[a-z0-9_.:/=-]+$/i;
 const VALID_MUST_NOT = /^[a-z0-9_.:/=\- ]+$/i;
 
@@ -35,7 +48,7 @@ function normalizeCriterion(value: unknown): TaskCriterion | undefined {
   if (!evidence || !targets || !expectedExecutables || !expectedArgs || !mustNot) return undefined;
   if (!evidence.every((item) => VALID_EVIDENCE.has(item as TaskEvidenceIdentity))) return undefined;
   if (!targets.every((item) => VALID_TARGET.test(item))) return undefined;
-  if (!expectedExecutables.every((item) => VALID_EXECUTABLE.test(item))) return undefined;
+  if (!expectedExecutables.every(isValidExecutable)) return undefined;
   if (!expectedArgs.every((item) => VALID_ARG.test(item))) return undefined;
   if (!mustNot.every((item) => VALID_MUST_NOT.test(item))) return undefined;
   // Optional; a malformed value is rejected (rather than silently coerced) so an
