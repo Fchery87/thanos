@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { GoalController } from "../goal/controller";
 import type { SpecEngine } from "../spec/engine";
+import { snapshotWorkingTree } from "../spec/diff-evidence";
 import type { LensLite } from "../lens/lite";
 import type { MemoryRecord } from "../memory/types";
 import type { PermissionManager } from "../permissions/manager";
@@ -76,6 +77,12 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: BeforeAgentStar
       consumeContinuation(sessionId, "goal", event.prompt);
     if (!isHarnessContinuation) {
       spec.startTurn(event.prompt, pi.getFlag("spec") === true);
+      // Working-tree state before this turn touches anything, so agent_end can
+      // tell what this turn changed from what was already dirty. Kept as an
+      // unawaited promise: the turn pays no latency for it, and it is only read
+      // at agent_end. Continuation turns deliberately keep the original
+      // baseline — evidence accumulates across gate attempts.
+      spec.turnBaseline = snapshotWorkingTree(process.cwd()).catch(() => undefined);
     }
     lens.beginTurn();
     lens.setStatus(ctx);

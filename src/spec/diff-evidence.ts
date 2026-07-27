@@ -1,88 +1,140 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import type { DiffEvidence } from "./claims";
 import { normalizeClaimedPaths } from "./repo-paths";
 
-const execFileAsync = promisify(execFile);
-
 export { normalizeClaimedPaths };
 
-export async function validateDiffEvidence(
-  repoDir: string,
-  evidence: { filePath?: string; claimedPaths: string[] },
-): Promise<DiffEvidence | undefined> {
-  const claimedPaths = normalizeClaimedPaths(evidence.claimedPaths);
-  let diff: string;
+/**
+ * Diff evidence from the working tree rather than from tool arguments.
+ *
+ * Recording an `edit`/`write` tool *input* as a diff is the working agent
+ * certifying its own work: it says what the model asked for, not what landed. An
+ * edit that partially applied, or that was reverted later in the same turn, still
+ * read as satisfied. Git is the ground truth, and it also picks up a subagent's
+ * edits — same working tree — without any agent-authored evidence record, which is
+ * why this satisfies the outcome W4.2 wanted while respecting why it was deferred.
+ *
+ * Turn attribution comes from a baseline captured at turn start: a file already
+ * dirty before the turn, and untouched during it, is not this turn's evidence.
+ */
+
+const execFileAsync = promisify(execFile);
+
+/** Beyond this many changed files, skip hashing and let tool-input evidence stand. */
+const MAX_CHANGED_FILES = 500;
+
+/** Sentinel hash for a path git reports as changed but which cannot be read. */
+const UNREADABLE = "<unreadable>";
+
+/** Repo-root-relative path → content hash, for every path git considers dirty. */
+export type WorkingTreeSnapshot = Map<string, string>;
+
+async function git(repoDir: string, args: string[]): Promise<string | undefined> {
   try {
-    const { stdout } = await execFileAsync("git", ["-C", repoDir, "diff", "HEAD", "--src-prefix=a/", "--dst-prefix=b/"]);
-    diff = stdout;
+    const { stdout } = await execFileAsync("git", ["-C", repoDir, ...args]);
+    return stdout;
   } catch {
     return undefined;
   }
+}
 
-  let untrackedDiff = "";
+/**
+ * Paths out of `git status --porcelain=v1 -z`. Rename and copy entries emit a
+ * second NUL-separated field holding the source path, which must be consumed so it
+ * is not mistaken for another entry.
+ */
+function parsePorcelain(stdout: string): string[] {
+  const fields = stdout.split("\0").filter((field) => field.length > 0);
+  const paths: string[] = [];
+
+  for (let i = 0; i < fields.length; i += 1) {
+    const entry = fields[i] ?? "";
+    const status = entry.slice(0, 2);
+    const path = entry.slice(3);
+    if (path.length > 0) paths.push(path);
+    if (status.startsWith("R") || status.startsWith("C")) i += 1;
+  }
+
+  return paths;
+}
+
+async function hashFile(absolutePath: string): Promise<string> {
   try {
-    const { stdout } = await execFileAsync("git", ["-C", repoDir, "ls-files", "--others", "--exclude-standard", "-z"]);
-    const untrackedFiles = stdout.split("\0").filter(Boolean);
-    if (untrackedFiles.length > 0) {
-      const parts: string[] = [];
-      for (const file of untrackedFiles) {
-        try {
-          const { readFile } = await import("node:fs/promises");
-          const { join } = await import("node:path");
-          const content = await readFile(join(repoDir, file), "utf-8");
-          parts.push(`diff --git a/${file} b/${file}`);
-          parts.push("new file mode 100644");
-          parts.push("--- /dev/null");
-          parts.push(`+++ b/${file}`);
-          const lines = content.split("\n");
-          parts.push(`@@ -0,0 +1,${lines.length} @@`);
-          for (const l of lines) parts.push(`+${l}`);
-        } catch {
-          // skip unreadable
-        }
-      }
-      untrackedDiff = parts.join("\n");
-    }
+    const contents = await readFile(absolutePath);
+    return createHash("sha256").update(contents).digest("hex").slice(0, 16);
   } catch {
-    // best effort
+    // Deleted, or unreadable. Either way it differs from any real content hash,
+    // so a deletion during the turn still registers as a change.
+    return UNREADABLE;
   }
+}
 
-  const fullDiff = [diff, untrackedDiff].filter(Boolean).join("\n");
-  if (fullDiff.trim().length === 0) return undefined;
+/**
+ * Content hashes for every dirty path, or `undefined` when git is unavailable, the
+ * directory is not a repo, or the tree is too large to hash cheaply. `undefined`
+ * always means "no ground truth available" and leaves tool-input evidence standing.
+ */
+export async function snapshotWorkingTree(repoDir: string = process.cwd()): Promise<WorkingTreeSnapshot | undefined> {
+  const top = (await git(repoDir, ["rev-parse", "--show-toplevel"]))?.trim();
+  if (!top) return undefined;
 
-  const pathRe = /^diff --git [ab]\/(.*?) [ab]\/(.*?)$/gm;
-  const actualPaths: string[] = [];
-  let match;
-  while ((match = pathRe.exec(fullDiff)) !== null) {
-    const path = match[1];
-    if (path && !actualPaths.includes(path)) actualPaths.push(path);
+  const status = await git(repoDir, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+  if (status === undefined) return undefined;
+
+  const paths = parsePorcelain(status);
+  if (paths.length > MAX_CHANGED_FILES) return undefined;
+
+  const snapshot: WorkingTreeSnapshot = new Map();
+  await Promise.all(paths.map(async (path) => {
+    snapshot.set(path, await hashFile(join(top, path)));
+  }));
+
+  return snapshot;
+}
+
+/**
+ * What this turn actually changed: paths dirty now whose content differs from the
+ * baseline, or which were not dirty at all when the turn began.
+ *
+ * A path reverted to its committed state during the turn drops out of `git status`
+ * and is correctly absent. A path already dirty at turn start and left alone is
+ * excluded by the hash comparison.
+ */
+export async function collectTurnDiffEvidence(
+  repoDir: string = process.cwd(),
+  baseline?: WorkingTreeSnapshot,
+): Promise<DiffEvidence | undefined> {
+  const top = (await git(repoDir, ["rev-parse", "--show-toplevel"]))?.trim();
+  if (!top) return undefined;
+
+  const current = await snapshotWorkingTree(repoDir);
+  if (!current) return undefined;
+
+  const changed: Array<[string, string]> = [];
+  for (const [path, hash] of current) {
+    if (baseline?.get(path) !== hash) changed.push([path, hash]);
   }
+  if (changed.length === 0) return undefined;
 
-  const patchHash = createHash("sha256").update(fullDiff).digest("hex").slice(0, 16);
+  changed.sort(([a], [b]) => a.localeCompare(b));
 
-  let base = "";
-  try {
-    const { stdout } = await execFileAsync("git", ["-C", repoDir, "rev-parse", "HEAD"]);
-    base = stdout.trim();
-  } catch {
-    // detached or no commits
-  }
+  // Git reports repo-root-relative paths; evidence is stored relative to cwd, the
+  // same base contract targets are matched against. When cwd is the repo root
+  // these are identical; when it is a subdirectory, paths outside it drop out —
+  // matching how tool-input paths outside cwd are already handled.
+  const paths = normalizeClaimedPaths(changed.map(([path]) => join(top, path)), repoDir);
+  if (paths.length === 0) return undefined;
 
-  // Check if any claimed path intersects with actual changes
-  const hasRelevantChange = claimedPaths.length === 0
-    || claimedPaths.some((claimed) =>
-      actualPaths.some((actual) => actual === claimed || actual.startsWith(claimed + "/")),
-    );
+  const patchHash = createHash("sha256")
+    .update(changed.map(([path, hash]) => `${path}:${hash}`).join("\n"))
+    .digest("hex")
+    .slice(0, 16);
 
-  if (!hasRelevantChange) return undefined;
+  const base = (await git(repoDir, ["rev-parse", "HEAD"]))?.trim() ?? "";
 
-  return {
-    kind: "diff",
-    paths: actualPaths,
-    base,
-    patchHash,
-    passed: actualPaths.length > 0,
-  };
+  return { kind: "diff", paths, base, patchHash, passed: true };
 }

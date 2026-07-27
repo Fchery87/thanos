@@ -1,6 +1,7 @@
 import type { EvidenceRecord } from "./claims";
 import { classifyTestCommand, normalizeCommand, normalizeExecutable } from "./command-normalize";
 import { toRepoRelative } from "./repo-paths";
+import { commandAuditTarget } from "../audit/target";
 
 export type { EvidenceRecord } from "./claims";
 
@@ -60,9 +61,12 @@ export function evidenceFromToolResult(event: ToolResultEventLike): EvidenceReco
       };
     }
 
+    // `family` was hardcoded "" while mustNotIsSatisfied interpolated it into the
+    // text it matches against — commandAuditTarget already computes exactly this.
+    const target = commandAuditTarget(command);
     return {
       kind: "command",
-      family: "",
+      family: target.kind === "bash-command" ? target.family ?? "" : "",
       normalizedExecutable: normalizeExecutable(argv),
       argv,
       exitCode: event.isError ? 1 : 0,

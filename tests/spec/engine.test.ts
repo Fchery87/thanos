@@ -155,6 +155,55 @@ describe("SpecEngine lifecycle", () => {
     expect(results[1]?.evidence[0]).toContain("vitest");
   });
 
+  it("replaces tool-input diff evidence with git ground truth", () => {
+    const spec = new SpecEngine();
+    spec.startTurn("Add a pagination helper to the billing module", false);
+
+    // What the edit tool was asked to do.
+    spec.recordEvidence({ kind: "diff", paths: ["src/billing/claimed.ts"], base: "", patchHash: "", passed: true });
+    // What the working tree actually shows.
+    spec.replaceDiffEvidence({ kind: "diff", paths: ["src/billing/actual.ts"], base: "abc123", patchHash: "h1", passed: true });
+
+    const evidence = spec.verify().flatMap((result) => result.evidence);
+    expect(evidence.some((line) => line.includes("src/billing/actual.ts"))).toBe(true);
+    expect(evidence.some((line) => line.includes("src/billing/claimed.ts"))).toBe(false);
+  });
+
+  it("drops claimed diffs entirely when the working tree shows no change", () => {
+    const spec = new SpecEngine();
+    spec.startTurn("Add a pagination helper to the billing module", false);
+    spec.recordEvidence({ kind: "diff", paths: ["src/billing/claimed.ts"], base: "", patchHash: "", passed: true });
+
+    // An edit that was reverted before the turn ended yields no ground truth.
+    spec.replaceDiffEvidence(undefined);
+
+    expect(spec.verify().every((result) => result.evidence.length === 0)).toBe(true);
+  });
+
+  it("leaves non-diff evidence untouched when replacing diffs", () => {
+    const spec = new SpecEngine();
+    spec.startTurn("Implement the billing module with unit tests", false);
+    // "billing" in the prompt makes inferExpectedArgs require that token, so the
+    // run has to actually target the billing suite.
+    spec.recordEvidence({ kind: "test", runner: "vitest", normalizedExecutable: "vitest", args: ["run", "tests/billing"], exitCode: 0, passed: true });
+    spec.recordEvidence({ kind: "diff", paths: ["src/billing/claimed.ts"], base: "", patchHash: "", passed: true });
+
+    spec.replaceDiffEvidence(undefined);
+
+    const testResult = spec.verify().find((result) => result.criterion.id === "build-tests");
+    expect(testResult?.passed).toBe(true);
+  });
+
+  it("clears the turn baseline on a new turn", () => {
+    const spec = new SpecEngine();
+    spec.startTurn("Implement a new feature for the billing flow", false);
+    spec.turnBaseline = Promise.resolve(new Map([["src/x.ts", "hash"]]));
+
+    spec.startTurn("Implement a different feature for the billing flow", false);
+
+    expect(spec.turnBaseline).toBeUndefined();
+  });
+
   it("drops the active spec when the user rejects it at the approval gate", () => {
     const spec = new SpecEngine();
     spec.startTurn("Implement a new feature for the billing flow", true);

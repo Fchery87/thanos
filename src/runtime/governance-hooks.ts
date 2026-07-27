@@ -6,6 +6,7 @@ import type { PermissionManager } from "../permissions/manager";
 import { gateDisabledByEnv } from "../permissions/yolo-config";
 import type { SpecEngine } from "../spec/engine";
 import { buildContinuationPrompt, shouldReinject } from "../spec/gate";
+import { collectTurnDiffEvidence } from "../spec/diff-evidence";
 import type { GoalController } from "../goal/controller";
 import { renderGoalStatusSegment } from "../goal/command";
 import { handleAgentEnd as handleGoalAgentEnd, type GoalEventRecord } from "../goal/loop";
@@ -196,6 +197,21 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
     // ESC must win over both continuation drivers below: an aborted turn ends
     // with a final assistant message whose stopReason is "aborted".
     const turnAborted = readAborted(event);
+
+    // Ground truth before verifying: what the working tree says changed, not what
+    // the edit/write tool arguments claimed. Only replaces the intent-based
+    // records when git actually answered — outside a repo the tool-input diffs
+    // stand. Never allowed to throw: a verification detail must not fail the turn.
+    if (spec.activeSpec) {
+      try {
+        const baseline = await spec.turnBaseline;
+        const groundTruth = await collectTurnDiffEvidence(process.cwd(), baseline);
+        if (groundTruth) spec.replaceDiffEvidence(groundTruth);
+      } catch (err) {
+        console.error("[harness][diff-evidence]", err instanceof Error ? err.message : String(err));
+      }
+    }
+
     const results = spec.finishTurn(event.messages, { aborted: turnAborted });
     if (results.length > 0) {
       const theme = ctx.ui.theme ?? noopTheme;

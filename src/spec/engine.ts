@@ -2,11 +2,19 @@ import { generateSpec } from "./generator";
 import { evidenceFromToolResult, type ToolResultEventLike } from "./evidence";
 import type { EvidenceRecord } from "./claims";
 import { verifyCriteria, type VerificationResult } from "./verification";
+import type { WorkingTreeSnapshot } from "./diff-evidence";
 import type { FormalSpec, SpecTier } from "./types";
 
 export class SpecEngine {
   activeSpec: FormalSpec | undefined;
   gateAttempts = 0;
+  /**
+   * Working-tree state as of turn start, awaited at agent_end to tell this turn's
+   * changes from work that was already dirty. Held as a promise so capturing it
+   * costs the turn no latency. Deliberately NOT re-captured on gate-continuation
+   * turns: evidence accumulates across attempts against the original baseline.
+   */
+  turnBaseline: Promise<WorkingTreeSnapshot | undefined> | undefined;
   private evidence: EvidenceRecord[] = [];
 
   constructor(private readonly extractContractCandidate?: (prompt: string, tier: SpecTier) => unknown) {}
@@ -42,6 +50,18 @@ export class SpecEngine {
     this.activeSpec = undefined;
     this.evidence = [];
     this.gateAttempts = 0;
+    this.turnBaseline = undefined;
+  }
+
+  /**
+   * Swap tool-input diff evidence for git ground truth. Called only when git
+   * actually produced a result; otherwise the intent-based records stand, which is
+   * the correct degradation outside a repo.
+   */
+  replaceDiffEvidence(record: EvidenceRecord | undefined): void {
+    if (!this.activeSpec) return;
+    this.evidence = this.evidence.filter((existing) => existing.kind !== "diff");
+    if (record) this.evidence.push(record);
   }
 
   recordGateAttempt(): void {

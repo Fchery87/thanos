@@ -20,13 +20,12 @@ export interface TestEvidence {
   normalizedExecutable: string;
   args: string[];
   exitCode: number;
-  suites?: number;
-  failures?: number;
   passed: boolean;
 }
 
 export interface CommandEvidence {
   kind: "command";
+  /** Risk family from `commandAuditTarget` ("" when unclassified). */
   family: string;
   normalizedExecutable: string;
   argv: string[];
