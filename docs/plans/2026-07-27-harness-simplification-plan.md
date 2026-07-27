@@ -1,6 +1,29 @@
 # Plan: simplify the harness to a personal daily driver
 
-**Status:** approved · pre-implementation · **Date:** 2026-07-27
+**Status:** in progress — Phases 0, 1, 2, 4, 5, 6 landed; **Phase 3 open** (needs
+one day of field data) · **Date:** 2026-07-27
+
+| Phase | State | Commit |
+|---|---|---|
+| 0 — Stop the 739 | landed (Task 0.3 awaiting field data) | `6165f08` |
+| 1 — Honest instruments | landed | `01bd26d` |
+| 2 — Repair the extractor | landed (2.4 timeout review deferred by design) | `7948d94` |
+| 3 — Decision gate | **open** — needs one day of normal use | — |
+| 4 — Delete unreachable code | landed | `c1a3842` |
+| 5 — Wire the MCP defenses | landed | `d44e9d9` |
+| 6 — Docs truth | landed (Task 6.3's ADR 0006 outcome pends Phase 3) | — |
+
+**To close Phase 3**, read the ledger the Task 2.4 logging now fills:
+
+```sh
+total=$(grep -c '"type":"spec_extraction"' .harness/evolution/events.jsonl)
+ok=$(grep '"type":"spec_extraction"' .harness/evolution/events.jsonl | grep -c 'accepted')
+echo "$ok / $total"
+```
+
+≥50% accepted keeps `src/spec/`; below that it is deleted, and ADR 0006 gets a
+successor rather than the amendment it now carries. Per Task 0.3, `gate_failure`
+over the same day should be ≤5, from a 48/day baseline.
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement
 > this plan task-by-task.
@@ -395,6 +418,25 @@ Convention going forward:
 audit log holds 2 seed rows after 669 sessions, and policy presets are never
 switched by a single operator. They cost no turn latency and are the only bridge
 to a future release story — but they should not read as live infrastructure.
+
+> **Correction:** "dormant" overstated it. `policy/evaluator.ts` decides every
+> governed tool call and `audit/target.ts` computes the safe target that risk
+> classification, push guarding and spec evidence all depend on — both are live
+> and load-bearing. What is dormant is *accumulation and switching*: the log
+> holds 2 rows (confirmed, last written 2026-05-13) and presets are never
+> changed. `docs/governance.md` says exactly that rather than calling the code
+> dormant.
+
+**Task 6.6 — Correct the two workflow docs (added during Phase 6)**
+
+`docs/governance.md` described `/waves` and `Ctrl+Shift+R` as enforced runtimes:
+"verifies each structured handoff", "write slices **must own disjoint paths**",
+"a synthesis pass de-duplicates and ranks into one verdict". The modules behind
+all three claims (`waves/runtime.ts`, `waves/verify.ts`, `review/jury-runtime.ts`)
+were unreachable long before Phase 4 deleted them, so these docs were already
+false — and falsest exactly where they promised a safety property. Both sections,
+plus the `docs/reference.md` rows, now say prompt rather than runtime, and say
+plainly that nothing keeps two parallel writers off the same file.
 
 ---
 
