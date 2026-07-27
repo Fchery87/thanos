@@ -21,6 +21,19 @@ export interface ReinjectInputs {
   specApproved: boolean;
 }
 
+/**
+ * The failures that actually drive the gate.
+ *
+ * Advisory criteria are reported but never re-injected, so anything describing
+ * what the gate *did* — the continuation prompt, the harness ledger, the "failed"
+ * verdict in the turn summary — must be derived from this rather than from a raw
+ * `!passed` filter. Those two had drifted: the ledger claimed to have re-injected
+ * criteria that the prompt had excluded.
+ */
+export function gatedFailures(results: VerificationResult[]): VerificationResult[] {
+  return results.filter((result) => !result.passed && !result.advisory);
+}
+
 export function shouldReinject(input: ReinjectInputs): boolean {
   if (!input.enabled) return false;
   if (input.aborted) return false;
@@ -36,12 +49,11 @@ export function shouldReinject(input: ReinjectInputs): boolean {
   // Advisory criteria (audits, investigations, catch-all demonstrations) are
   // informational — a failing advisory criterion must never drive continuation,
   // or non-machine-verifiable prompts loop until the attempt budget is spent.
-  return input.results.some((result) => !result.passed && !result.advisory);
+  return gatedFailures(input.results).length > 0;
 }
 
 export function buildContinuationPrompt(results: VerificationResult[], attempts: number): string {
-  const unmet = results
-    .filter((result) => !result.passed && !result.advisory)
+  const unmet = gatedFailures(results)
     .map((result) => {
       const missing = result.missingEvidence.length > 0
         ? ` (missing: ${result.missingEvidence.join(", ")})`

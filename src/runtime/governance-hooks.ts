@@ -5,7 +5,7 @@ import { AuditLogger } from "../audit/logger";
 import type { PermissionManager } from "../permissions/manager";
 import { gateDisabledByEnv } from "../permissions/yolo-config";
 import type { SpecEngine } from "../spec/engine";
-import { buildContinuationPrompt, shouldReinject } from "../spec/gate";
+import { buildContinuationPrompt, gatedFailures, shouldReinject } from "../spec/gate";
 import { collectTurnDiffEvidence } from "../spec/diff-evidence";
 import type { GoalController } from "../goal/controller";
 import { renderGoalStatusSegment } from "../goal/command";
@@ -18,7 +18,7 @@ import { roleNarrowingOverlay } from "../governance/role-overlay";
 import { GovernanceRuntime } from "./governance-runtime";
 import { createSnapshot } from "../security/snapshot";
 import { issueContinuation } from "./continuation-auth";
-import { formatSpecForApproval, formatPanel, noopTheme } from "../ui-utils";
+import { formatSpecForApproval, formatPanel, noopTheme, renderCriteriaLines } from "../ui-utils";
 import type { DeliveryRuntime } from "./commands/delivery";
 import type { PolicyLoadState } from "../policy/state";
 
@@ -216,11 +216,14 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
     if (results.length > 0) {
       const theme = ctx.ui.theme ?? noopTheme;
       const passed = results.filter((r) => r.passed).length;
-      const lines = results.map((r) => `  ${r.passed ? theme.fg("success", "✓") : theme.fg("error", "✗")}  ${r.criterion.statement}`);
+      const lines = renderCriteriaLines(theme, results);
       // (A "(spec was rejected)" note used to hang here. A rejected spec is now
       // dropped at the approval gate, so finishTurn returns no results and this
       // whole block is skipped — the note had become unreachable.)
-      const hasFailures = passed !== results.length;
+      // "Failed" must mean the gate will act. An unmet advisory criterion is
+      // reported in the lines above but is not a failure of this turn.
+      const blocking = gatedFailures(results);
+      const hasFailures = blocking.length > 0;
       const summaryHeader = !ctx.hasUI && hasFailures
         ? `${theme.bold(theme.fg("error", "Spec failed:"))}`
         : `${theme.bold("Spec:")} ${theme.fg(hasFailures ? "warning" : "success", `${passed}/${results.length}`)} passed`;
@@ -260,7 +263,11 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
         specApproved: spec.activeSpec?.approvalStatus !== "rejected",
       })) {
         const prompt = buildContinuationPrompt(results, spec.gateAttempts);
-        const failedCriteria = results.filter((result) => !result.passed).map((result) => result.criterion.statement);
+        // Exactly what the continuation prompt asked for. Deriving this from a raw
+        // !passed filter made the ledger claim advisory criteria had been
+        // re-injected when the prompt had excluded them — and this event feeds the
+        // eval bench and generated model profiles.
+        const failedCriteria = blocking.map((result) => result.criterion.statement);
         await appendHarnessEvent({
           type: "gate_failure",
           taskId: sessionId,

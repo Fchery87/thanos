@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildContinuationPrompt, GATE_MAX_ATTEMPTS, shouldReinject } from "../../src/spec/gate";
+import { buildContinuationPrompt, GATE_MAX_ATTEMPTS, gatedFailures, shouldReinject } from "../../src/spec/gate";
 import type { VerificationResult } from "../../src/spec/verification";
 
 const crit = (passed: boolean, missingEvidence: string[] = []): VerificationResult => ({
@@ -68,6 +68,31 @@ describe("shouldReinject", () => {
 
   it("still re-injects for a spec that never needed approval (ambient tier)", () => {
     expect(shouldReinject({ results: [crit(false, ["test"])], attempts: 0, isSubagent: false, enabled: true, goalActive: false, specApproved: true })).toBe(true);
+  });
+});
+
+describe("gatedFailures", () => {
+  // Anything describing what the gate DID must come from here. The harness ledger
+  // previously recomputed it with a raw !passed filter and so recorded advisory
+  // criteria as "re-injected" when the continuation prompt had excluded them —
+  // and that ledger feeds the eval bench.
+  it("excludes advisory criteria and passing ones", () => {
+    const results = [crit(false, ["test"]), advisoryCrit(false, ["command"]), crit(true)];
+    expect(gatedFailures(results).map((r) => r.criterion.id)).toEqual(["c1"]);
+  });
+
+  it("agrees with the continuation prompt about what is unmet", () => {
+    const results = [advisoryCrit(false, ["command"]), crit(false, ["test"])];
+    const prompt = buildContinuationPrompt(results, 0);
+
+    for (const result of gatedFailures(results)) {
+      expect(prompt).toContain(result.criterion.statement);
+    }
+    expect(prompt).not.toContain("audit findings supported by evidence");
+  });
+
+  it("is empty when only advisory criteria are unmet", () => {
+    expect(gatedFailures([advisoryCrit(false, ["command"])])).toEqual([]);
   });
 });
 

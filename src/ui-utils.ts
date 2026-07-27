@@ -98,6 +98,35 @@ export function formatSpecForApproval(spec: FormalSpec, theme: TUITheme): string
   ].join("\n");
 }
 
+/**
+ * One spelling of "how a criterion reads", shared by the turn summary and the
+ * /spec panel.
+ *
+ * The two used to render this independently and had drifted: agent_end showed a
+ * red ✗ for every unmet criterion including advisory ones and titled the panel
+ * "Spec Verification Failed", while the gate had already decided advisory
+ * criteria are not actionable — so every audit or investigation prompt showed a
+ * failure that nothing would ever act on.
+ *
+ * Advisory criteria get a dim marker and an explicit tag: reported, not blocking.
+ */
+export function renderCriteriaLines(
+  theme: TUITheme,
+  results: Array<{ criterion: { id: string; statement: string }; passed: boolean; advisory?: boolean }>,
+  opts: { showIds?: boolean } = {},
+): string[] {
+  return results.map((result) => {
+    const marker = result.passed
+      ? theme.fg("success", "✓")
+      : result.advisory
+        ? theme.fg("dim", "·")
+        : theme.fg("error", "✗");
+    const id = opts.showIds ? `${theme.fg("muted", `[${result.criterion.id}]`)}  ` : "";
+    const tag = !result.passed && result.advisory ? ` ${theme.fg("dim", "(advisory)")}` : "";
+    return `  ${marker}  ${id}${result.criterion.statement}${tag}`;
+  });
+}
+
 export function stripAnsi(str: string): string {
   return str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "");
 }
