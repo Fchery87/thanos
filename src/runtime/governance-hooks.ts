@@ -107,6 +107,11 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
       } else {
         active.approvalStatus = "rejected";
         permissions.remember("*", "*", "deny");
+        // Terminal: drop the spec so agent_end has nothing to verify and the
+        // gate cannot restart the refused work. The session-wide deny above is
+        // only a turn-scoped stop (clearSessionRules() drops it next turn),
+        // which is correct precisely because the loop can no longer resume.
+        spec.rejectActiveSpec();
         return { block: true, reason: `User rejected spec: ${active.goal}` };
       }
     }
@@ -196,14 +201,13 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
       const theme = ctx.ui.theme ?? noopTheme;
       const passed = results.filter((r) => r.passed).length;
       const lines = results.map((r) => `  ${r.passed ? theme.fg("success", "✓") : theme.fg("error", "✗")}  ${r.criterion.statement}`);
-      const approvalNote =
-        spec.activeSpec?.approvalStatus === "rejected"
-          ? `\n${theme.fg("dim", "(spec was rejected)")}`
-          : "";
+      // (A "(spec was rejected)" note used to hang here. A rejected spec is now
+      // dropped at the approval gate, so finishTurn returns no results and this
+      // whole block is skipped — the note had become unreachable.)
       const hasFailures = passed !== results.length;
       const summaryHeader = !ctx.hasUI && hasFailures
-        ? `${theme.bold(theme.fg("error", "Spec failed:"))}${approvalNote}`
-        : `${theme.bold("Spec:")} ${theme.fg(hasFailures ? "warning" : "success", `${passed}/${results.length}`)} passed${approvalNote}`;
+        ? `${theme.bold(theme.fg("error", "Spec failed:"))}`
+        : `${theme.bold("Spec:")} ${theme.fg(hasFailures ? "warning" : "success", `${passed}/${results.length}`)} passed`;
 
       const goalActive = goalController.isActive();
       const panel = formatPanel(
@@ -237,6 +241,7 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
         enabled: !gateDisabledByEnv(),
         goalActive,
         aborted: turnAborted,
+        specApproved: spec.activeSpec?.approvalStatus !== "rejected",
       })) {
         const prompt = buildContinuationPrompt(results, spec.gateAttempts);
         const failedCriteria = results.filter((result) => !result.passed).map((result) => result.criterion.statement);

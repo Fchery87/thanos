@@ -17,7 +17,7 @@ const test: EvidenceRecord = { kind: "test", runner: "bun test", normalizedExecu
 const command: EvidenceRecord = { kind: "command", family: "", normalizedExecutable: "make", argv: ["make", "check"], exitCode: 0, passed: true };
 
 const gate = (results: ReturnType<typeof verifyCriteria>) =>
-  shouldReinject({ results, attempts: 0, isSubagent: false, enabled: true, goalActive: false });
+  shouldReinject({ results, attempts: 0, isSubagent: false, enabled: true, goalActive: false, specApproved: true });
 
 describe("anyOf evidence for mutating criteria", () => {
   it("accepts a fix verified by a test even though the prompt never said 'test'", () => {

@@ -48,6 +48,18 @@ export class SpecEngine {
     this.gateAttempts += 1;
   }
 
+  /**
+   * The user declined this spec at the approval gate. Drop it entirely: the turn
+   * was refused, so there is nothing to verify and nothing to report. Leaving it
+   * active made agent_end verify a spec whose every tool call had been denied —
+   * all criteria failed for want of evidence, the gate re-injected "the task is
+   * not done", and the next turn's clearSessionRules() had already dropped the
+   * rejection's global deny, so the refused work ran unblocked.
+   */
+  rejectActiveSpec(): void {
+    this.reset();
+  }
+
   recordToolResult(event: ToolResultEventLike): void {
     if (!this.activeSpec) return;
     const evidence = evidenceFromToolResult(event);

@@ -19,43 +19,55 @@ const advisoryCrit = (passed: boolean, missingEvidence: string[] = []): Verifica
 
 describe("shouldReinject", () => {
   it("re-injects when a criterion fails and budget remains", () => {
-    expect(shouldReinject({ results: [crit(false, ["test"])], attempts: 0, isSubagent: false, enabled: true, goalActive: false })).toBe(true);
+    expect(shouldReinject({ results: [crit(false, ["test"])], attempts: 0, isSubagent: false, enabled: true, goalActive: false, specApproved: true })).toBe(true);
   });
 
   it("does not re-inject when all criteria pass", () => {
-    expect(shouldReinject({ results: [crit(true)], attempts: 0, isSubagent: false, enabled: true, goalActive: false })).toBe(false);
+    expect(shouldReinject({ results: [crit(true)], attempts: 0, isSubagent: false, enabled: true, goalActive: false, specApproved: true })).toBe(false);
   });
 
   it("does not re-inject in a subagent", () => {
-    expect(shouldReinject({ results: [crit(false, ["test"])], attempts: 0, isSubagent: true, enabled: true, goalActive: false })).toBe(false);
+    expect(shouldReinject({ results: [crit(false, ["test"])], attempts: 0, isSubagent: true, enabled: true, goalActive: false, specApproved: true })).toBe(false);
   });
 
   it("stops once the attempt budget is exhausted", () => {
-    expect(shouldReinject({ results: [crit(false, ["test"])], attempts: GATE_MAX_ATTEMPTS, isSubagent: false, enabled: true, goalActive: false })).toBe(false);
+    expect(shouldReinject({ results: [crit(false, ["test"])], attempts: GATE_MAX_ATTEMPTS, isSubagent: false, enabled: true, goalActive: false, specApproved: true })).toBe(false);
   });
 
   it("is a no-op when disabled", () => {
-    expect(shouldReinject({ results: [crit(false, ["test"])], attempts: 0, isSubagent: false, enabled: false, goalActive: false })).toBe(false);
+    expect(shouldReinject({ results: [crit(false, ["test"])], attempts: 0, isSubagent: false, enabled: false, goalActive: false, specApproved: true })).toBe(false);
   });
 
   it("does not re-inject with no results (instant tier / no spec)", () => {
-    expect(shouldReinject({ results: [], attempts: 0, isSubagent: false, enabled: true, goalActive: false })).toBe(false);
+    expect(shouldReinject({ results: [], attempts: 0, isSubagent: false, enabled: true, goalActive: false, specApproved: true })).toBe(false);
   });
 
   it("does not re-inject while a goal is active (goal loop is the only driver)", () => {
-    expect(shouldReinject({ results: [crit(false, ["test"])], attempts: 0, isSubagent: false, enabled: true, goalActive: true })).toBe(false);
+    expect(shouldReinject({ results: [crit(false, ["test"])], attempts: 0, isSubagent: false, enabled: true, goalActive: true, specApproved: true })).toBe(false);
   });
 
   it("does not re-inject when the user aborted the turn (ESC must win)", () => {
-    expect(shouldReinject({ results: [crit(false, ["test"])], attempts: 0, isSubagent: false, enabled: true, goalActive: false, aborted: true })).toBe(false);
+    expect(shouldReinject({ results: [crit(false, ["test"])], attempts: 0, isSubagent: false, enabled: true, goalActive: false, aborted: true, specApproved: true })).toBe(false);
   });
 
   it("does not re-inject when the only failing criterion is advisory (audit/investigate)", () => {
-    expect(shouldReinject({ results: [advisoryCrit(false, ["command"])], attempts: 0, isSubagent: false, enabled: true, goalActive: false })).toBe(false);
+    expect(shouldReinject({ results: [advisoryCrit(false, ["command"])], attempts: 0, isSubagent: false, enabled: true, goalActive: false, specApproved: true })).toBe(false);
   });
 
   it("still re-injects when a gated criterion fails alongside a failing advisory one", () => {
-    expect(shouldReinject({ results: [advisoryCrit(false, ["command"]), crit(false, ["test"])], attempts: 0, isSubagent: false, enabled: true, goalActive: false })).toBe(true);
+    expect(shouldReinject({ results: [advisoryCrit(false, ["command"]), crit(false, ["test"])], attempts: 0, isSubagent: false, enabled: true, goalActive: false, specApproved: true })).toBe(true);
+  });
+
+  // A user who declines the explicit-spec approval prompt has refused the work.
+  // The gate must not treat the resulting absence of evidence as an unmet
+  // criterion to overcome — that restarted the refused work on the next turn,
+  // after clearSessionRules() had already dropped the rejection's global deny.
+  it("never re-injects when the spec was not approved", () => {
+    expect(shouldReinject({ results: [crit(false, ["test"])], attempts: 0, isSubagent: false, enabled: true, goalActive: false, specApproved: false })).toBe(false);
+  });
+
+  it("still re-injects for a spec that never needed approval (ambient tier)", () => {
+    expect(shouldReinject({ results: [crit(false, ["test"])], attempts: 0, isSubagent: false, enabled: true, goalActive: false, specApproved: true })).toBe(true);
   });
 });
 

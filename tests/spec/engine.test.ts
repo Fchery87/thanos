@@ -155,6 +155,36 @@ describe("SpecEngine lifecycle", () => {
     expect(results[1]?.evidence[0]).toContain("vitest");
   });
 
+  it("drops the active spec when the user rejects it at the approval gate", () => {
+    const spec = new SpecEngine();
+    spec.startTurn("Implement a new feature for the billing flow", true);
+    expect(spec.activeSpec?.approvalStatus).toBe("pending");
+
+    spec.rejectActiveSpec();
+
+    // Nothing left to verify, so agent_end reports no results at all — the user
+    // sees no wall of red ✗ for criteria they deliberately prevented.
+    expect(spec.activeSpec).toBeUndefined();
+    expect(spec.verify()).toEqual([]);
+    expect(spec.finishTurn([])).toEqual([]);
+  });
+
+  it("stops collecting evidence once the spec is rejected", () => {
+    const spec = new SpecEngine();
+    spec.startTurn("Implement a new feature for the billing flow", true);
+    spec.rejectActiveSpec();
+
+    spec.recordEvidence(MANUAL_EV);
+
+    expect(spec.verify()).toEqual([]);
+  });
+
+  it("is a no-op when there is no active spec to reject", () => {
+    const spec = new SpecEngine();
+    expect(() => spec.rejectActiveSpec()).not.toThrow();
+    expect(spec.activeSpec).toBeUndefined();
+  });
+
   it("does not record assistant text from an aborted turn as evidence", () => {
     const spec = new SpecEngine();
     spec.startTurn("Complete the billing task with clear updates", false);

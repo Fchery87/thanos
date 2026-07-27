@@ -15,7 +15,7 @@ import type { EvidenceRecord } from "../../src/spec/claims";
  * with unmet, machine-verifiable criteria still does.
  */
 const gate = (results: ReturnType<typeof verifyCriteria>) =>
-  shouldReinject({ results, attempts: 0, isSubagent: false, enabled: true, goalActive: false });
+  shouldReinject({ results, attempts: 0, isSubagent: false, enabled: true, goalActive: false, specApproved: true });
 
 describe("audit/investigate fast lane", () => {
   it("does not re-inject on the exact audit prompt even with zero evidence", () => {
@@ -31,7 +31,7 @@ describe("audit/investigate fast lane", () => {
     const results = verifyCriteria(spec, []);
 
     for (let attempts = 0; attempts <= GATE_MAX_ATTEMPTS; attempts++) {
-      expect(shouldReinject({ results, attempts, isSubagent: false, enabled: true, goalActive: false })).toBe(false);
+      expect(shouldReinject({ results, attempts, isSubagent: false, enabled: true, goalActive: false, specApproved: true })).toBe(false);
     }
   });
 
