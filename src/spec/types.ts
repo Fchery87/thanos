@@ -1,5 +1,5 @@
 import type { Capability } from "../permissions/rules";
-import type { TaskContract } from "./task-contract";
+import type { TaskContract, TaskCriterionSource } from "./task-contract";
 
 export type SpecTier = "instant" | "ambient" | "explicit";
 export type ApprovalStatus = "not_required" | "pending" | "approved" | "rejected";
@@ -18,6 +18,15 @@ export interface AcceptanceCriterion {
    */
   evidenceAnyOf?: EvidenceRequirement[][];
   statement: string;
+  /**
+   * Where this criterion came from. Carried through from
+   * {@link TaskCriterion.source} so the continuation gate can tell a criterion
+   * that describes the user's actual request from a generic template — the gate
+   * only ever acts on the former (see `gatedFailures`). Optional because a
+   * hand-built criterion (tests, the no-criteria warning) has no task contract
+   * behind it; absent means "unknown provenance", which stays gated.
+   */
+  source?: TaskCriterionSource;
 }
 
 export interface FormalSpec {

@@ -17,6 +17,34 @@ const advisoryCrit = (passed: boolean, missingEvidence: string[] = []): Verifica
   missingEvidence,
 });
 
+// A keyword-template criterion from buildTaskContract — gated in principle, but
+// it describes no request in particular, so it must never force a continuation.
+const templateCrit = (passed: boolean, missingEvidence: string[] = []): VerificationResult => ({
+  criterion: {
+    id: "build-primary",
+    statement: "Requested code change is implemented in the relevant files",
+    evidenceRequired: ["diff"],
+    source: "deterministic_fallback",
+  },
+  passed,
+  source: "deterministic_fallback",
+  evidence: passed ? ["diff observed"] : [],
+  missingEvidence,
+});
+
+const semanticCrit = (passed: boolean, missingEvidence: string[] = []): VerificationResult => ({
+  criterion: {
+    id: "extracted-1",
+    statement: "gatedFailures ignores deterministic_fallback criteria",
+    evidenceRequired: ["diff"],
+    source: "semantic_extraction",
+  },
+  passed,
+  source: "semantic_extraction",
+  evidence: passed ? ["diff observed"] : [],
+  missingEvidence,
+});
+
 describe("shouldReinject", () => {
   it("re-injects when a criterion fails and budget remains", () => {
     expect(shouldReinject({ results: [crit(false, ["test"])], attempts: 0, isSubagent: false, enabled: true, goalActive: false, specApproved: true })).toBe(true);
@@ -69,6 +97,32 @@ describe("shouldReinject", () => {
   it("still re-injects for a spec that never needed approval (ambient tier)", () => {
     expect(shouldReinject({ results: [crit(false, ["test"])], attempts: 0, isSubagent: false, enabled: true, goalActive: false, specApproved: true })).toBe(true);
   });
+
+  // The Phase 0 acceptance condition. Every one of the 739 recorded gate
+  // failures looked exactly like this: a deterministic template with no
+  // evidence, burning a full extra model turn.
+  it("does not re-inject when every failing criterion is a deterministic template", () => {
+    expect(shouldReinject({
+      results: [templateCrit(false, ["diff"]), templateCrit(false, ["test"])],
+      attempts: 0, isSubagent: false, enabled: true, goalActive: false, specApproved: true,
+    })).toBe(false);
+  });
+
+  it("still re-injects when a semantic criterion fails alongside a deterministic one", () => {
+    expect(shouldReinject({
+      results: [templateCrit(false, ["diff"]), semanticCrit(false, ["diff"])],
+      attempts: 0, isSubagent: false, enabled: true, goalActive: false, specApproved: true,
+    })).toBe(true);
+  });
+
+  // Unknown provenance must fail toward gating: a future criterion source that
+  // forgets to set `source` should keep the gate, not silently disarm it.
+  it("still re-injects for a failing criterion with no recorded source", () => {
+    expect(shouldReinject({
+      results: [crit(false, ["test"])],
+      attempts: 0, isSubagent: false, enabled: true, goalActive: false, specApproved: true,
+    })).toBe(true);
+  });
 });
 
 describe("gatedFailures", () => {
@@ -93,6 +147,17 @@ describe("gatedFailures", () => {
 
   it("is empty when only advisory criteria are unmet", () => {
     expect(gatedFailures([advisoryCrit(false, ["command"])])).toEqual([]);
+  });
+
+  it("excludes deterministic templates, keeping semantic criteria", () => {
+    const results = [templateCrit(false, ["diff"]), semanticCrit(false, ["diff"]), crit(false, ["test"])];
+    expect(gatedFailures(results).map((r) => r.criterion.id)).toEqual(["extracted-1", "c1"]);
+  });
+
+  it("keeps the continuation prompt free of deterministic templates", () => {
+    const prompt = buildContinuationPrompt([templateCrit(false, ["diff"]), semanticCrit(false, ["diff"])], 0);
+    expect(prompt).toContain("gatedFailures ignores deterministic_fallback criteria");
+    expect(prompt).not.toContain("Requested code change is implemented");
   });
 });
 

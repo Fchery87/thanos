@@ -24,14 +24,30 @@ export interface ReinjectInputs {
 /**
  * The failures that actually drive the gate.
  *
- * Advisory criteria are reported but never re-injected, so anything describing
- * what the gate *did* — the continuation prompt, the harness ledger, the "failed"
- * verdict in the turn summary — must be derived from this rather than from a raw
- * `!passed` filter. Those two had drifted: the ledger claimed to have re-injected
- * criteria that the prompt had excluded.
+ * Two exclusions, for different reasons:
+ *
+ * - **Advisory** criteria are informational by design (audits, investigations)
+ *   and were never re-injectable.
+ * - **`deterministic_fallback`** criteria come from `buildTaskContract`'s keyword
+ *   templates, not from the user's actual request. Field data settled this: 739
+ *   recorded gate failures contained exactly *three* distinct criteria strings,
+ *   all templates — every forced continuation this gate has ever driven was spent
+ *   chasing evidence for a criterion nobody wrote. They stay visible in the turn
+ *   panel; they just no longer cost a model turn.
+ *
+ * Absent `source` (hand-built criteria, the no-criteria warning) stays gated —
+ * unknown provenance must not silently disarm the gate.
+ *
+ * Anything describing what the gate *did* — the continuation prompt, the harness
+ * ledger, the "failed" verdict in the turn summary — must be derived from this
+ * rather than from a raw `!passed` filter. Those two had drifted before: the
+ * ledger claimed to have re-injected criteria that the prompt had excluded.
  */
 export function gatedFailures(results: VerificationResult[]): VerificationResult[] {
-  return results.filter((result) => !result.passed && !result.advisory);
+  return results.filter((result) =>
+    !result.passed
+    && !result.advisory
+    && result.source !== "deterministic_fallback");
 }
 
 export function shouldReinject(input: ReinjectInputs): boolean {

@@ -1,4 +1,5 @@
 import type { EvidenceRecord } from "./claims";
+import type { TaskCriterionSource } from "./task-contract";
 import type { FormalSpec, AcceptanceCriterion } from "./types";
 
 /**
@@ -33,6 +34,12 @@ export interface VerificationResult {
    * to gated (false/undefined) when the source task criterion is unknown.
    */
   advisory?: boolean;
+  /**
+   * Provenance of {@link criterion}, surfaced here so the gate never has to
+   * reach back into the task contract. `deterministic_fallback` criteria are
+   * reported but never drive a continuation — see `gatedFailures`.
+   */
+  source?: TaskCriterionSource;
 }
 
 /** Every evidence kind this criterion can be satisfied by: the required set plus
@@ -183,6 +190,7 @@ export function verifyCriteria(spec: FormalSpec, evidence: EvidenceRecord[]): Ve
       criterion,
       passed,
       advisory: taskCriterion?.verificationMode === "advisory",
+      source: criterion.source ?? taskCriterion?.source,
       evidence: matchingEvidence.map(evidenceSummary),
       missingEvidence: mustNotViolation ? [...missingEvidence, "mustNot"] : missingEvidence,
     };
