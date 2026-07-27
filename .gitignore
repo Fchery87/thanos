@@ -49,6 +49,11 @@ agent/agents.bak/
 # ── Harness audit and runtime data ───────────────────────────────────
 .harness/
 
+# Written by tests/performance/baseline.test.ts on every `bun run test`, with a
+# fresh timestamp each time. Tracking it meant the working tree was permanently
+# dirty and every branch carried a meaningless diff.
+benchmark-results.json
+
 # ── Worktrees ────────────────────────────────────────────────────────
 .worktrees/
 
