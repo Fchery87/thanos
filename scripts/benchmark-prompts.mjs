@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { formatMemoriesForInjection } from "../src/memory/injector.ts";
 import { formatRoster, loadRoster } from "../src/agents/roster.ts";
 import { buildGoalSystemPrompt, buildEvaluatorContext } from "../src/goal/prompts.ts";
-import { buildEvaluatorPrompt } from "../src/spec/evaluator.ts";
 import { buildWaveWorkerPrompt } from "../src/waves/prompt.ts";
 import { extractTaskContract } from "../src/spec/contract-extractor.ts";
 import { parseSubagentResult } from "../src/agents/result.ts";
@@ -53,7 +52,6 @@ for (const agentType of ["build", "designer", "evaluator", "explore", "oracle", 
 
 promptResults.push(record("goal system prompt", buildGoalSystemPrompt("All tests pass")));
 promptResults.push(record("goal evaluator context", JSON.stringify(buildEvaluatorContext({ condition: "All tests pass", assistantClaim: "done", toolResultsText: "exit 0" }))));
-promptResults.push(record("spec evaluator prompt", buildEvaluatorPrompt({ goal: "Add pagination", criteria: [{ id: "c1", statement: "Tests pass", evidenceRequired: ["test"] }] })));
 promptResults.push(record("waves prompt", buildWaveWorkerPrompt({ id: "docs", agent: "explore", goal: "Audit docs", paths: ["docs"], mode: "read" }, "Strengthen the harness")));
 
 const contractSamples = requests.map((request) => ({
