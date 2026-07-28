@@ -93,6 +93,38 @@ describe("loadRoster", () => {
   });
 });
 
+describe("over-long fields", () => {
+  // A description used to be rejected when it exceeded the cap, and because a
+  // missing description drops the entry, one long line removed its agent from
+  // the roster entirely. `designer` was absent from every parent turn's roster
+  // for exactly this reason — 328 characters against a 240 cap.
+  it("truncates an over-long description instead of dropping the agent", async () => {
+    const long = "D".repeat(400);
+    await writeAgent(userDir, "designer.md", `name: designer\ndescription: ${long}`);
+
+    const roster = await loadRoster({ userDir, projectDir });
+
+    expect(roster.map((e) => e.name)).toContain("designer");
+    const entry = roster.find((e) => e.name === "designer")!;
+    expect(entry.description.length).toBe(240);
+    expect(entry.description.endsWith("\u2026")).toBe(true);
+  });
+
+  it("leaves a description at exactly the cap untouched", async () => {
+    await writeAgent(userDir, "exact.md", `name: exact\ndescription: ${"D".repeat(240)}`);
+    const roster = await loadRoster({ userDir, projectDir });
+    expect(roster.find((e) => e.name === "exact")?.description).toBe("D".repeat(240));
+  });
+
+  // A name is different: over-long means malformed, and advertising a name the
+  // subagent engine cannot resolve is worse than not advertising the agent.
+  it("still drops an agent whose name exceeds the cap", async () => {
+    await writeAgent(userDir, "big.md", `name: ${"n".repeat(60)}\ndescription: fine`);
+    const roster = await loadRoster({ userDir, projectDir });
+    expect(roster.map((e) => e.name)).not.toContain("n".repeat(60));
+  });
+});
+
 describe("formatRoster", () => {
   it("renders one line per agent with the description verbatim", () => {
     const text = formatRoster([
