@@ -3,11 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  type CachedRepairOptions,
   checkPatchDrift,
   formatPatchDriftWarning,
   formatPatchRepairNotice,
   PATCH_TARGETS,
+  type PatchRepairResult,
   repairPatchDrift,
+  repairPatchDriftCached,
 } from "../../src/welcome/patch-drift";
 
 async function makeInstallRoot(): Promise<string> {
@@ -162,6 +165,130 @@ describe("repairPatchDrift", () => {
     // self-contradictory "(0/N)" warning naming no markers.
     expect(result.stillMissing).toEqual(PATCH_TARGETS.map((t) => t.marker));
     expect(result.benign).toBeFalsy();
+  });
+});
+
+describe("repairPatchDriftCached", () => {
+  const markers = PATCH_TARGETS.map((t) => t.marker);
+  const benign = { repaired: false, stillMissing: markers, benign: true } as const;
+
+  /** Counts calls so we can assert the expensive repair was actually skipped. */
+  function countingRepair(result: PatchRepairResult): { fn: CachedRepairOptions["repair"]; calls: () => number } {
+    let calls = 0;
+    return { fn: async () => { calls++; return result; }, calls: () => calls };
+  }
+
+  async function cacheDir(): Promise<string> {
+    return join(await makeInstallRoot(), "patch-repair.json");
+  }
+
+  it("runs the real repair on a cold cache and memoises a benign verdict", async () => {
+    const cachePath = await cacheDir();
+    const repair = countingRepair({ ...benign });
+
+    const first = await repairPatchDriftCached(markers, { cachePath, repair: repair.fn });
+    expect(first.benign).toBe(true);
+    expect(repair.calls()).toBe(1);
+
+    // Second session: same version, same markers — must not spawn again.
+    const second = await repairPatchDriftCached(markers, { cachePath, repair: repair.fn });
+    expect(second).toEqual({ repaired: false, stillMissing: markers, benign: true });
+    expect(repair.calls()).toBe(1);
+  });
+
+  it("does not cache a genuine failure, so it keeps retrying and warning", async () => {
+    // The whole point of the cache is to silence an unchangeable answer. A real
+    // failure is actionable and can start succeeding (bun installed later), so it
+    // must never be memoised.
+    const cachePath = await cacheDir();
+    const repair = countingRepair({ repaired: false, stillMissing: markers, reason: "boom" });
+
+    await repairPatchDriftCached(markers, { cachePath, repair: repair.fn });
+    await repairPatchDriftCached(markers, { cachePath, repair: repair.fn });
+    expect(repair.calls()).toBe(2);
+  });
+
+  it("does not cache a successful repair either", async () => {
+    // A repair that worked leaves the markers present, so checkPatchDrift short
+    // circuits before this is ever reached again; caching it would only risk
+    // masking a later revert.
+    const cachePath = await cacheDir();
+    const repair = countingRepair({ repaired: true, stillMissing: [] });
+
+    await repairPatchDriftCached(markers, { cachePath, repair: repair.fn });
+    await repairPatchDriftCached(markers, { cachePath, repair: repair.fn });
+    expect(repair.calls()).toBe(2);
+  });
+
+  it("re-runs once the cache entry ages past its TTL", async () => {
+    const cachePath = await cacheDir();
+    const repair = countingRepair({ ...benign });
+
+    await repairPatchDriftCached(markers, { cachePath, repair: repair.fn, now: 0, ttlMs: 1000 });
+    await repairPatchDriftCached(markers, { cachePath, repair: repair.fn, now: 999, ttlMs: 1000 });
+    expect(repair.calls()).toBe(1);
+
+    await repairPatchDriftCached(markers, { cachePath, repair: repair.fn, now: 1001, ttlMs: 1000 });
+    expect(repair.calls()).toBe(2);
+  });
+
+  it("re-runs when pi-subagents changed version, even inside the TTL", async () => {
+    // The cached answer is only valid for the package that produced it — an
+    // update is exactly when an obsolete patch might become relevant again.
+    const cachePath = await cacheDir();
+    const repair = countingRepair({ ...benign });
+
+    const rootA = join(await makeInstallRoot(), "src");
+    await mkdir(rootA, { recursive: true });
+    await writeFile(join(rootA, "..", "package.json"), JSON.stringify({ version: "0.37.1" }), "utf-8");
+    await repairPatchDriftCached(markers, { cachePath, repair: repair.fn, root: rootA });
+    await repairPatchDriftCached(markers, { cachePath, repair: repair.fn, root: rootA });
+    expect(repair.calls()).toBe(1);
+
+    const rootB = join(await makeInstallRoot(), "src");
+    await mkdir(rootB, { recursive: true });
+    await writeFile(join(rootB, "..", "package.json"), JSON.stringify({ version: "0.38.0" }), "utf-8");
+    await repairPatchDriftCached(markers, { cachePath, repair: repair.fn, root: rootB });
+    expect(repair.calls()).toBe(2);
+  });
+
+  it("re-runs when a different set of markers is missing", async () => {
+    const cachePath = await cacheDir();
+    const repair = countingRepair({ ...benign });
+
+    await repairPatchDriftCached(markers, { cachePath, repair: repair.fn });
+    await repairPatchDriftCached([...markers, "thanos-patch: some future patch"], {
+      cachePath,
+      repair: repair.fn,
+    });
+    expect(repair.calls()).toBe(2);
+  });
+
+  it("falls back to the real repair when the cache file is corrupt", async () => {
+    const cachePath = await cacheDir();
+    await mkdir(join(cachePath, ".."), { recursive: true });
+    await writeFile(cachePath, "{ not json", "utf-8");
+    const repair = countingRepair({ ...benign });
+
+    const result = await repairPatchDriftCached(markers, { cachePath, repair: repair.fn });
+    expect(result.benign).toBe(true);
+    expect(repair.calls()).toBe(1);
+  });
+
+  it("still returns the verdict when the cache cannot be written", async () => {
+    // Cache writes are best-effort; an unwritable path must not break repair.
+    // A regular file standing where the cache directory should be makes mkdir
+    // fail immediately with ENOTDIR, portably.
+    const blocker = join(await makeInstallRoot(), "not-a-directory");
+    await writeFile(blocker, "", "utf-8");
+    const repair = countingRepair({ ...benign });
+
+    const result = await repairPatchDriftCached(markers, {
+      cachePath: join(blocker, "patch-repair.json"),
+      repair: repair.fn,
+    });
+    expect(result.benign).toBe(true);
+    expect(repair.calls()).toBe(1);
   });
 });
 
