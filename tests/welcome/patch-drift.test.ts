@@ -158,6 +158,10 @@ describe("repairPatchDrift", () => {
     const result = await repairPatchDrift(root, join(root, "no-such-script.mjs"));
     expect(result.repaired).toBe(false);
     expect(result.reason).toContain("no-such-script.mjs");
+    // Regression guard: this branch used to hardcode [], which rendered a
+    // self-contradictory "(0/N)" warning naming no markers.
+    expect(result.stillMissing).toEqual(PATCH_TARGETS.map((t) => t.marker));
+    expect(result.benign).toBeFalsy();
   });
 });
 

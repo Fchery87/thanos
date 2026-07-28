@@ -182,4 +182,14 @@ if (failed > 0 && verdict.status === "ok") {
   );
   process.exit(0);
 }
+if (failed > 0 && verdict.status === "skipped") {
+  // Same exit code the final line would give; spelled out because "couldn't
+  // verify" and "verified broken" are different situations and the operator
+  // should not have to infer which one produced the failure.
+  console.error(
+    `[thanos-patch] ${failed} patch(es) no longer apply and behaviour could not be verified ` +
+      `(${verdict.reason}) — treating as failure rather than assuming upstream absorbed it.`,
+  );
+  process.exit(1);
+}
 process.exit(failed > 0 ? 1 : 0);

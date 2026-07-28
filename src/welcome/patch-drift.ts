@@ -101,7 +101,15 @@ export async function repairPatchDrift(
   patchScriptPath: string = defaultPatchScriptPath(),
 ): Promise<PatchRepairResult> {
   if (!existsSync(patchScriptPath)) {
-    return { repaired: false, stillMissing: [], reason: `patch script not found at ${patchScriptPath}` };
+    // Re-derive rather than reporting []: the caller renders "N/M missing" from
+    // stillMissing, and an empty list here produced a self-contradictory "(0/1)"
+    // warning that named no markers at all.
+    const current = await checkPatchDrift(root);
+    return {
+      repaired: false,
+      stillMissing: current.missingMarkers,
+      reason: `patch script not found at ${patchScriptPath}`,
+    };
   }
   let exitedClean = true;
   let reason: string | undefined;

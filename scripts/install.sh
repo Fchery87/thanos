@@ -287,8 +287,10 @@ ensure_pi_update_hook() {
   # moment the update happens instead of at the next session, so a nested run
   # started in the same shell cannot hit the unpatched tree.
   hook_marker="# Thanos pi-update patch hook"
+  hook_installed=0
   for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
     [ -f "$rc" ] || continue
+    hook_installed=1
     if grep -qs "$hook_marker" "$rc"; then continue; fi
     # An older hand-written wrapper may already exist; do not stack a second one.
     if grep -qs "patch-pi-subagents.mjs" "$rc"; then
@@ -311,6 +313,16 @@ pi() {
 HOOK_EOF
     info "Added pi-update patch hook to $rc"
   done
+  # Deliberately does not create a shell rc that does not exist — the installer
+  # follows ensure_path()'s precedent of editing rc files, not authoring them.
+  # Say so rather than staying silent: patches still self-heal at session start,
+  # so this is a degraded-but-safe state the user should be able to recognise.
+  if [ "$hook_installed" -eq 0 ]; then
+    warn "No ~/.bashrc or ~/.zshrc found — skipped the pi-update patch hook."
+    warn "Patches still re-apply automatically at session start. To close the gap"
+    warn "sooner, add this to your shell rc:"
+    warn "  pi() { command pi \"\$@\"; rc=\$?; [ \"\$1\" = update ] && [ \$rc -eq 0 ] && node \"$THANOS_DIR/scripts/patch-pi-subagents.mjs\"; return \$rc; }"
+  fi
 }
 
 ensure_path() {
