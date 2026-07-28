@@ -2,7 +2,13 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { checkPatchDrift, formatPatchDriftWarning, PATCH_TARGETS } from "../../src/welcome/patch-drift";
+import {
+  checkPatchDrift,
+  formatPatchDriftWarning,
+  formatPatchRepairNotice,
+  PATCH_TARGETS,
+  repairPatchDrift,
+} from "../../src/welcome/patch-drift";
 
 async function makeInstallRoot(): Promise<string> {
   return mkdtemp(join(tmpdir(), "thanos-patch-drift-"));
@@ -70,6 +76,137 @@ describe("checkPatchDrift", () => {
     const result = await checkPatchDrift(root);
     expect(result.installed).toBe(true);
     expect(result.missingMarkers).toEqual([PATCH_TARGETS[last].marker]);
+  });
+});
+
+/**
+ * Builds a stand-in for scripts/patch-pi-subagents.mjs. The real script is
+ * spawned rather than reimplemented, so these tests drive that seam with a
+ * script whose behaviour they control — never the real one, which would write
+ * into the machine's actual pi-subagents install.
+ */
+async function writeFakePatchScript(
+  root: string,
+  opts: { writesMarkers: boolean; exitCode?: number },
+): Promise<string> {
+  const scriptPath = join(root, "fake-patch.mjs");
+  const body = opts.writesMarkers
+    ? `import { writeFileSync } from "node:fs";\n` +
+      PATCH_TARGETS.map(
+        (t) =>
+          `writeFileSync(${JSON.stringify(join(root, t.file))}, "// patched\\n// ${t.marker}\\n", "utf-8");`,
+      ).join("\n") +
+      `\nprocess.exit(${opts.exitCode ?? 0});\n`
+    : `process.exit(${opts.exitCode ?? 0});\n`;
+  await writeFile(scriptPath, body, "utf-8");
+  return scriptPath;
+}
+
+describe("repairPatchDrift", () => {
+  it("re-applies a reverted patch and reports success", async () => {
+    const root = await makeInstallRoot();
+    await writePatchTargets(root, PATCH_TARGETS.map(() => false));
+    const script = await writeFakePatchScript(root, { writesMarkers: true });
+
+    const result = await repairPatchDrift(root, script);
+    expect(result).toEqual({ repaired: true, stillMissing: [] });
+    // The markers really are on disk now, not just reported as fixed.
+    expect((await checkPatchDrift(root)).missingMarkers).toEqual([]);
+  });
+
+  it("reports the markers still missing when the script cannot fix them", async () => {
+    const root = await makeInstallRoot();
+    await writePatchTargets(root, PATCH_TARGETS.map(() => false));
+    const script = await writeFakePatchScript(root, { writesMarkers: false, exitCode: 1 });
+
+    const result = await repairPatchDrift(root, script);
+    expect(result.repaired).toBe(false);
+    expect(result.benign).toBeFalsy();
+    expect(result.stillMissing).toEqual(PATCH_TARGETS.map((t) => t.marker));
+  });
+
+  it("treats an unfixable patch as benign when the script's probe still exits clean", async () => {
+    // Upstream absorbed the fix: the marker can never be re-applied, but the
+    // script's behavioural probe passes, so it exits 0. Without the benign flag
+    // this state would warn on every session start forever.
+    const root = await makeInstallRoot();
+    await writePatchTargets(root, PATCH_TARGETS.map(() => false));
+    const script = await writeFakePatchScript(root, { writesMarkers: false, exitCode: 0 });
+
+    const result = await repairPatchDrift(root, script);
+    expect(result.repaired).toBe(false);
+    expect(result.benign).toBe(true);
+    expect(result.stillMissing).toEqual(PATCH_TARGETS.map((t) => t.marker));
+  });
+
+  it("trusts the tree over the exit code when a non-zero run still repaired it", async () => {
+    // The script exits non-zero for reasons unrelated to whether the patch
+    // landed (e.g. an older version that failed one obsolete patch while
+    // applying another). Re-checking the files is what decides.
+    const root = await makeInstallRoot();
+    await writePatchTargets(root, PATCH_TARGETS.map(() => false));
+    const script = await writeFakePatchScript(root, { writesMarkers: true, exitCode: 1 });
+
+    const result = await repairPatchDrift(root, script);
+    expect(result).toEqual({ repaired: true, stillMissing: [] });
+  });
+
+  it("does not throw when the patch script is missing entirely", async () => {
+    const root = await makeInstallRoot();
+    await writePatchTargets(root, PATCH_TARGETS.map(() => false));
+
+    const result = await repairPatchDrift(root, join(root, "no-such-script.mjs"));
+    expect(result.repaired).toBe(false);
+    expect(result.reason).toContain("no-such-script.mjs");
+  });
+});
+
+describe("formatPatchRepairNotice", () => {
+  const missing = { installed: true, missingMarkers: [PATCH_TARGETS[0].marker] };
+
+  it("returns undefined when there was no drift to repair", () => {
+    const notice = formatPatchRepairNotice(
+      { installed: true, missingMarkers: [] },
+      { repaired: true, stillMissing: [] },
+    );
+    expect(notice).toBeUndefined();
+  });
+
+  it("returns undefined when pi-subagents is not installed", () => {
+    const notice = formatPatchRepairNotice(
+      { installed: false, missingMarkers: [] },
+      { repaired: true, stillMissing: [] },
+    );
+    expect(notice).toBeUndefined();
+  });
+
+  it("stays silent when the patch is obsolete but pi-subagents is verified healthy", () => {
+    // Regression guard: this state persists forever, so a notice here would nag
+    // on every session start — the same false alarm this design removed.
+    const notice = formatPatchRepairNotice(missing, {
+      repaired: false,
+      stillMissing: [PATCH_TARGETS[0].marker],
+      benign: true,
+    });
+    expect(notice).toBeUndefined();
+  });
+
+  it("reports a successful automatic repair as info, not a warning", () => {
+    const notice = formatPatchRepairNotice(missing, { repaired: true, stillMissing: [] });
+    expect(notice?.level).toBe("info");
+    expect(notice?.message).toContain("re-applied automatically");
+  });
+
+  it("warns with the manual command and the reason when repair failed", () => {
+    const notice = formatPatchRepairNotice(
+      missing,
+      { repaired: false, stillMissing: [PATCH_TARGETS[0].marker], reason: "spawn failed" },
+      "/custom/dir/scripts/patch-pi-subagents.mjs",
+    );
+    expect(notice?.level).toBe("warning");
+    expect(notice?.message).toContain(PATCH_TARGETS[0].marker);
+    expect(notice?.message).toContain("spawn failed");
+    expect(notice?.message).toContain("/custom/dir/scripts/patch-pi-subagents.mjs");
   });
 });
 
