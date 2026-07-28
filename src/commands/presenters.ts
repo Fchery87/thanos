@@ -10,7 +10,6 @@ export function renderSessionSnapshotPanel(
   args: {
     modelStr: string;
     thinkingStr: string;
-    modeStr: string;
     spec: FormalSpec | undefined;
     contextStr: string;
     policy: HarnessPolicy;
@@ -26,7 +25,6 @@ export function renderSessionSnapshotPanel(
   const lines = [
     `${formatLabel(theme, "Model:", 10)} ${formatValue(theme, args.modelStr, "accent")}`,
     `${formatLabel(theme, "Thinking:", 10)} ${formatValue(theme, args.thinkingStr, "accent")}`,
-    `${formatLabel(theme, "Mode:", 10)} ${formatValue(theme, args.modeStr, "accent")}`,
     `${formatLabel(theme, "Spec:", 10)} ${specStr}`,
     `${formatLabel(theme, "Context:", 10)} ${args.contextStr}`,
     `${formatLabel(theme, "Policy:", 10)} ${policyStr}`,

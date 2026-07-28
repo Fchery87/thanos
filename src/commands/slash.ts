@@ -6,7 +6,6 @@ import type { PermissionManager } from "../permissions/manager";
 import { capabilityForTool } from "../governance/tool-call";
 import type { PolicyLoadState } from "../policy/state";
 import type { SpecEngine } from "../spec/engine";
-import type { TaskParams } from "../agents/task-tool";
 import { runWorktreeGc } from "../agents/task-tool";
 import { handleSubagentModelsCommand } from "../agents/model-routing";
 import { formatBadge, formatLabel, formatValue, formatPanel, makeTerminalSafeOptions } from "../ui-utils";
@@ -27,10 +26,17 @@ export function registerSlashCommands(
     permissions: PermissionManager;
     spec: SpecEngine;
     policyPromise: Promise<PolicyLoadState>;
-    getDefaultTaskType: () => TaskParams["type"] | undefined;
+    /**
+     * Whether a /goal is running. `/spec` needs it for the same reason
+     * `agent_end` does: while a goal is active the verify gate stands down
+     * (`gate.ts` returns false on `goalActive`), so the criteria are reported
+     * but not enforced. Without this, `/spec` renders them as gating during the
+     * exact window in which they are not.
+     */
+    isGoalActive: () => boolean;
   },
 ): void {
-  const { permissions, spec, policyPromise, getDefaultTaskType } = opts;
+  const { permissions, spec, policyPromise, isGoalActive } = opts;
 
   // ── /skills ───────────────────────────────────────────────────────────────
   // Browse all loaded skills in one place.
@@ -136,7 +142,7 @@ export function registerSlashCommands(
         );
         return;
       }
-      const presentation = renderSpecVerificationPanel(theme, active, spec.verify(), { goalActive: false });
+      const presentation = renderSpecVerificationPanel(theme, active, spec.verify(), { goalActive: isGoalActive() });
       ctx.ui.notify(presentation.panel, presentation.notification);
     },
   });
@@ -144,7 +150,12 @@ export function registerSlashCommands(
   // ── /waves ────────────────────────────────────────────────────────────────
   // Explicit opt-in bounded parallel orchestration.
   pi.registerCommand("waves", {
-    description: "Run a bounded WAVES orchestration: plan, parallel slices, verified handoffs, synthesis.",
+    // Says prompt, not orchestration, because that is what it is. The runtime
+    // that verified handoffs and enforced disjoint write ownership
+    // (waves/runtime.ts, waves/plan.ts, waves/verify.ts) was unreachable after
+    // delegation moved to pi-subagents and was deleted on 2026-07-27. Only
+    // waves/command.ts survives, and all it does is compose this prompt.
+    description: "Send a decomposition prompt: plan independent slices, fan out workers, synthesize. A prompt, not an enforced runtime.",
     handler: async (args, ctx) => {
       const goal = args.trim();
       if (!goal) {
@@ -158,7 +169,23 @@ export function registerSlashCommands(
   // ── /subagents-models ────────────────────────────────────────────────────
   // Edit the role → model routing that pi-subagents reads from settings.
   pi.registerCommand("subagents-models", {
-    description: "Show or update subagent model routing. Usage: /subagents-models set <role> <provider/model[:thinking]> [fallback=<model[,model...]>]",
+    description: "Show or update subagent model routing. Subcommands: list, set [role [model]], clear <role>, enable, disable.",
+    // `/subagents-models-set` and `/subagents-models-toggle` used to be separate
+    // top-level commands that re-implemented this one's argument handling —
+    // parseSubagentModelsCommand already routes `set` (with 0, 1 or 2+ args),
+    // `enable`, `disable`, `toggle on|off`, `clear <role>` and `list`. They
+    // existed for palette discoverability, which completions provide without
+    // costing two more entries in a 25-command surface.
+    getArgumentCompletions: (prefix) => {
+      const subs = [
+        { value: "list", label: "list — show current routing" },
+        { value: "set", label: "set — pick a role, then a model" },
+        { value: "clear", label: "clear <role> — drop a role's override" },
+        { value: "enable", label: "enable — turn per-role routing on" },
+        { value: "disable", label: "disable — all subagents use /models" },
+      ].filter((s) => s.value.startsWith(prefix.trimStart().split(/\s+/)[0] ?? ""));
+      return subs.length > 0 ? subs : null;
+    },
     handler: async (args, ctx) => {
       try {
         const result = await handleSubagentModelsCommand(args, {
@@ -180,61 +207,6 @@ export function registerSlashCommands(
             return index >= 0 ? models[index] : undefined;
           },
         });
-        ctx.ui.notify(result.message, result.level);
-      } catch (err) {
-        ctx.ui.notify(String(err instanceof Error ? err.message : err), "warning");
-      }
-    },
-  });
-
-  pi.registerCommand("subagents-models-set", {
-    description: "Select a subagent role, then choose one of your active models for it.",
-    handler: async (args, ctx) => {
-      try {
-        const suffix = args.trim();
-        const result = await handleSubagentModelsCommand(suffix ? `set ${suffix}` : "set", {
-          selectRole: async (roles) => {
-            if (typeof ctx.ui.select !== "function") {
-              return undefined;
-            }
-            const selected = await ctx.ui.select("Choose subagent role", roles);
-            return typeof selected === "string" ? selected : undefined;
-          },
-          selectModel: async (role, models) => {
-            if (typeof ctx.ui.select !== "function") {
-              return undefined;
-            }
-            const labels = makeTerminalSafeOptions(models);
-            const selected = await ctx.ui.select(`Choose model for ${role}`, labels);
-            if (typeof selected !== "string") return undefined;
-            const index = labels.indexOf(selected);
-            return index >= 0 ? models[index] : undefined;
-          },
-        });
-        ctx.ui.notify(result.message, result.level);
-      } catch (err) {
-        ctx.ui.notify(String(err instanceof Error ? err.message : err), "warning");
-      }
-    },
-  });
-
-  pi.registerCommand("subagents-models-toggle", {
-    description: "Enable or disable per-subagent model routing. Off means the current /models selection controls all subagents.",
-    handler: async (args, ctx) => {
-      try {
-        let choice = args.trim().toLowerCase();
-        if (!choice) {
-          if (typeof ctx.ui.select !== "function") {
-            ctx.ui.notify("Choose on or off: /subagents-models-toggle on|off", "warning");
-            return;
-          }
-          const selected = await ctx.ui.select("Per-subagent model routing", ["on", "off"]);
-          choice = typeof selected === "string" ? selected : "";
-        }
-
-        const result = await handleSubagentModelsCommand(
-          choice === "on" || choice === "enable" || choice === "enabled" ? "enable" : choice === "off" || choice === "disable" || choice === "disabled" ? "disable" : `toggle ${choice}`,
-        );
         ctx.ui.notify(result.message, result.level);
       } catch (err) {
         ctx.ui.notify(String(err instanceof Error ? err.message : err), "warning");
@@ -336,7 +308,6 @@ export function registerSlashCommands(
 
       const modelStr = model ? (model.name || model.id) : "none";
       const thinkingStr = thinking && thinking !== "off" ? thinking : "off";
-      const modeStr = String(getDefaultTaskType() ?? "ask (default)");
 
       let contextStr = theme.fg("dim", "unknown");
       if (usage) {
@@ -349,7 +320,6 @@ export function registerSlashCommands(
       const panel = renderSessionSnapshotPanel(theme, {
         modelStr,
         thinkingStr,
-        modeStr,
         spec: active,
         contextStr,
         policy,

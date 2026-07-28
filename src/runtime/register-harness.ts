@@ -12,7 +12,6 @@ import { loadGoalSettings } from "../goal/load-settings";
 import { resolveGoalSettings } from "../goal/types";
 import { serializeGoal } from "../goal/persist";
 import { clearGoalState, saveGoalState } from "../goal/store";
-import type { TaskParams } from "../agents/task-tool";
 import { loadPolicyState } from "../policy/state";
 import { registerSlashCommands } from "../commands/slash";
 import { MCPManager } from "../mcp/manager";
@@ -24,7 +23,6 @@ import { appendHarnessEvent } from "../observability/harness-ledger";
 import { detectChildRole, isSubagentProcess } from "../agents/child-role";
 import { registerThinkingCommand } from "./commands/thinking";
 import { registerModelEvents } from "./model-events";
-import { registerModesCommand } from "./commands/modes";
 import { registerTodoCommand, registerTodoTool, TodoRuntime } from "./commands/todo";
 import { registerDesignerCommand } from "./commands/designer";
 import { registerMemoryCommands } from "./commands/memory";
@@ -32,6 +30,7 @@ import { registerYoloCommand, registerYoloShortcut } from "./commands/yolo";
 import { DeliveryRuntime, registerDeliveryCommand } from "./commands/delivery";
 import { registerShipCommand } from "./commands/ship";
 import { registerMcpCommand } from "./commands/mcp";
+import { registerDoctorCommand } from "./commands/doctor";
 import { registerModelsCommand } from "./commands/models";
 import { registerDiagnosticShortcuts } from "./shortcuts";
 import { registerGoalCompleteTool, registerAskTool, registerReportFindingTool } from "./tools";
@@ -56,7 +55,6 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   const childRole = detectChildRole(process.env);
   const sessionId = crypto.randomUUID();
   const agentType = isSubagent ? "subagent" : "parent" as const;
-  let defaultTaskType: TaskParams["type"] | undefined;
   const todoRuntime = new TodoRuntime();
   let reviewFindings: ReviewFinding[] = [];
   const lens = new LensLite(sessionId);
@@ -97,7 +95,6 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     permissions,
     lens,
     policyStatePromise,
-    getDefaultTaskType: () => defaultTaskType,
     clearReviewFindings: () => { reviewFindings = []; },
     goalController,
     goalSettings,
@@ -108,11 +105,6 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     type: "boolean",
     default: false,
     description: "Require approval before first edit/exec when task is ambient",
-  });
-
-  registerModesCommand(pi, {
-    getDefaultTaskType: () => defaultTaskType,
-    setDefaultTaskType: (type) => { defaultTaskType = type; },
   });
 
   registerTodoCommand(pi, todoRuntime);
@@ -135,6 +127,9 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
 
   // ── /mcp — MCP server lifecycle management ───────────────────────
   registerMcpCommand(pi, { isSubagent, mcpManager });
+
+  // ── /doctor — one read of everything that can drift silently ──────
+  registerDoctorCommand(pi, { isSubagent, policyStatePromise, mcpManager, deliveryRuntime });
 
   // ── Thinking level selector (command + ctrl+shift+k shortcut) ──────
   registerThinkingCommand(pi);
@@ -193,7 +188,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     permissions,
     spec,
     policyPromise: policyStatePromise,
-    getDefaultTaskType: () => defaultTaskType,
+    isGoalActive: () => goalController.isActive(),
   });
   registerLensLiteCommand(pi, lens);
 
@@ -203,7 +198,6 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     policyStatePromise,
     spec,
     permissions,
-    getDefaultTaskType: () => defaultTaskType,
     isGoalActive: () => goalController.isActive(),
   });
 

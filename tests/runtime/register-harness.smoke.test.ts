@@ -76,15 +76,23 @@ function shortcutNames(api: ReturnType<typeof createFakePi>): string[] {
 }
 
 // Every command registered directly in register-harness.ts (11), plus those
-// delegated to registerGoalCommand (1: goal), registerSlashCommands (13), and
-// registerLensLiteCommand (1: lens) — 26 total. remember/memory are the only
+// delegated to registerGoalCommand (1: goal), registerSlashCommands (11), and
+// registerLensLiteCommand (1: lens) — 24 total. remember/memory are the only
 // two gated on isSubagentProcess; they are included here (parent surface).
+//
+// `modes` was removed on 2026-07-27: it set a defaultTaskType that only ever
+// appeared in three status displays and never reached delegation, which goes
+// through pi-subagents with an explicit agent name. The two
+// subagents-models-{set,toggle} wrappers went the same day — the base command
+// already parses those subcommands, and completions cover discoverability.
+// `doctor` was added: the drift checks all existed, but only as startup
+// notifications you scroll past.
 const PARENT_COMMANDS = [
-  "modes", "todo", "remember", "memory", "yolo", "delivery", "ship", "mcp",
-  "thinking", "models", "designer",
+  "todo", "remember", "memory", "yolo", "delivery", "ship", "mcp",
+  "thinking", "models", "designer", "doctor",
   "goal",
   "skills", "context", "policy", "tools", "spec", "waves",
-  "subagents-models", "subagents-models-set", "subagents-models-toggle",
+  "subagents-models",
   "audit", "rename", "status", "worktree",
   "lens",
 ].sort();
@@ -100,11 +108,11 @@ const ALL_EVENT_HOOKS = [
 // unconditionally (no isSubagent gate around the registration itself — see
 // docblock above). key-combo -> what it does:
 //   ctrl+shift+k — select thinking level
-//   ctrl+shift+f — session snapshot panel (model/thinking/mode/spec/context/policy)
+//   ctrl+shift+f — session snapshot panel (model/thinking/spec/context/policy)
 //   ctrl+shift+e — current spec panel (goal/tier/criteria/verification)
 //   ctrl+shift+g — active policy panel
 //   ctrl+shift+a — last 10 audit log entries
-//   ctrl+shift+r — run code review (heterogeneous critic jury)
+//   ctrl+shift+r — send the code-review prompt (critic jury + oracle)
 //   ctrl+shift+d — spawn designer subagent
 //   ctrl+shift+y — toggle yolo mode
 const ALL_SHORTCUTS = [
