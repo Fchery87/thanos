@@ -12,7 +12,6 @@ export type WelcomePolicySummary =
 export interface WelcomeHeaderArgs {
   modelStr: string;
   thinkingStr: string;
-  modeStr: string;
   mcp: WelcomeMcpSummary;
   policy: WelcomePolicySummary;
   recentRows: WelcomeRecentRow[];
@@ -155,7 +154,6 @@ function renderSessionRows(theme: TUITheme, args: WelcomeHeaderArgs, width: numb
   return [
     keyValue(theme, "model", args.modelStr, width, "accent"),
     keyValue(theme, "thinking", args.thinkingStr, width, args.thinkingStr === "off" ? "dim" : "accent"),
-    keyValue(theme, "mode", args.modeStr, width, "accent"),
     keyValue(theme, "mcp", mcp, width, args.mcp.connected > 0 ? "success" : args.mcp.failed > 0 || args.mcp.initFailed ? "warning" : "dim"),
     keyValue(theme, "policy", policy, width, args.policy.kind === "loaded" ? "success" : "warning"),
   ];

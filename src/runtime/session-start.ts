@@ -6,7 +6,6 @@ import type { LensLite } from "../lens/lite";
 import type { MCPManager } from "../mcp/manager";
 import { initializeMcpSession, readProjectTrust } from "../mcp/lifecycle";
 import { readRepoId } from "../governance/delivery";
-import type { TaskParams } from "../agents/task-tool";
 import type { GoalController } from "../goal/controller";
 import type { GoalSettings } from "../goal/types";
 import { loadGoalState } from "../goal/store";
@@ -26,7 +25,6 @@ export interface SessionStartDeps {
   permissions: PermissionManager;
   lens: LensLite;
   policyStatePromise: Promise<PolicyLoadState>;
-  getDefaultTaskType: () => TaskParams["type"] | undefined;
   clearReviewFindings: () => void;
   goalController: GoalController;
   goalSettings: GoalSettings;
@@ -42,7 +40,7 @@ export interface SessionStartDeps {
 export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): void {
   const {
     todoRuntime, mcpManager, deliveryRuntime, permissions, lens,
-    policyStatePromise, getDefaultTaskType, clearReviewFindings,
+    policyStatePromise, clearReviewFindings,
     goalController, goalSettings,
   } = deps;
 
@@ -159,7 +157,6 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
       ctx.ui.setHeader((_tui, theme) => renderWelcomeHeader(theme, {
         modelStr,
         thinkingStr,
-        modeStr: String(getDefaultTaskType() ?? "explore (default)"),
         mcp: mcpSummary,
         policy,
         recentRows,

@@ -38,7 +38,6 @@ describe("command presenters", () => {
     const panel = renderSessionSnapshotPanel(noopTheme, {
       modelStr: "gpt-4",
       thinkingStr: "low",
-      modeStr: "explore",
       spec,
       contextStr: "5 tokens",
       policy,

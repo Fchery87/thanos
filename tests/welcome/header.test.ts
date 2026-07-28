@@ -7,7 +7,6 @@ describe("renderWelcomeHeader", () => {
     const header = renderWelcomeHeader(noopTheme, {
       modelStr: "gpt-5-codex",
       thinkingStr: "high",
-      modeStr: "designer",
       mcp: { configured: 2, connected: 2, failed: 0, initFailed: false },
       policy: { kind: "loaded", preset: "team", rules: 7, auditEnabled: true },
       recentRows: [
@@ -40,7 +39,6 @@ describe("renderWelcomeHeader", () => {
     const header = renderWelcomeHeader(noopTheme, {
       modelStr: "a-model-name-that-is-long-enough-to-need-truncation",
       thinkingStr: "medium",
-      modeStr: "explore (default)",
       mcp: { configured: 0, connected: 0, failed: 0, initFailed: false },
       policy: { kind: "error" },
       recentRows: [
@@ -62,7 +60,6 @@ describe("renderWelcomeHeader", () => {
     const lines = renderWelcomeHeader(noopTheme, {
       modelStr: "claude-opus-4-8",
       thinkingStr: "high",
-      modeStr: "explore (default)",
       mcp: { configured: 6, connected: 5, failed: 1, initFailed: false },
       policy: { kind: "loaded", preset: "team", rules: 12, auditEnabled: true },
       recentRows: [{ label: "Fable-class harness roadmap", age: "2h ago" }],
@@ -77,7 +74,6 @@ describe("renderWelcomeHeader", () => {
     const output = renderWelcomeHeader(noopTheme, {
       modelStr: "model",
       thinkingStr: "high",
-      modeStr: "explore (default)",
       mcp: { configured: 0, connected: 0, failed: 0, initFailed: false },
       policy: { kind: "loaded", preset: "team", rules: 1, auditEnabled: false },
       recentRows: [],
@@ -91,7 +87,6 @@ describe("renderWelcomeHeader", () => {
     const failed = renderWelcomeHeader(noopTheme, {
       modelStr: "model",
       thinkingStr: "off",
-      modeStr: "explore (default)",
       mcp: { configured: 3, connected: 0, failed: 3, initFailed: true },
       policy: { kind: "loaded", preset: "team", rules: 1, auditEnabled: false },
       recentRows: [],

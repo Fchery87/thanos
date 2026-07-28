@@ -6,7 +6,6 @@ import type { PermissionManager } from "../permissions/manager";
 import { capabilityForTool } from "../governance/tool-call";
 import type { PolicyLoadState } from "../policy/state";
 import type { SpecEngine } from "../spec/engine";
-import type { TaskParams } from "../agents/task-tool";
 import { runWorktreeGc } from "../agents/task-tool";
 import { handleSubagentModelsCommand } from "../agents/model-routing";
 import { formatBadge, formatLabel, formatValue, formatPanel, makeTerminalSafeOptions } from "../ui-utils";
@@ -27,10 +26,17 @@ export function registerSlashCommands(
     permissions: PermissionManager;
     spec: SpecEngine;
     policyPromise: Promise<PolicyLoadState>;
-    getDefaultTaskType: () => TaskParams["type"] | undefined;
+    /**
+     * Whether a /goal is running. `/spec` needs it for the same reason
+     * `agent_end` does: while a goal is active the verify gate stands down
+     * (`gate.ts` returns false on `goalActive`), so the criteria are reported
+     * but not enforced. Without this, `/spec` renders them as gating during the
+     * exact window in which they are not.
+     */
+    isGoalActive: () => boolean;
   },
 ): void {
-  const { permissions, spec, policyPromise, getDefaultTaskType } = opts;
+  const { permissions, spec, policyPromise, isGoalActive } = opts;
 
   // ── /skills ───────────────────────────────────────────────────────────────
   // Browse all loaded skills in one place.
@@ -136,7 +142,7 @@ export function registerSlashCommands(
         );
         return;
       }
-      const presentation = renderSpecVerificationPanel(theme, active, spec.verify(), { goalActive: false });
+      const presentation = renderSpecVerificationPanel(theme, active, spec.verify(), { goalActive: isGoalActive() });
       ctx.ui.notify(presentation.panel, presentation.notification);
     },
   });
@@ -144,7 +150,12 @@ export function registerSlashCommands(
   // ── /waves ────────────────────────────────────────────────────────────────
   // Explicit opt-in bounded parallel orchestration.
   pi.registerCommand("waves", {
-    description: "Run a bounded WAVES orchestration: plan, parallel slices, verified handoffs, synthesis.",
+    // Says prompt, not orchestration, because that is what it is. The runtime
+    // that verified handoffs and enforced disjoint write ownership
+    // (waves/runtime.ts, waves/plan.ts, waves/verify.ts) was unreachable after
+    // delegation moved to pi-subagents and was deleted on 2026-07-27. Only
+    // waves/command.ts survives, and all it does is compose this prompt.
+    description: "Send a decomposition prompt: plan independent slices, fan out workers, synthesize. A prompt, not an enforced runtime.",
     handler: async (args, ctx) => {
       const goal = args.trim();
       if (!goal) {
@@ -336,7 +347,6 @@ export function registerSlashCommands(
 
       const modelStr = model ? (model.name || model.id) : "none";
       const thinkingStr = thinking && thinking !== "off" ? thinking : "off";
-      const modeStr = String(getDefaultTaskType() ?? "ask (default)");
 
       let contextStr = theme.fg("dim", "unknown");
       if (usage) {
@@ -349,7 +359,6 @@ export function registerSlashCommands(
       const panel = renderSessionSnapshotPanel(theme, {
         modelStr,
         thinkingStr,
-        modeStr,
         spec: active,
         contextStr,
         policy,

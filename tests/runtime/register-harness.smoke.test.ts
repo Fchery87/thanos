@@ -75,12 +75,16 @@ function shortcutNames(api: ReturnType<typeof createFakePi>): string[] {
   return api.registerShortcut.mock.calls.map(([key]: [string]) => key).sort();
 }
 
-// Every command registered directly in register-harness.ts (11), plus those
+// Every command registered directly in register-harness.ts (10), plus those
 // delegated to registerGoalCommand (1: goal), registerSlashCommands (13), and
-// registerLensLiteCommand (1: lens) — 26 total. remember/memory are the only
+// registerLensLiteCommand (1: lens) — 25 total. remember/memory are the only
 // two gated on isSubagentProcess; they are included here (parent surface).
+//
+// `modes` was removed on 2026-07-27: it set a defaultTaskType that only ever
+// appeared in three status displays and never reached delegation, which goes
+// through pi-subagents with an explicit agent name.
 const PARENT_COMMANDS = [
-  "modes", "todo", "remember", "memory", "yolo", "delivery", "ship", "mcp",
+  "todo", "remember", "memory", "yolo", "delivery", "ship", "mcp",
   "thinking", "models", "designer",
   "goal",
   "skills", "context", "policy", "tools", "spec", "waves",
@@ -100,11 +104,11 @@ const ALL_EVENT_HOOKS = [
 // unconditionally (no isSubagent gate around the registration itself — see
 // docblock above). key-combo -> what it does:
 //   ctrl+shift+k — select thinking level
-//   ctrl+shift+f — session snapshot panel (model/thinking/mode/spec/context/policy)
+//   ctrl+shift+f — session snapshot panel (model/thinking/spec/context/policy)
 //   ctrl+shift+e — current spec panel (goal/tier/criteria/verification)
 //   ctrl+shift+g — active policy panel
 //   ctrl+shift+a — last 10 audit log entries
-//   ctrl+shift+r — run code review (heterogeneous critic jury)
+//   ctrl+shift+r — send the code-review prompt (critic jury + oracle)
 //   ctrl+shift+d — spawn designer subagent
 //   ctrl+shift+y — toggle yolo mode
 const ALL_SHORTCUTS = [

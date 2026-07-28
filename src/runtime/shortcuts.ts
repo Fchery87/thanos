@@ -4,7 +4,6 @@ import type { PermissionManager } from "../permissions/manager";
 import type { SpecEngine } from "../spec/engine";
 import type { HarnessPolicy } from "../policy/types";
 import type { PolicyLoadState } from "../policy/state";
-import type { TaskParams } from "../agents/task-tool";
 import type { ThinkingLevel } from "./thinking-levels";
 import { renderAuditPanel, renderPolicyPanel, renderSessionSnapshotPanel, renderSpecVerificationPanel } from "../commands/presenters";
 import { formatValue, formatPanel, noopTheme } from "../ui-utils";
@@ -32,7 +31,6 @@ export interface DiagnosticShortcutDeps {
   policyStatePromise: Promise<PolicyLoadState>;
   spec: SpecEngine;
   permissions: PermissionManager;
-  getDefaultTaskType: () => TaskParams["type"] | undefined;
   isGoalActive?: () => boolean;
 }
 
@@ -58,7 +56,6 @@ export function registerDiagnosticShortcuts(pi: ExtensionAPI, deps: DiagnosticSh
 
       const modelStr = model ? (model.name || model.id) : "none";
       const thinkingStr = thinking && thinking !== "off" ? thinking : "off";
-      const modeStr = String(deps.getDefaultTaskType() ?? "explore (default)");
 
       let contextStr = theme.fg("dim", "unknown");
       if (usage) {
@@ -71,7 +68,6 @@ export function registerDiagnosticShortcuts(pi: ExtensionAPI, deps: DiagnosticSh
       const panel = renderSessionSnapshotPanel(theme, {
         modelStr,
         thinkingStr,
-        modeStr,
         spec: active,
         contextStr,
         policy,
@@ -144,13 +140,17 @@ export function registerDiagnosticShortcuts(pi: ExtensionAPI, deps: DiagnosticSh
   });
 
   pi.registerShortcut("ctrl+shift+r", {
-    description: "Run a code review — spawns a heterogeneous critic jury",
+    // Neither "spawns" nor "delegates": review/jury-runtime.ts, which shaped and
+    // synthesized critic results, went with the orchestration tier on
+    // 2026-07-27. What is left is buildJuryPrompt, sent to the current agent.
+    // Whether three critics and an oracle actually run is up to the model.
+    description: "Send a code-review prompt (critic jury + devil's advocate)",
     handler: async (ctx) => {
       if (deps.isSubagent) {
         ctx.ui.notify("Code review is only available in the main session.", "warning");
         return;
       }
-      ctx.ui.notify("Delegating code review to the heterogeneous jury…", "info");
+      ctx.ui.notify("Sending the code-review prompt…", "info");
       await pi.sendUserMessage(buildJuryPrompt(), { deliverAs: "followUp" });
     },
   });
