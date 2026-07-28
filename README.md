@@ -3,10 +3,10 @@
 An **Agent Distribution for the [Pi coding agent](https://earendil.works)** — a governed,
 batteries-included configuration layer that turns Pi into a safe, productive daily driver.
 It bundles the **Thanos Harness** governance extension plus a curated set of npm packages
-and MCP servers. Skills are not bundled — install your own via `/skills` or by dropping
-them into `~/.pi/agent/skills/`.
+and MCP servers. Skills are not bundled — drop your own into `~/.pi/agent/skills/`, then
+run `/skills` to see what loaded.
 
-> **Pi version:** 0.80.2+ · **Provider/model:** user-configured (no keys bundled)
+> **Pi version:** 0.80.6 · **Provider/model:** user-configured (no keys bundled)
 
 ## Why Thanos
 
@@ -14,11 +14,18 @@ them into `~/.pi/agent/skills/`.
   ceiling. Secure by default: the harness asks before edits and shell commands, and
   per-repo [delivery modes](docs/governance.md#delivery-modes) let you dial in
   frictionless-but-bounded autonomy where you trust it.
-- **Governed subagents.** Eight specialist roles (explore, plan, build, reviewer,
-  designer, oracle, researcher, evaluator) with typed result contracts, worktree
-  isolation for writers, a code-review jury, and per-role model routing.
-- **Verification, not vibes.** Acceptance criteria are default-fail; a completion gate
-  and the `/goal` self-checking loop stop the model from self-certifying "done".
+- **Governed subagents.** A dozen specialist roles (explore, plan, build, reviewer and
+  three focused reviewer variants, oracle, researcher, evaluator, scout, worker) with
+  typed result contracts, worktree isolation for writers, and per-role model routing.
+  `/waves` and `Ctrl+Shift+R` compose decomposition and code-review prompts — they are
+  prompts, not enforced runtimes.
+- **Verification, not vibes.** Acceptance criteria are default-fail, and the `/goal`
+  self-checking loop confirms completion against evidence rather than the model's own
+  claim. The completion gate acts only on criteria derived from your actual request,
+  never on generic templates.
+- **MCP servers are not trusted by default.** A project-supplied `mcp.json` names a
+  command that would otherwise be launched on open; untrusted servers are refused until
+  you approve the exact command line via `/mcp`.
 - **Bring your own keys.** A curated provider/model catalog ships with the distribution;
   credentials stay in gitignored user-owned files that install/update never touch.
 
