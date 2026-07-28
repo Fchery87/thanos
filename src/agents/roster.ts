@@ -67,12 +67,40 @@ function parseRosterFrontmatter(raw: string): ParsedAgentFrontmatter | null {
   };
 }
 
-function normalizeField(value: string | undefined, maxLength: number): string | undefined {
+/**
+ * A name must be well-formed. Over-long is malformed, not verbose — an agent
+ * whose name exceeds the cap cannot be addressed by that name anyway, so
+ * truncating it would advertise something uncallable.
+ */
+function normalizeName(value: string | undefined, maxLength: number): string | undefined {
   if (value === undefined) return undefined;
   if (value.trim() === "") return undefined;
   if (CONTROL_CHARS.test(value)) return undefined;
   if (value.length > maxLength) return undefined;
   return value;
+}
+
+/**
+ * A description is truncated, never rejected.
+ *
+ * It used to be rejected, and because a missing description drops the whole
+ * entry, one over-long line removed its agent from the roster entirely. That is
+ * exactly what happened to `designer`: its description ran to 328 characters
+ * against a 240 cap, so the roster injected into every parent turn listed
+ * twelve agents out of thirteen and never mentioned it. The agent stayed
+ * callable — pi-subagents resolves by name at execution time — but the model
+ * had no way to know it existed, so it could never choose it.
+ *
+ * Truncating costs the tail of one sentence. Rejecting costs the whole agent.
+ * For a discovery surface those are not close, and the failure direction should
+ * favour advertising a slightly clipped description over advertising nothing.
+ */
+function normalizeDescription(value: string | undefined, maxLength: number): string | undefined {
+  if (value === undefined) return undefined;
+  if (value.trim() === "") return undefined;
+  if (CONTROL_CHARS.test(value)) return undefined;
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
 async function loadScope(dir: string, scope: "user" | "project"): Promise<RosterEntry[]> {
@@ -88,9 +116,15 @@ async function loadScope(dir: string, scope: "user" | "project"): Promise<Roster
     try {
       const parsed = parseRosterFrontmatter(await readFile(join(dir, file), "utf-8"));
       if (!parsed || parsed.disabled) continue;
-      const name = normalizeField(parsed.name ?? file.replace(/\.md$/, ""), MAX_NAME_LENGTH);
-      const description = normalizeField(parsed.description, MAX_DESCRIPTION_LENGTH);
-      if (!name || !description) continue;
+      const name = normalizeName(parsed.name ?? file.replace(/\.md$/, ""), MAX_NAME_LENGTH);
+      const description = normalizeDescription(parsed.description, MAX_DESCRIPTION_LENGTH);
+      if (!name || !description) {
+        // Loudly, because the silent version of this hid `designer` from the
+        // roster for as long as its description was over the cap. A dropped
+        // agent looks identical to an agent that was never written.
+        console.warn(`[harness][roster] skipping ${file}: ${!name ? "name" : "description"} missing or malformed`);
+        continue;
+      }
       entries.push({
         name,
         description,
