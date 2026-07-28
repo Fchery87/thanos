@@ -3,8 +3,8 @@
 An **Agent Distribution for the [Pi coding agent](https://earendil.works)** — a governed,
 batteries-included configuration layer that turns Pi into a safe, productive daily driver.
 It bundles the **Thanos Harness** governance extension plus a curated set of npm packages
-and MCP servers. Skills are not bundled — drop your own into `~/.pi/agent/skills/`, then
-run `/skills` to see what loaded.
+and MCP servers. Skills are not bundled — Pi loads them from both `~/.agents/skills/` and
+`~/.pi/agent/skills/`, so drop yours in either and run `/skills` to see what loaded.
 
 > **Pi version:** 0.80.6 · **Provider/model:** user-configured (no keys bundled)
 
