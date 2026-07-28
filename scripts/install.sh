@@ -215,7 +215,7 @@ install_harness() {
   fi
   info "Registering Thanos as a Pi package..."
   pi install .
-  info "Patching pi-subagents (skip skills dirs in agent discovery)..."
+  info "Patching pi-subagents (fanout-child double-registration guard)..."
   node "$THANOS_DIR/scripts/patch-pi-subagents.mjs" || warn "pi-subagents patch skipped (non-fatal)"
   cd "$old_cwd"
 }
@@ -280,6 +280,51 @@ WRAPPER_EOF
   info "Installed thanos wrapper at $WRAPPER"
 }
 
+ensure_pi_update_hook() {
+  # `pi update` reinstalls pi-subagents into node_modules, wiping the Thanos
+  # patches. Thanos re-applies them automatically at session start, so this
+  # wrapper is a second line of defence, not the only one: it closes them the
+  # moment the update happens instead of at the next session, so a nested run
+  # started in the same shell cannot hit the unpatched tree.
+  hook_marker="# Thanos pi-update patch hook"
+  hook_installed=0
+  for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    [ -f "$rc" ] || continue
+    hook_installed=1
+    if grep -qs "$hook_marker" "$rc"; then continue; fi
+    # An older hand-written wrapper may already exist; do not stack a second one.
+    if grep -qs "patch-pi-subagents.mjs" "$rc"; then
+      info "Existing pi-update patch hook found in $rc — leaving it alone"
+      continue
+    fi
+    cat >> "$rc" <<HOOK_EOF
+
+$hook_marker — re-apply Thanos patches after any \`pi update\` wipes them.
+# Idempotent; all other pi subcommands pass straight through.
+pi() {
+  command pi "\$@"
+  _thanos_rc=\$?
+  if [ "\$1" = "update" ] && [ "\$_thanos_rc" -eq 0 ] && [ -f "$THANOS_DIR/scripts/patch-pi-subagents.mjs" ]; then
+    node "$THANOS_DIR/scripts/patch-pi-subagents.mjs" || \\
+      echo "pi: pi-subagents patch needs attention — see above, or run: node $THANOS_DIR/scripts/patch-pi-subagents.mjs" >&2
+  fi
+  return "\$_thanos_rc"
+}
+HOOK_EOF
+    info "Added pi-update patch hook to $rc"
+  done
+  # Deliberately does not create a shell rc that does not exist — the installer
+  # follows ensure_path()'s precedent of editing rc files, not authoring them.
+  # Say so rather than staying silent: patches still self-heal at session start,
+  # so this is a degraded-but-safe state the user should be able to recognise.
+  if [ "$hook_installed" -eq 0 ]; then
+    warn "No ~/.bashrc or ~/.zshrc found — skipped the pi-update patch hook."
+    warn "Patches still re-apply automatically at session start. To close the gap"
+    warn "sooner, add this to your shell rc:"
+    warn "  pi() { command pi \"\$@\"; rc=\$?; [ \"\$1\" = update ] && [ \$rc -eq 0 ] && node \"$THANOS_DIR/scripts/patch-pi-subagents.mjs\"; return \$rc; }"
+  fi
+}
+
 ensure_path() {
   case ":$PATH:" in
     *":$BIN_DIR:"*) return ;;
@@ -305,6 +350,7 @@ main() {
   setup_web_search
   install_harness
   install_wrapper
+  ensure_pi_update_hook
   ensure_path
   success "Thanos installed! Run 'thanos' to start a session."
   success "Run 'thanos update' anytime to get the latest release."

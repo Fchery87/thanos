@@ -13,7 +13,7 @@ import { restoreController } from "../goal/persist";
 import { renderGoalStatusSegment } from "../goal/command";
 import { renderWelcomeHeader, formatTimeAgo, type WelcomeMcpSummary, type WelcomePolicySummary } from "../welcome/header";
 import { checkForUpdate } from "../welcome/update-check";
-import { checkPatchDrift, formatPatchDriftWarning } from "../welcome/patch-drift";
+import { checkPatchDrift, formatPatchRepairNotice, repairPatchDrift } from "../welcome/patch-drift";
 import { formatPanel } from "../ui-utils";
 import { DeliveryRuntime } from "./commands/delivery";
 import type { TodoRuntime } from "./commands/todo";
@@ -173,14 +173,20 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
         }
       }).catch(() => {});
 
-      // Non-blocking pi-subagents patch-drift check. A package update can
-      // silently revert the two Thanos source patches (see
+      // Non-blocking pi-subagents patch-drift check and self-repair. A package
+      // update wipes the Thanos source patches (see
       // scripts/patch-pi-subagents.mjs), and the first symptom is the fanout
       // double-registration crash resurfacing unexplained on a reviewer run.
-      // Silent when pi-subagents isn't installed or both patches are intact.
-      checkPatchDrift().then((result) => {
-        const warning = formatPatchDriftWarning(result);
-        if (warning) ctx.ui.notify(warning, "warning");
+      // Drift is re-applied automatically rather than only reported: the repair
+      // is idempotent, local, and identical to the manual re-run, and leaving it
+      // to the human means the next nested run crashes before anyone acts on the
+      // warning. Only if repair fails does this fall back to warning.
+      // Silent when pi-subagents isn't installed or the patches are intact.
+      checkPatchDrift().then(async (result) => {
+        if (!result.installed || result.missingMarkers.length === 0) return;
+        const repair = await repairPatchDrift();
+        const notice = formatPatchRepairNotice(result, repair);
+        if (notice) ctx.ui.notify(notice.message, notice.level);
       }).catch(() => {});
     }
 
