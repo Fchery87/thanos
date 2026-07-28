@@ -34,19 +34,7 @@ afterEach(() => {
 });
 
 describe("/subagents-models command", () => {
-  it("registers a visible top-level model setter alias", () => {
-    const { api, handlers } = createFakePi();
-    register(api);
 
-    expect(handlers.has("subagents-models-set")).toBe(true);
-  });
-
-  it("registers a visible top-level model routing toggle", () => {
-    const { api, handlers } = createFakePi();
-    register(api);
-
-    expect(handlers.has("subagents-models-toggle")).toBe(true);
-  });
 
   it("updates model routing through the registered slash command", async () => {
     const home = await mkdtemp(join(tmpdir(), "thanos-slash-models-"));
@@ -215,43 +203,11 @@ describe("/subagents-models command", () => {
     });
   });
 
-  it("opens role and model selectors from the top-level alias", async () => {
-    const home = await mkdtemp(join(tmpdir(), "thanos-slash-models-"));
-    const agentDir = join(home, ".pi", "agent");
-    await mkdir(agentDir, { recursive: true });
-    await writeFile(join(agentDir, "settings.json"), JSON.stringify({
-      subagents: { disableBuiltins: true },
-    }, null, 2));
-    await writeFile(join(agentDir, "models.json"), JSON.stringify({
-      providers: {
-        theclawbay: {
-          models: [
-            { id: "gpt-5.5", input: ["text", "image"] },
-          ],
-        },
-      },
-    }, null, 2));
-    vi.stubEnv("HOME", home);
 
-    const notify = vi.fn();
-    const select = vi
-      .fn()
-      .mockResolvedValueOnce("reviewer")
-      .mockResolvedValueOnce("theclawbay/gpt-5.5");
-    const { api, handlers } = createFakePi();
-    register(api);
-
-    await handlers.get("subagents-models-set")?.("", {
-      hasUI: true,
-      ui: { notify, select, setStatus: vi.fn(), theme: { fg: (_kind: string, text: string) => text } },
-    });
-
-    expect(select).toHaveBeenNthCalledWith(1, "Choose subagent role", expect.arrayContaining(["reviewer"]));
-    expect(select).toHaveBeenNthCalledWith(2, "Choose model for reviewer", ["theclawbay/gpt-5.5"]);
-    expect(notify).toHaveBeenCalledWith(expect.stringContaining("Updated reviewer"), "info");
-  });
-
-  it("toggles per-subagent routing off from the top-level toggle command", async () => {
+  // Was driven through /subagents-models-toggle, removed 2026-07-27. The base
+  // command already parses `disable`; this proves the behaviour survived the
+  // consolidation rather than the wrapper having carried it.
+  it("toggles per-subagent routing off via the disable subcommand", async () => {
     const home = await mkdtemp(join(tmpdir(), "thanos-slash-models-"));
     const agentDir = join(home, ".pi", "agent");
     await mkdir(agentDir, { recursive: true });
@@ -277,7 +233,7 @@ describe("/subagents-models command", () => {
     const { api, handlers } = createFakePi();
     register(api);
 
-    await handlers.get("subagents-models-toggle")?.("off", {
+    await handlers.get("subagents-models")?.("disable", {
       hasUI: true,
       ui: { notify, select: vi.fn(), setStatus: vi.fn(), theme: { fg: (_kind: string, text: string) => text } },
     });
@@ -289,7 +245,11 @@ describe("/subagents-models command", () => {
     expect(settings.subagents.savedAgentOverrides.reviewer).toEqual({ model: "theclawbay/gpt-5.5" });
   });
 
-  it("opens an on/off selector when the toggle command has no args", async () => {
+  // The removed wrapper opened an on/off picker when called bare. The base
+  // command takes the verb explicitly, and getArgumentCompletions now offers
+  // `enable`/`disable` in the palette, so the picker is no longer the only way
+  // to discover them.
+  it("re-enables routing via the enable subcommand, restoring saved overrides", async () => {
     const home = await mkdtemp(join(tmpdir(), "thanos-slash-models-"));
     const agentDir = join(home, ".pi", "agent");
     await mkdir(agentDir, { recursive: true });
@@ -317,12 +277,11 @@ describe("/subagents-models command", () => {
     const { api, handlers } = createFakePi();
     register(api);
 
-    await handlers.get("subagents-models-toggle")?.("", {
+    await handlers.get("subagents-models")?.("enable", {
       hasUI: true,
       ui: { notify, select, setStatus: vi.fn(), theme: { fg: (_kind: string, text: string) => text } },
     });
 
-    expect(select).toHaveBeenCalledWith("Per-subagent model routing", ["on", "off"]);
     expect(notify).toHaveBeenCalledWith(expect.stringContaining("enabled"), "info");
     expect(JSON.parse(await readFile(join(agentDir, "settings.json"), "utf-8"))).toMatchObject({
       subagents: {

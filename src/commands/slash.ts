@@ -169,7 +169,23 @@ export function registerSlashCommands(
   // ── /subagents-models ────────────────────────────────────────────────────
   // Edit the role → model routing that pi-subagents reads from settings.
   pi.registerCommand("subagents-models", {
-    description: "Show or update subagent model routing. Usage: /subagents-models set <role> <provider/model[:thinking]> [fallback=<model[,model...]>]",
+    description: "Show or update subagent model routing. Subcommands: list, set [role [model]], clear <role>, enable, disable.",
+    // `/subagents-models-set` and `/subagents-models-toggle` used to be separate
+    // top-level commands that re-implemented this one's argument handling —
+    // parseSubagentModelsCommand already routes `set` (with 0, 1 or 2+ args),
+    // `enable`, `disable`, `toggle on|off`, `clear <role>` and `list`. They
+    // existed for palette discoverability, which completions provide without
+    // costing two more entries in a 25-command surface.
+    getArgumentCompletions: (prefix) => {
+      const subs = [
+        { value: "list", label: "list — show current routing" },
+        { value: "set", label: "set — pick a role, then a model" },
+        { value: "clear", label: "clear <role> — drop a role's override" },
+        { value: "enable", label: "enable — turn per-role routing on" },
+        { value: "disable", label: "disable — all subagents use /models" },
+      ].filter((s) => s.value.startsWith(prefix.trimStart().split(/\s+/)[0] ?? ""));
+      return subs.length > 0 ? subs : null;
+    },
     handler: async (args, ctx) => {
       try {
         const result = await handleSubagentModelsCommand(args, {
@@ -191,61 +207,6 @@ export function registerSlashCommands(
             return index >= 0 ? models[index] : undefined;
           },
         });
-        ctx.ui.notify(result.message, result.level);
-      } catch (err) {
-        ctx.ui.notify(String(err instanceof Error ? err.message : err), "warning");
-      }
-    },
-  });
-
-  pi.registerCommand("subagents-models-set", {
-    description: "Select a subagent role, then choose one of your active models for it.",
-    handler: async (args, ctx) => {
-      try {
-        const suffix = args.trim();
-        const result = await handleSubagentModelsCommand(suffix ? `set ${suffix}` : "set", {
-          selectRole: async (roles) => {
-            if (typeof ctx.ui.select !== "function") {
-              return undefined;
-            }
-            const selected = await ctx.ui.select("Choose subagent role", roles);
-            return typeof selected === "string" ? selected : undefined;
-          },
-          selectModel: async (role, models) => {
-            if (typeof ctx.ui.select !== "function") {
-              return undefined;
-            }
-            const labels = makeTerminalSafeOptions(models);
-            const selected = await ctx.ui.select(`Choose model for ${role}`, labels);
-            if (typeof selected !== "string") return undefined;
-            const index = labels.indexOf(selected);
-            return index >= 0 ? models[index] : undefined;
-          },
-        });
-        ctx.ui.notify(result.message, result.level);
-      } catch (err) {
-        ctx.ui.notify(String(err instanceof Error ? err.message : err), "warning");
-      }
-    },
-  });
-
-  pi.registerCommand("subagents-models-toggle", {
-    description: "Enable or disable per-subagent model routing. Off means the current /models selection controls all subagents.",
-    handler: async (args, ctx) => {
-      try {
-        let choice = args.trim().toLowerCase();
-        if (!choice) {
-          if (typeof ctx.ui.select !== "function") {
-            ctx.ui.notify("Choose on or off: /subagents-models-toggle on|off", "warning");
-            return;
-          }
-          const selected = await ctx.ui.select("Per-subagent model routing", ["on", "off"]);
-          choice = typeof selected === "string" ? selected : "";
-        }
-
-        const result = await handleSubagentModelsCommand(
-          choice === "on" || choice === "enable" || choice === "enabled" ? "enable" : choice === "off" || choice === "disable" || choice === "disabled" ? "disable" : `toggle ${choice}`,
-        );
         ctx.ui.notify(result.message, result.level);
       } catch (err) {
         ctx.ui.notify(String(err instanceof Error ? err.message : err), "warning");

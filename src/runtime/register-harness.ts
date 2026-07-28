@@ -30,6 +30,7 @@ import { registerYoloCommand, registerYoloShortcut } from "./commands/yolo";
 import { DeliveryRuntime, registerDeliveryCommand } from "./commands/delivery";
 import { registerShipCommand } from "./commands/ship";
 import { registerMcpCommand } from "./commands/mcp";
+import { registerDoctorCommand } from "./commands/doctor";
 import { registerModelsCommand } from "./commands/models";
 import { registerDiagnosticShortcuts } from "./shortcuts";
 import { registerGoalCompleteTool, registerAskTool, registerReportFindingTool } from "./tools";
@@ -126,6 +127,9 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
 
   // ── /mcp — MCP server lifecycle management ───────────────────────
   registerMcpCommand(pi, { isSubagent, mcpManager });
+
+  // ── /doctor — one read of everything that can drift silently ──────
+  registerDoctorCommand(pi, { isSubagent, policyStatePromise, mcpManager, deliveryRuntime });
 
   // ── Thinking level selector (command + ctrl+shift+k shortcut) ──────
   registerThinkingCommand(pi);

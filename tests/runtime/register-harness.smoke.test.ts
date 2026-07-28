@@ -75,20 +75,24 @@ function shortcutNames(api: ReturnType<typeof createFakePi>): string[] {
   return api.registerShortcut.mock.calls.map(([key]: [string]) => key).sort();
 }
 
-// Every command registered directly in register-harness.ts (10), plus those
-// delegated to registerGoalCommand (1: goal), registerSlashCommands (13), and
-// registerLensLiteCommand (1: lens) — 25 total. remember/memory are the only
+// Every command registered directly in register-harness.ts (11), plus those
+// delegated to registerGoalCommand (1: goal), registerSlashCommands (11), and
+// registerLensLiteCommand (1: lens) — 24 total. remember/memory are the only
 // two gated on isSubagentProcess; they are included here (parent surface).
 //
 // `modes` was removed on 2026-07-27: it set a defaultTaskType that only ever
 // appeared in three status displays and never reached delegation, which goes
-// through pi-subagents with an explicit agent name.
+// through pi-subagents with an explicit agent name. The two
+// subagents-models-{set,toggle} wrappers went the same day — the base command
+// already parses those subcommands, and completions cover discoverability.
+// `doctor` was added: the drift checks all existed, but only as startup
+// notifications you scroll past.
 const PARENT_COMMANDS = [
   "todo", "remember", "memory", "yolo", "delivery", "ship", "mcp",
-  "thinking", "models", "designer",
+  "thinking", "models", "designer", "doctor",
   "goal",
   "skills", "context", "policy", "tools", "spec", "waves",
-  "subagents-models", "subagents-models-set", "subagents-models-toggle",
+  "subagents-models",
   "audit", "rename", "status", "worktree",
   "lens",
 ].sort();
