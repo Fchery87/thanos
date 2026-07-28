@@ -12,7 +12,6 @@ import { fileURLToPath } from "node:url";
 // tests/welcome/patch-drift.test.ts cross-checks both files' text stay in
 // sync so this duplication can't silently drift.
 export const PATCH_TARGETS = [
-  { file: join("agents", "agents.ts"), marker: "thanos-patch: skip skills dirs" },
   { file: join("extension", "fanout-child.ts"), marker: "thanos-patch: process-global fanout tool guard" },
 ] as const;
 
@@ -37,7 +36,7 @@ export interface PatchDriftResult {
 }
 
 /**
- * Checks whether both Thanos patches are still present in the installed
+ * Checks whether every Thanos patch is still present in the installed
  * pi-subagents package. Never throws. A patch target file that is missing
  * entirely (e.g. an upstream restructure) counts as a missing marker too —
  * the patch cannot be confirmed applied, so this fails toward surfacing it

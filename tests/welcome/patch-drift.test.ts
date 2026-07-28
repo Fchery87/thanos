@@ -26,24 +26,31 @@ describe("checkPatchDrift", () => {
     expect(result).toEqual({ installed: false, missingMarkers: [] });
   });
 
-  it("reports no missing markers when both patches are present", async () => {
+  it("reports no missing markers when every patch is present", async () => {
     const root = await makeInstallRoot();
-    await writePatchTargets(root, [true, true]);
+    await writePatchTargets(root, PATCH_TARGETS.map(() => true));
     const result = await checkPatchDrift(root);
     expect(result).toEqual({ installed: true, missingMarkers: [] });
   });
 
-  it("reports the specific marker missing when one patch reverted", async () => {
+  it("reports the specific marker missing when a patch reverted", async () => {
     const root = await makeInstallRoot();
-    await writePatchTargets(root, [true, false]);
+    // Only the last target reverts; the rest stay patched. Written against
+    // PATCH_TARGETS' length rather than a hardcoded [true, false] so retiring
+    // or adding a patch does not silently turn this into a different test.
+    const last = PATCH_TARGETS.length - 1;
+    await writePatchTargets(
+      root,
+      PATCH_TARGETS.map((_, i) => i !== last),
+    );
     const result = await checkPatchDrift(root);
     expect(result.installed).toBe(true);
-    expect(result.missingMarkers).toEqual([PATCH_TARGETS[1].marker]);
+    expect(result.missingMarkers).toEqual([PATCH_TARGETS[last].marker]);
   });
 
-  it("reports both markers missing when both patches reverted", async () => {
+  it("reports every marker missing when all patches reverted", async () => {
     const root = await makeInstallRoot();
-    await writePatchTargets(root, [false, false]);
+    await writePatchTargets(root, PATCH_TARGETS.map(() => false));
     const result = await checkPatchDrift(root);
     expect(result.installed).toBe(true);
     expect(result.missingMarkers).toEqual(PATCH_TARGETS.map((t) => t.marker));
@@ -51,16 +58,18 @@ describe("checkPatchDrift", () => {
 
   it("treats an installed package whose patch target file itself is missing as a missing marker", async () => {
     const root = await makeInstallRoot();
-    // Only write the first target file — the second is absent entirely
+    // Write every target file except the last, which is absent entirely
     // (e.g. pi-subagents restructured its file layout).
-    const first = PATCH_TARGETS[0];
-    const filePath = join(root, first.file);
-    await mkdir(join(filePath, ".."), { recursive: true });
-    await writeFile(filePath, `// ${first.marker}\n`, "utf-8");
+    const last = PATCH_TARGETS.length - 1;
+    for (const target of PATCH_TARGETS.slice(0, last)) {
+      const filePath = join(root, target.file);
+      await mkdir(join(filePath, ".."), { recursive: true });
+      await writeFile(filePath, `// ${target.marker}\n`, "utf-8");
+    }
 
     const result = await checkPatchDrift(root);
     expect(result.installed).toBe(true);
-    expect(result.missingMarkers).toEqual([PATCH_TARGETS[1].marker]);
+    expect(result.missingMarkers).toEqual([PATCH_TARGETS[last].marker]);
   });
 });
 

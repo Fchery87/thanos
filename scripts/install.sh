@@ -215,7 +215,7 @@ install_harness() {
   fi
   info "Registering Thanos as a Pi package..."
   pi install .
-  info "Patching pi-subagents (skip skills dirs in agent discovery)..."
+  info "Patching pi-subagents (fanout-child double-registration guard)..."
   node "$THANOS_DIR/scripts/patch-pi-subagents.mjs" || warn "pi-subagents patch skipped (non-fatal)"
   cd "$old_cwd"
 }

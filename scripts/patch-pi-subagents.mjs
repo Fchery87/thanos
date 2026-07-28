@@ -1,11 +1,35 @@
 #!/usr/bin/env node
 // Thanos patches for pi-subagents. Idempotent; safe to run repeatedly.
 //
-// Patch 1 (agents.ts): stop scanning `skills/` directories as agents. pi-subagents
-//   walks ~/.agents and ~/.pi/agent/agents recursively with no exclusions, so skill
-//   managers' <root>/skills/<name>/SKILL.md files (which carry name+description
-//   frontmatter) get mis-registered as agents — flooding discovery. Does NOT affect
-//   how the pi skill system loads skills; only agent discovery.
+// (Retired) Patch 1 (agents.ts): formerly stopped agent discovery from scanning
+//   any directory named `skills`, because pi-subagents walked its agent roots
+//   recursively with no exclusions and mis-registered skill managers'
+//   <root>/skills/<name>/SKILL.md files (which carry name+description
+//   frontmatter) as agents, flooding discovery.
+//
+//   Upstream took this over in 0.30.0 (2026-06-20, "Ignore legacy `.agents/skills`
+//   files during agent discovery"): loadAgentsFromDir now drops paths matching
+//   `.agents/skills/**` via isLegacyAgentSkillPath (agents.ts ~L1284-1312). The
+//   patch kept applying anyway until 0.36.0 (2026-07-24) replaced the
+//   `if (entry.isDirectory())` shape it anchored to with shouldPruneDiscoveryDir
+//   (.git / node_modules / nested project roots), at which point it started
+//   failing loudly on every `pi update`.
+//
+//   Retired rather than re-derived because upstream's coverage, while narrower,
+//   covers every root that actually holds skills. Probed with synthetic SKILL.md
+//   files under a fake HOME + PI_CODING_AGENT_DIR (2026-07-27, 0.37.1):
+//     ~/.agents/skills/**          -> excluded
+//     <proj>/.agents/skills/**     -> excluded
+//     ~/.agents/notskills/**       -> REGISTERS (control: the exclusion, not some
+//                                     unrelated filter, is what holds the line)
+//     <agentDir>/agents/skills/**  -> leaks
+//     <proj>/.pi/agents/skills/**  -> leaks
+//   The two leaking paths are unreachable in practice: pi keeps user skills in
+//   <agentDir>/skills and project skills in <proj>/.pi/skills — siblings of the
+//   agent roots, never scanned — and nothing writes a `skills` dir *inside* an
+//   agents dir. If that ever changes the symptom is loud (skill names appearing
+//   in `subagent list`); the fix is a one-line patch adding "skills" to
+//   DISCOVERY_PRUNED_DIR_NAMES, a far stabler anchor than the old code shape.
 //
 // Patch 2 (extension/fanout-child.ts): process-global guard against double
 //   registration of the "subagent" tool. pi loads fanout-child.ts twice in fanout
@@ -27,17 +51,6 @@ import { join } from "node:path";
 const ROOT = join(homedir(), ".pi", "agent", "npm", "node_modules", "pi-subagents", "src");
 
 const patches = [
-  {
-    file: join(ROOT, "agents", "agents.ts"),
-    marker: "thanos-patch: skip skills dirs",
-    needle:
-      "\t\tif (entry.isDirectory()) {\n" +
-      "\t\t\tfiles.push(...listFilesRecursive(filePath, predicate));",
-    replacement:
-      "\t\tif (entry.isDirectory()) {\n" +
-      '\t\t\tif (entry.name === "skills") continue; // thanos-patch: skip skills dirs\n' +
-      "\t\t\tfiles.push(...listFilesRecursive(filePath, predicate));",
-  },
   {
     file: join(ROOT, "extension", "fanout-child.ts"),
     marker: "thanos-patch: process-global fanout tool guard",
