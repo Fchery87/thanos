@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -7,6 +7,12 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+
+// The Thanos install root (~/.pi), independent of the session cwd — same
+// technique as update-check.ts, whose cache this one sits beside.
+const installRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
+const REPAIR_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 // Mirrors scripts/patch-pi-subagents.mjs's `patches` list — keep both in sync
 // if a patch is added, retired, or its marker string changes. Duplicated
@@ -132,6 +138,100 @@ export async function repairPatchDrift(
   if (exitedClean) return { repaired: false, stillMissing: after.missingMarkers, benign: true };
 
   return { repaired: false, stillMissing: after.missingMarkers, reason };
+}
+
+interface BenignRepairCache {
+  checkedAt: number;
+  /** pi-subagents version the verdict was observed for; null when unreadable. */
+  version: string | null;
+  /** The missing markers judged benign, sorted so order can't cause a false miss. */
+  markers: string[];
+}
+
+/** Reads the installed pi-subagents version; null when unreadable. */
+async function readPiSubagentsVersion(root: string): Promise<string | null> {
+  try {
+    const raw = await readFile(join(root, "..", "package.json"), "utf-8");
+    const version = (JSON.parse(raw) as { version?: unknown }).version;
+    return typeof version === "string" ? version : null;
+  } catch {
+    return null;
+  }
+}
+
+function sameMarkers(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((marker, i) => marker === b[i]);
+}
+
+export interface CachedRepairOptions {
+  root?: string;
+  patchScriptPath?: string;
+  cachePath?: string;
+  ttlMs?: number;
+  now?: number;
+  repair?: (root: string, patchScriptPath: string) => Promise<PatchRepairResult>;
+}
+
+/**
+ * `repairPatchDrift` with the benign verdict memoised on disk.
+ *
+ * A permanently obsolete patch is the pathological case: its marker can never be
+ * restored, so an uncached caller re-spawns the whole chain (node → bun → temp
+ * dir, ~2.8s) on every new session, forever, to re-derive an answer that cannot
+ * change. Only the benign verdict is cached. A genuine repair failure keeps
+ * retrying and warning every session, which is the point — it is actionable, and
+ * it can legitimately start succeeding (bun installed later, upstream re-fixed).
+ *
+ * Keyed on the pi-subagents version and the exact missing-marker set, so a
+ * package update or a different kind of drift re-runs the real check. The TTL is
+ * a backstop for anything that changes the tree without changing the version.
+ *
+ * Never throws; a cache that cannot be read or written degrades to running the
+ * real repair.
+ */
+export async function repairPatchDriftCached(
+  missingMarkers: readonly string[],
+  options: CachedRepairOptions = {},
+): Promise<PatchRepairResult> {
+  const {
+    root = defaultPiSubagentsSrcRoot(),
+    patchScriptPath = defaultPatchScriptPath(),
+    cachePath = join(installRoot, ".harness", "patch-repair.json"),
+    ttlMs = REPAIR_CACHE_TTL_MS,
+    now = Date.now(),
+    repair = repairPatchDrift,
+  } = options;
+
+  const markers = [...missingMarkers].sort();
+  const version = await readPiSubagentsVersion(root);
+
+  try {
+    const cache = JSON.parse(await readFile(cachePath, "utf-8")) as BenignRepairCache;
+    if (
+      typeof cache.checkedAt === "number" &&
+      now - cache.checkedAt < ttlMs &&
+      cache.version === version &&
+      Array.isArray(cache.markers) &&
+      sameMarkers(cache.markers, markers)
+    ) {
+      return { repaired: false, stillMissing: [...missingMarkers], benign: true };
+    }
+  } catch { /* no cache yet, or unreadable */ }
+
+  const result = await repair(root, patchScriptPath);
+
+  if (result.benign) {
+    try {
+      await mkdir(dirname(cachePath), { recursive: true });
+      await writeFile(
+        cachePath,
+        JSON.stringify({ checkedAt: now, version, markers } satisfies BenignRepairCache),
+        "utf-8",
+      );
+    } catch { /* cache write is best-effort */ }
+  }
+
+  return result;
 }
 
 /** Composes the session-start notice after an automatic repair attempt. */

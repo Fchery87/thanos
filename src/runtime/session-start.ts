@@ -13,7 +13,7 @@ import { restoreController } from "../goal/persist";
 import { renderGoalStatusSegment } from "../goal/command";
 import { renderWelcomeHeader, formatTimeAgo, type WelcomeMcpSummary, type WelcomePolicySummary } from "../welcome/header";
 import { checkForUpdate } from "../welcome/update-check";
-import { checkPatchDrift, formatPatchRepairNotice, repairPatchDrift } from "../welcome/patch-drift";
+import { checkPatchDrift, formatPatchRepairNotice, repairPatchDriftCached } from "../welcome/patch-drift";
 import { formatPanel } from "../ui-utils";
 import { DeliveryRuntime } from "./commands/delivery";
 import type { TodoRuntime } from "./commands/todo";
@@ -182,9 +182,12 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
       // to the human means the next nested run crashes before anyone acts on the
       // warning. Only if repair fails does this fall back to warning.
       // Silent when pi-subagents isn't installed or the patches are intact.
+      // The benign verdict is cached (see repairPatchDriftCached) so a patch that
+      // upstream has made permanently obsolete does not re-spawn the repair chain
+      // on every session to re-derive an answer that cannot change.
       checkPatchDrift().then(async (result) => {
         if (!result.installed || result.missingMarkers.length === 0) return;
-        const repair = await repairPatchDrift();
+        const repair = await repairPatchDriftCached(result.missingMarkers);
         const notice = formatPatchRepairNotice(result, repair);
         if (notice) ctx.ui.notify(notice.message, notice.level);
       }).catch(() => {});
