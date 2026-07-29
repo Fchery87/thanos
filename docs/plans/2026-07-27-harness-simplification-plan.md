@@ -16,14 +16,41 @@ one day of field data) · **Date:** 2026-07-27
 **To close Phase 3**, read the ledger the Task 2.4 logging now fills:
 
 ```sh
-total=$(grep -c '"type":"spec_extraction"' .harness/evolution/events.jsonl)
-ok=$(grep '"type":"spec_extraction"' .harness/evolution/events.jsonl | grep -c 'accepted')
-echo "$ok / $total"
+f=.harness/evolution/events.jsonl
+count() { grep '"type":"spec_extraction"' "$f" | grep -c "semantic extraction: $1" || true; }
+ok=$(count accepted)
+miss=$(( $(count unparseable) + $(count schema_rejected) + $(count empty_objective) ))
+echo "$ok / $((ok + miss))"
 ```
 
-≥50% accepted keeps `src/spec/`; below that it is deleted, and ADR 0006 gets a
-successor rather than the amendment it now carries. Per Task 0.3, `gate_failure`
-over the same day should be ≤5, from a 48/day baseline.
+≥50% keeps `src/spec/`; below that it is deleted, and ADR 0006 gets a successor
+rather than the amendment it now carries. Per Task 0.3, `gate_failure` over the
+same day should be ≤5, from a 48/day baseline.
+
+**The denominator is `accepted + unparseable + schema_rejected + empty_objective`,
+not every logged attempt.** Those four are the outcomes where the model actually
+answered, which is the only thing this gate is entitled to judge. The earlier
+version of this command counted every non-`accepted` row, which put `disabled` —
+an instant-tier prompt that is *never extracted by design* — in the same bucket as
+`schema_rejected`. That denominator grows every time the harness behaves
+correctly, so the measured rate falls toward zero however good the extractor gets.
+`no_context`, `no_model`, `auth_failed`, `timeout`, `provider_error`, `threw`, and
+`stale` are excluded for the mirror-image reason: they are facts about config,
+credentials, budget, or our own bugs, not about whether a model can write a
+contract. See `ExtractionOutcome` in `src/spec/extraction-log.ts` for all twelve.
+
+**A denominator of 0 is not a failing score — it means there is no verdict yet.**
+At the time of writing the ledger holds exactly one `spec_extraction` row, a
+`timeout`, so the command prints `0 / 0`. Under the old command that same row read
+as `0 / 1` = 0% and would have deleted `src/spec/` on the strength of one request
+that never got an answer. Keep collecting until the denominator is large enough to
+mean something.
+
+> **The 10s extraction budget is a confound, not a result.** That single timeout
+> hit `DEFAULT_TIMEOUT_MS` in `src/spec/extractor.ts` exactly. Timeouts no longer
+> corrupt the rate above, but if the day of field data is mostly timeouts the
+> honest read is "the budget is too tight", not "extraction does not work" —
+> raise `spec.timeoutMs` and collect again rather than deleting on that evidence.
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement
 > this plan task-by-task.
