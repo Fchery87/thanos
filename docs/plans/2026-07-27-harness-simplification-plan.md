@@ -16,14 +16,61 @@ one day of field data) · **Date:** 2026-07-27
 **To close Phase 3**, read the ledger the Task 2.4 logging now fills:
 
 ```sh
-total=$(grep -c '"type":"spec_extraction"' .harness/evolution/events.jsonl)
-ok=$(grep '"type":"spec_extraction"' .harness/evolution/events.jsonl | grep -c 'accepted')
-echo "$ok / $total"
+# Every repo the harness ran in, not just this one — see below.
+rows() { find ~ -maxdepth 6 -path '*/.harness/evolution/events.jsonl' -exec cat {} + 2>/dev/null; }
+count() { rows | grep '"type":"spec_extraction"' | grep -c "semantic extraction: $1" || true; }
+ok=$(count accepted)
+miss=$(( $(count unparseable) + $(count schema_rejected) + $(count empty_objective) ))
+echo "$ok / $((ok + miss))"
 ```
 
-≥50% accepted keeps `src/spec/`; below that it is deleted, and ADR 0006 gets a
-successor rather than the amendment it now carries. Per Task 0.3, `gate_failure`
-over the same day should be ≤5, from a 48/day baseline.
+≥50% keeps `src/spec/`; below that it is deleted, and ADR 0006 gets a successor
+rather than the amendment it now carries. Per Task 0.3, `gate_failure` over the
+same day should be ≤5, from a 48/day baseline.
+
+**The denominator is `accepted + unparseable + schema_rejected + empty_objective`,
+not every logged attempt.** Those four are the outcomes where the model actually
+answered, which is the only thing this gate is entitled to judge. The earlier
+version of this command counted every non-`accepted` row, which put `disabled` —
+an instant-tier prompt that is *never extracted by design* — in the same bucket as
+`schema_rejected`. That denominator grows every time the harness behaves
+correctly, so the measured rate falls toward zero however good the extractor gets.
+`no_context`, `no_model`, `auth_failed`, `timeout`, `provider_error`, `threw`, and
+`stale` are excluded for the mirror-image reason: they are facts about config,
+credentials, budget, or our own bugs, not about whether a model can write a
+contract. See `ExtractionOutcome` in `src/spec/extraction-log.ts` for all twelve.
+
+**The ledger is per-repo, so the command must read all of them.** `appendHarnessEvent`
+writes to `<cwd>/.harness/evolution/events.jsonl`, which means there is one ledger
+per project the harness has run in, not one ledger. Reading only this checkout's
+finds 1 `spec_extraction` row and reports `0 / 0` forever, because product work
+does not happen in `~/.pi`. Aggregating across all of them at the time of writing
+finds 30 rows in ten ledgers — 29 of them in a single project.
+
+**A denominator of 0 is not a failing score — it means there is no verdict yet.**
+Keep collecting until the denominator is large enough to mean something. Aggregated,
+the current sample is `4 / 7` — over the bar, but on seven observations, which is
+not enough to retire a subsystem on. The other 23 rows are 22 timeouts and one
+`provider_error`.
+
+> **The extraction budget is a confound, not a result.** 22 of the 30 aggregated
+> rows are timeouts, every one reporting `10000ms` — and `73%` of attempts never
+> reaching the model is a fact about the budget, not about whether a model can
+> write a contract. Read that number off `evidence`, not off the source: the
+> ledger records the *effective* budget (`extractor.ts:147` reports
+> `this.settings.timeoutMs`), and `loadSpecSettings()` honours a positive
+> `spec.timeoutMs` override, so `10000ms` proves the budget was 10s — not that
+> `DEFAULT_TIMEOUT_MS` was in force. Timeouts no longer corrupt the rate above,
+> but a timeout-dominated sample means the budget is too tight, or the extractor
+> role resolves to a model too slow to answer inside it. Widen the budget or
+> route `subagents.agentOverrides.evaluator` at a faster model and collect again,
+> rather than deleting on that evidence.
+>
+> Widening is not free: `settleContract()` is awaited at `agent_end`
+> (`governance-hooks.ts`) and again before the explicit-tier approval dialog, so
+> the budget also bounds how long a turn can stall waiting for a contract that
+> may never arrive. Extraction runs concurrently with the turn, so a turn longer
+> than the budget pays nothing — but a short one pays the remainder.
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement
 > this plan task-by-task.
