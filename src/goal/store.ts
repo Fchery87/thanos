@@ -20,7 +20,7 @@ export async function saveGoalState(repo: string, state: StoredGoal): Promise<vo
 export async function loadGoalState(repo: string, expectedRepo: string): Promise<StoredGoal | undefined> {
   try {
     const raw = JSON.parse(await readFile(path(repo), "utf-8")) as StoredGoal;
-    if (!raw || raw.repo !== expectedRepo || (raw.status !== "active" && raw.status !== "paused")) return undefined;
+    if (!raw || raw.repo !== expectedRepo) return undefined;
     if (typeof raw.condition !== "string" || raw.condition.trim() === "") return undefined;
     if (raw.condition.length > MAX_CONDITION) return undefined;
     return raw;

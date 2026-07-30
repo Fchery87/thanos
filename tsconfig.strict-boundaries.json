@@ -5,7 +5,6 @@
   },
   "include": [
     "src/agents/catalog.ts",
-    "src/agents/result.ts",
     "src/governance/egress.ts",
     "src/governance/operation.ts",
     "src/permissions/git-target.ts",

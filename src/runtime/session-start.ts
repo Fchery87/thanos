@@ -13,10 +13,11 @@ import { restoreController } from "../goal/persist";
 import { renderGoalStatusSegment } from "../goal/command";
 import { renderWelcomeHeader, formatTimeAgo, type WelcomeMcpSummary, type WelcomePolicySummary } from "../welcome/header";
 import { checkForUpdate } from "../welcome/update-check";
-import { checkPatchDrift, formatPatchRepairNotice, repairPatchDriftCached } from "../welcome/patch-drift";
+import { checkPatchDrift, formatPatchDriftWarning } from "../welcome/patch-drift";
 import { formatPanel } from "../ui-utils";
 import { DeliveryRuntime } from "./commands/delivery";
 import type { TodoRuntime } from "./commands/todo";
+import { workflowStatusSegment, type WorkflowRuntime } from "../workflows/state";
 
 export interface SessionStartDeps {
   todoRuntime: TodoRuntime;
@@ -28,6 +29,7 @@ export interface SessionStartDeps {
   clearReviewFindings: () => void;
   goalController: GoalController;
   goalSettings: GoalSettings;
+  workflowRuntime: WorkflowRuntime;
 }
 
 /**
@@ -41,13 +43,17 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
   const {
     todoRuntime, mcpManager, deliveryRuntime, permissions, lens,
     policyStatePromise, clearReviewFindings,
-    goalController, goalSettings,
+    goalController, goalSettings, workflowRuntime,
   } = deps;
 
   pi.on("session_start", async (event, ctx) => {
     clearReviewFindings();
     todoRuntime.reconstructFrom(ctx.sessionManager.getBranch());
     ctx.ui.setStatus("harness-todo", todoRuntime.statusSegment(ctx));
+    workflowRuntime.reconstruct(ctx.sessionManager.getBranch(), {
+      pauseActiveReason: "restart_requires_approval",
+    });
+    ctx.ui.setStatus("harness-waves", workflowStatusSegment(workflowRuntime.current));
     if (!mcpManager) return;
 
     // ── Restore a persisted /goal across a session restart ──────────────
@@ -56,11 +62,9 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
     // fold this into the same isSubagent check other blocks below use,
     // since that guard is already implied here; adding a second redundant
     // isSubagent check would only obscure that this whole handler tail is
-    // parent-only. Restore leaves the goal active/paused as stored but does
-    // NOT auto-continue it (no sendFollowUp/sendUserMessage here) — the loop
-    // only advances on agent_end, and firing work unprompted on launch would
-    // be surprising. The status line + notify below hand control back to
-    // the user (their next message, or /goal resume for a paused goal).
+    // parent-only. Persistence stores Goal Intent, not runtime authority, so
+    // every restored goal is paused. `/goal resume` acquires a fresh Work
+    // Contract and continuation grant before any work can restart.
     const repo = process.cwd();
     const storedGoal = await loadGoalState(repo, repo);
     if (storedGoal && ctx.isProjectTrusted()) {
@@ -69,7 +73,7 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
       goalController.adoptFrom(restored);
       ctx.ui.setStatus("harness-goal", renderGoalStatusSegment(goalController.snapshot()));
       ctx.ui.notify(
-        `◎ /goal restored (${storedGoal.status}) — ${storedGoal.condition}. ${storedGoal.status === "paused" ? "Run /goal resume to continue." : "Send a message or run /goal resume to continue working on it."}`,
+        `◎ /goal intent restored (paused) — ${storedGoal.condition}. Run /goal resume to authorize continuation.`,
         "info",
       );
     } else if (storedGoal) {
@@ -173,23 +177,12 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
         }
       }).catch(() => {});
 
-      // Non-blocking pi-subagents patch-drift check and self-repair. A package
-      // update wipes the Thanos source patches (see
-      // scripts/patch-pi-subagents.mjs), and the first symptom is the fanout
-      // double-registration crash resurfacing unexplained on a reviewer run.
-      // Drift is re-applied automatically rather than only reported: the repair
-      // is idempotent, local, and identical to the manual re-run, and leaving it
-      // to the human means the next nested run crashes before anyone acts on the
-      // warning. Only if repair fails does this fall back to warning.
-      // Silent when pi-subagents isn't installed or the patches are intact.
-      // The benign verdict is cached (see repairPatchDriftCached) so a patch that
-      // upstream has made permanently obsolete does not re-spawn the repair chain
-      // on every session to re-derive an answer that cannot change.
+      // Detection only. External package source is mutated at controlled
+      // install/update time, never as a side effect of opening a session.
       checkPatchDrift().then(async (result) => {
         if (!result.installed || result.missingMarkers.length === 0) return;
-        const repair = await repairPatchDriftCached(result.missingMarkers);
-        const notice = formatPatchRepairNotice(result, repair);
-        if (notice) ctx.ui.notify(notice.message, notice.level);
+        const warning = formatPatchDriftWarning(result);
+        if (warning) ctx.ui.notify(warning, "warning");
       }).catch(() => {});
     }
 
@@ -230,6 +223,8 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
   pi.on("session_tree", async (_event, ctx) => {
     todoRuntime.reconstructFrom(ctx.sessionManager.getBranch());
     ctx.ui.setStatus("harness-todo", todoRuntime.statusSegment(ctx));
+    workflowRuntime.reconstruct(ctx.sessionManager.getBranch());
+    ctx.ui.setStatus("harness-waves", workflowStatusSegment(workflowRuntime.current));
   });
 
   // ── MCP cleanup on shutdown ────────────────────────────────────────

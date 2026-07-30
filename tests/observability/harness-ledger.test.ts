@@ -1,5 +1,9 @@
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  createOrderedHarnessRecorder,
   HARNESS_LEDGER_DEFAULT_PATH,
   serializeHarnessEvent,
   type HarnessEvent,
@@ -60,5 +64,29 @@ describe("serializeHarnessEvent", () => {
 
   it("exposes the default JSONL path", () => {
     expect(HARNESS_LEDGER_DEFAULT_PATH).toBe(".harness/evolution/events.jsonl");
+  });
+
+  it("serializes concurrent lifecycle writes in call order", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "harness-ledger-order-"));
+    const record = createOrderedHarnessRecorder(cwd);
+    const first = record({
+      type: "waves_lifecycle",
+      taskId: "session-1",
+      summary: "planning",
+      outcome: "planning",
+      createdAt: "2026-07-29T00:00:00.000Z",
+    });
+    const second = record({
+      type: "waves_lifecycle",
+      taskId: "session-1",
+      summary: "paused",
+      outcome: "paused",
+      createdAt: "2026-07-29T00:00:01.000Z",
+    });
+    await Promise.all([first, second]);
+
+    const lines = (await readFile(join(cwd, HARNESS_LEDGER_DEFAULT_PATH), "utf8"))
+      .trim().split("\n").map((line) => JSON.parse(line));
+    expect(lines.map(({ outcome }) => outcome)).toEqual(["planning", "paused"]);
   });
 });

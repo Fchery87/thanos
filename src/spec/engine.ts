@@ -8,10 +8,15 @@ import { buildContractFromTaskContract } from "./contract";
 import type { TaskContract } from "./task-contract";
 import type { WorkingTreeSnapshot } from "./diff-evidence";
 import type { FormalSpec, SpecTier } from "./types";
+import { contractRevision, targetRoots } from "./work-contract";
+import { issueRunGrant, type RunGrant } from "../governance/run-grant";
+import type { WavePlan, WorkflowPlan } from "../workflows/types";
+import type { WorkflowEvidenceRef } from "../workflows/state";
 
 export class SpecEngine {
   activeSpec: FormalSpec | undefined;
   gateAttempts = 0;
+  private approvedRunGrant: RunGrant | undefined;
   /**
    * Working-tree state as of turn start, awaited at agent_end to tell this turn's
    * changes from work that was already dirty. Held as a promise so capturing it
@@ -46,12 +51,110 @@ export class SpecEngine {
     private readonly report: ExtractionReporter = noopExtractionReporter,
   ) {}
 
+  get runGrant(): RunGrant | undefined {
+    return this.approvedRunGrant;
+  }
+
+  get workContractRevision(): string | undefined {
+    return this.activeSpec ? contractRevision(this.activeSpec) : undefined;
+  }
+
+  async approveWorkContract(repoDir: string, runId: string): Promise<boolean> {
+    const active = this.activeSpec;
+    if (!active || active.tier !== "explicit" || active.approvalStatus !== "pending") return false;
+    const revision = contractRevision(active);
+
+    if (active.allowedCapabilities.includes("edit")) {
+      const grant = await issueRunGrant({
+        repoDir,
+        runId,
+        contractRevision: revision,
+        capabilities: active.allowedCapabilities,
+        targetRoots: active.targetFiles,
+      });
+      if (!grant) return false;
+      this.approvedRunGrant = grant;
+    }
+
+    active.approvalStatus = "approved";
+    return true;
+  }
+
+  bindWorkflowPlan(plan: WavePlan): void {
+    const active = this.activeSpec;
+    if (!active || active.tier !== "explicit") return;
+    active.workflowPlan = {
+      ...plan,
+      integration: {
+        targetRoots: [...plan.integration.targetRoots],
+        capabilities: [...plan.integration.capabilities],
+        criteria: plan.integration.criteria.map((criterion) => ({
+          ...criterion,
+          evidenceRequired: [...criterion.evidenceRequired],
+          ...(criterion.evidenceAnyOf
+            ? { evidenceAnyOf: criterion.evidenceAnyOf.map((group) => [...group]) }
+            : {}),
+        })),
+        limits: { ...plan.integration.limits },
+      },
+      nodes: plan.nodes.map((node) => ({
+        ...node,
+        dependsOn: [...node.dependsOn],
+      })),
+    };
+    active.targetFiles = [...new Set(plan.integration.targetRoots)].sort();
+    active.allowedCapabilities = [...new Set(plan.integration.capabilities)];
+    active.acceptanceCriteria = [
+      ...plan.integration.criteria.map((criterion) => ({
+        id: `integration:${criterion.id}`,
+        statement: criterion.statement,
+        evidenceRequired: [...criterion.evidenceRequired],
+        ...(criterion.evidenceAnyOf
+          ? { evidenceAnyOf: criterion.evidenceAnyOf.map((group) => [...group]) }
+          : {}),
+        source: "user" as const,
+      })),
+      {
+        id: `workflow:${plan.id}`,
+        statement: `Enforced workflow ${plan.id} completed with accepted required nodes`,
+        evidenceRequired: ["workflow"],
+        source: "user",
+      },
+    ];
+    this.approvedRunGrant = undefined;
+    if (active.approvalStatus === "approved") active.approvalStatus = "pending";
+  }
+
+  recordWorkflowEvidenceRefs(
+    plan: WorkflowPlan,
+    references: WorkflowEvidenceRef[],
+    verdict: { accepted: boolean; reasons: string[] },
+  ): void {
+    if (!this.activeSpec || this.activeSpec.workflowPlan?.id !== plan.id) return;
+    const requiredAccepted = plan.nodes
+      .filter((node) => node.required)
+      .every((node) => references.some((evidence) => evidence.nodeId === node.id));
+    this.recordEvidence({
+      kind: "workflow",
+      workflowId: plan.id,
+      nodes: references.map((reference) => ({
+        nodeId: reference.nodeId,
+        ownerRunId: reference.ownerRunId,
+        runId: reference.runId,
+        launchContractDigest: reference.launchContractDigest,
+        artifacts: reference.artifacts.map(({ path, sha256 }) => ({ path, sha256 })),
+      })),
+      reasons: [...verdict.reasons],
+      passed: verdict.accepted && requiredAccepted,
+    });
+  }
+
   classify(prompt: string, explicitFlag: boolean): SpecTier {
     const lower = prompt.trim().toLowerCase();
+    if (explicitFlag) return "explicit";
     if (lower.length < 20 || /^(what|how|why|explain|show|list|describe|tell)/.test(lower)) {
       return "instant";
     }
-    if (explicitFlag) return "explicit";
     return "ambient";
   }
 
@@ -117,6 +220,7 @@ export class SpecEngine {
     // Mutated in place so references captured by callers stay valid.
     this.activeSpec.taskContract = contract;
     this.activeSpec.acceptanceCriteria = buildContractFromTaskContract(contract).acceptanceCriteria;
+    this.activeSpec.targetFiles = targetRoots(contract);
     this.report({ outcome: "accepted", criteriaCount: contract.criteria.length });
   }
 
@@ -140,6 +244,7 @@ export class SpecEngine {
     this.turnBaseline = undefined;
     this.pendingContract = undefined;
     this.pendingContractFor = undefined;
+    this.approvedRunGrant = undefined;
   }
 
   /**

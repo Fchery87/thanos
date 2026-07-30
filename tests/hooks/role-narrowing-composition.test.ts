@@ -6,7 +6,7 @@ import { authorizeVia } from "../helpers/authorize";
  * roleNarrowingOverlay(childRole) via buildEffectivePolicy, so passing a
  * `childRole` exercises the real wiring the `pi.on("tool_call")` gate uses for a
  * subagent child. Proves the narrowing rule wins over both a broad ceiling allow
- * and unattended autonomy's "trust the ceiling" bypass.
+ * and unattended autonomy's Run Grant requirement.
  */
 
 const promptThatThrows = async (): Promise<boolean> => {
@@ -44,34 +44,36 @@ describe("role-narrowing composition (unattended live subagent)", () => {
     expect(decision.reason).toContain("role-deny-exec");
   });
 
-  it("evaluator: exec is allowed per the ceiling, edit is denied", async () => {
+  it("evaluator: shell is excluded unattended and edit is role-denied", async () => {
     const execDecision = await authorizeVia(child("evaluator"), "bash", { command: "npm test" });
-    expect(execDecision.block).toBe(false); // no rule denies exec — unattended trusts the ceiling
+    expect(execDecision.block).toBe(true);
+    expect(execDecision.reason).toContain("excluded from unattended");
 
     const editDecision = await authorizeVia(child("evaluator"), "edit", { file_path: "src/foo.ts" });
     expect(editDecision.block).toBe(true);
     expect(editDecision.reason).toContain("role-deny-edit");
   });
 
-  it("designer: edit is allowed per the ceiling, exec is denied", async () => {
+  it("designer: edit lacks a Run Grant and exec is role-denied", async () => {
     const editDecision = await authorizeVia(child("designer"), "edit", { file_path: "src/foo.ts" });
-    expect(editDecision.block).toBe(false);
+    expect(editDecision.block).toBe(true);
+    expect(editDecision.reason).toContain("Run Grant");
 
     const execDecision = await authorizeVia(child("designer"), "bash", { command: "rm -rf tmp" });
     expect(execDecision.block).toBe(true);
     expect(execDecision.reason).toContain("role-deny-exec");
   });
 
-  it("writer role (build): no narrowing — both edit and exec follow the ceiling", async () => {
+  it("writer role (build): unattended still requires a grant and excludes shell", async () => {
     const editDecision = await authorizeVia(child("build"), "edit", { file_path: "src/foo.ts" });
-    expect(editDecision.block).toBe(false);
+    expect(editDecision.block).toBe(true);
 
     const execDecision = await authorizeVia(child("build"), "bash", { command: "npm test" });
-    expect(execDecision.block).toBe(false);
+    expect(execDecision.block).toBe(true);
   });
 
-  it("undefined role (parent session): no narrowing", async () => {
+  it("undefined role does not bypass the unattended Run Grant requirement", async () => {
     const decision = await authorizeVia(child(undefined), "edit", { file_path: "src/foo.ts" });
-    expect(decision.block).toBe(false);
+    expect(decision.block).toBe(true);
   });
 });

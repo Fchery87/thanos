@@ -4,7 +4,7 @@ import { DEFAULT_GOAL_SETTINGS, resolveGoalSettings } from "../../src/goal/types
 describe("goal settings", () => {
   it("has the approved defaults", () => {
     expect(DEFAULT_GOAL_SETTINGS).toEqual({
-      maxTurns: 25, maxTokens: 0, checkpointEvery: 0, evaluatorRole: "evaluator",
+      maxTurns: 25, maxTokens: 0, checkpointEvery: 0,
     });
   });
 

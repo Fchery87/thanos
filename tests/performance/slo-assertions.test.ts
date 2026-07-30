@@ -1,19 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
-
-interface SloTarget {
-  name: string;
-  maxMs: number;
-  measurement: number;
-  passed: boolean;
-}
-
-const targets: SloTarget[] = [];
-
-function record(name: string, ms: number, maxMs: number): void {
-  targets.push({ name, maxMs, measurement: Math.round(ms * 100) / 100, passed: ms <= maxMs });
-}
 
 describe("release SLOs", () => {
   it("low-risk governance hook p95 under 10ms", async () => {
@@ -26,7 +11,6 @@ describe("release SLOs", () => {
     }
     const totalMs = performance.now() - t0;
     const perCallMs = totalMs / 1500;
-    record("low-risk hook p95", perCallMs, 10);
     expect(perCallMs).toBeLessThan(10);
   });
 
@@ -41,7 +25,6 @@ describe("release SLOs", () => {
     }
     const totalMs = performance.now() - t0;
     const perCallMs = totalMs / 400;
-    record("high-risk decision path p95", perCallMs, 25);
     expect(perCallMs).toBeLessThan(25);
   });
 
@@ -52,9 +35,8 @@ describe("release SLOs", () => {
   // the result to a 10s budget. That number was vitest transforming the entire
   // TypeScript module graph on demand — it reported 31,578ms against a real cold
   // load of ~1,530ms in the fresh bun process pi actually uses. Worse, its only
-  // assertion was `toBeGreaterThan(0)`, so it could not fail: .harness/slo-results.json
-  // carried `passed: false` for weeks while `bun run test` stayed green, which
-  // is how a gate teaches you to stop reading it.
+  // assertion was `toBeGreaterThan(0)`, so it could not fail while the suite
+  // stayed green, which is how a gate teaches you to stop reading it.
   //
   // The honest measurement needs a process that isn't a test runner, so it lives
   // in scripts/measure-harness.mjs (`bun run measure`).
@@ -70,7 +52,6 @@ describe("release SLOs", () => {
     }
     const totalMs = performance.now() - t0;
     const perCallMs = totalMs / 3000;
-    record("session rule evaluation", perCallMs, 0.5);
     expect(perCallMs).toBeLessThan(0.5);
   });
 
@@ -95,19 +76,6 @@ describe("release SLOs", () => {
     }
     const totalMs = performance.now() - t0;
     const perCallMs = totalMs / 1000;
-    record("policy evaluation (100 rules, 1000x)", perCallMs, 5);
     expect(perCallMs).toBeLessThan(5);
   });
-});
-
-import { afterAll } from "vitest";
-
-afterAll(async () => {
-  const results = {
-    generatedAt: new Date().toISOString(),
-    passed: targets.every((t) => t.passed),
-    targets,
-  };
-  const path = join(process.cwd(), ".harness", "slo-results.json");
-  await writeFile(path, JSON.stringify(results, null, 2), "utf-8");
 });

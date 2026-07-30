@@ -14,7 +14,8 @@ export type HarnessEventType =
   | "spec_extraction"
   | "goal_set"
   | "goal_achieved"
-  | "goal_paused";
+  | "goal_paused"
+  | "waves_lifecycle";
 
 export interface HarnessEvent {
   type: HarnessEventType;
@@ -34,4 +35,15 @@ export async function appendHarnessEvent(event: HarnessEvent, cwd = process.cwd(
   const path = join(cwd, HARNESS_LEDGER_DEFAULT_PATH);
   await mkdir(dirname(path), { recursive: true });
   await appendFile(path, serializeHarnessEvent(event), "utf-8");
+}
+
+export function createOrderedHarnessRecorder(
+  cwd = process.cwd(),
+): (event: HarnessEvent) => Promise<void> {
+  let tail = Promise.resolve();
+  return (event) => {
+    const write = tail.then(() => appendHarnessEvent(event, cwd));
+    tail = write.catch(() => {});
+    return write;
+  };
 }

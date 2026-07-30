@@ -188,37 +188,42 @@ In addition to the roles above, three **focused review critics** ship as agent f
 
 ### Code review jury (`Ctrl+Shift+R`)
 
-**This is a prompt, not a runtime.** The shortcut composes an instruction asking
-the agent to dispatch `reviewer-correctness`, `reviewer-security` and
-`reviewer-tests` in parallel over the session diff, run an `oracle` as a devil's
-advocate, and synthesize one verdict (APPROVE / COMMENT / REQUEST_CHANGES). Those
-agents exist and the delegation works, but nothing enforces that all three ran,
-that the oracle ran after them, or that the verdict reflects what they returned.
-
-A `jury-runtime` module did the result-shaping and synthesis. It became
-unreachable when delegation moved to `pi-subagents`, sat that way, and was
-deleted on 2026-07-27. What is left is the prompt and the agents it names.
-
-Read a jury verdict as the agent's own work, on the same evidence bar as any
-other turn — not as a structurally guaranteed multi-critic result.
+The shortcut runs the code-owned jury DAG through `pi-subagents`: correctness,
+security, and test critics run independently, then the oracle receives their
+accepted evidence. The oracle must return the structured
+`APPROVE | REQUEST_CHANGES` schema. Warnings are nonblocking; every blocker must
+identify evidence, an affected path, and a required correction. In a Waves
+workflow this same jury is launched only after a revision-bound
+`workflow_yield`.
 
 ### Bounded waves (`/waves`)
 
-**This is a prompt, not a runtime.** `/waves <goal>` composes an instruction to
-decompose work into independent slices, fan out bounded parallel workers, verify
-each handoff, and synthesize one deliverable.
+`/waves <goal>` starts an enforced, parent-owned workflow. A planner produces a
+schema-validated read-only investigation DAG and one parent Integration
+Contract. The operator approves that exact Work Contract before any mutating
+integration; delegated nodes never receive mutation authority. `pi-subagents`
+remains the sole child lifecycle and recovery authority.
 
-The guarantees this section used to claim — width and depth caps, disjoint write
-ownership across slices, handoff verification as the stop function — were
-implemented in `waves/runtime.ts`, `waves/plan.ts` and `waves/verify.ts`. None of
-it was reachable after delegation moved to `pi-subagents`; all of it was deleted
-on 2026-07-27. Write isolation for delegated work is real, but it comes from
-worktree-isolated writer agents and the per-agent tool grants, not from anything
-reconciling one slice's paths against another's.
+Accepted V2 evidence references, child attempt counts, phase transitions,
+integration turns, jury rounds, yield identity, and lineage are appended to the
+active Pi session branch. Run Grants, abort controllers, and full child payloads
+are not serialized. Reload restores a nonterminal workflow paused and requires
+fresh approval.
 
-Use `/waves` as a decomposition prompt. Do not rely on it to keep two parallel
-writers off the same file. See
-[main-agent-orchestrator-workflow.md](main-agent-orchestrator-workflow.md).
+The main session integrates the accepted investigation evidence and calls
+`workflow_yield`. The yield binds `HEAD` plus the working-tree snapshot. A stale
+or unavailable identity pauses before jury. `REQUEST_CHANGES` journals the
+structured corrections and returns them to the same Integration Owner;
+`APPROVE` remains nonterminal until SpecEngine accepts the Work Contract.
+Goal-Attached Waves additionally requires `goal_complete`.
+
+Integration and jury totals survive pause, reload, and handoff. Only an
+operator-approved contract revision may increase the exhausted total. ESC and
+Pi retry/compaction recovery consume neither budget. Ordinary session switch,
+fork, and tree navigation are blocked while Waves is nonterminal; `/waves
+handoff` creates a lineage-linked paused destination with a new identity and
+fresh approval requirement. Cancellation is terminal but preserves the working
+tree.
 
 ### Per-role model routing
 

@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile, realpath } from "node:fs/promises";
+import { lstat, readFile, readlink, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { DiffEvidence } from "./claims";
@@ -69,30 +69,64 @@ async function git(repoDir: string, args: string[]): Promise<string | undefined>
  * second NUL-separated field holding the source path, which must be consumed so it
  * is not mistaken for another entry.
  */
-function parsePorcelain(stdout: string): string[] {
+interface DirtyPath {
+  path: string;
+  status: string;
+}
+
+function parsePorcelain(stdout: string): DirtyPath[] {
   const fields = stdout.split("\0").filter((field) => field.length > 0);
-  const paths: string[] = [];
+  const paths: DirtyPath[] = [];
 
   for (let i = 0; i < fields.length; i += 1) {
     const entry = fields[i] ?? "";
     const status = entry.slice(0, 2);
     const path = entry.slice(3);
-    if (path.length > 0) paths.push(path);
-    if (status.startsWith("R") || status.startsWith("C")) i += 1;
+    if (path.length > 0) paths.push({ path, status });
+    if (status.startsWith("R") || status.startsWith("C")) {
+      const source = fields[i + 1];
+      if (source) paths.push({ path: source, status: `${status}:source` });
+      i += 1;
+    }
   }
 
   return paths;
 }
 
-async function hashFile(absolutePath: string): Promise<string> {
+async function hashPathIdentity(absolutePath: string): Promise<string> {
   try {
+    const stat = await lstat(absolutePath);
+    if (stat.isSymbolicLink()) {
+      const target = await readlink(absolutePath);
+      return createHash("sha256").update(`symlink\0${target}`).digest("hex").slice(0, 16);
+    }
     const contents = await readFile(absolutePath);
-    return createHash("sha256").update(contents).digest("hex").slice(0, 16);
+    return createHash("sha256").update("file\0").update(contents).digest("hex").slice(0, 16);
   } catch {
     // Deleted, or unreadable. Either way it differs from any real content hash,
     // so a deletion during the turn still registers as a change.
     return UNREADABLE;
   }
+}
+
+async function indexIdentities(repoDir: string, paths: string[]): Promise<Map<string, string> | undefined> {
+  if (paths.length === 0) return new Map();
+  const output = await git(repoDir, ["ls-files", "--stage", "-z", "--", ...paths]);
+  if (output === undefined) return undefined;
+
+  const byPath = new Map<string, string[]>();
+  for (const field of output.split("\0")) {
+    if (!field) continue;
+    const match = /^(\d+) ([0-9a-f]+) (\d+)\t([\s\S]+)$/.exec(field);
+    if (!match) continue;
+    const [, mode, blob, stage, path] = match;
+    if (!path) continue;
+    const entries = byPath.get(path) ?? [];
+    entries.push(`${mode}:${blob}:${stage}`);
+    byPath.set(path, entries);
+  }
+
+  return new Map([...byPath].map(([path, entries]) => [path, entries.sort().join(",")]));
 }
 
 /**
@@ -107,16 +141,23 @@ export async function snapshotWorkingTree(repoDir: string = process.cwd()): Prom
   const status = await git(repoDir, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
   if (status === undefined) return undefined;
 
-  const paths = parsePorcelain(status);
-  if (paths.length > MAX_CHANGED_FILES) return undefined;
+  const dirty = parsePorcelain(status);
+  if (dirty.length > MAX_CHANGED_FILES) return undefined;
+  const index = await indexIdentities(top, dirty.map((entry) => entry.path));
+  if (!index) return undefined;
 
   // Chunked rather than one Promise.all over every path: up to MAX_CHANGED_FILES
   // whole files read into memory at once is a needless spike on a hot path.
   const snapshot: WorkingTreeSnapshot = new Map();
-  for (let i = 0; i < paths.length; i += HASH_CONCURRENCY) {
-    const chunk = paths.slice(i, i + HASH_CONCURRENCY);
-    const hashes = await Promise.all(chunk.map((path) => hashFile(join(top, path))));
-    chunk.forEach((path, index) => snapshot.set(path, hashes[index] ?? UNREADABLE));
+  for (let i = 0; i < dirty.length; i += HASH_CONCURRENCY) {
+    const chunk = dirty.slice(i, i + HASH_CONCURRENCY);
+    const hashes = await Promise.all(chunk.map((entry) => hashPathIdentity(join(top, entry.path))));
+    chunk.forEach((entry, offset) => {
+      snapshot.set(
+        entry.path,
+        `${entry.status}\0${hashes[offset] ?? UNREADABLE}\0${index.get(entry.path) ?? "<not-in-index>"}`,
+      );
+    });
   }
 
   return snapshot;

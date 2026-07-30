@@ -94,7 +94,8 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: BeforeAgentStar
     permissions.clearSessionRules();  // clear deny rules from any prior rejection
     const isHarnessContinuation =
       consumeContinuation(sessionId, "spec", event.prompt) ||
-      consumeContinuation(sessionId, "goal", event.prompt);
+      consumeContinuation(sessionId, "goal", event.prompt) ||
+      consumeContinuation(sessionId, "waves", event.prompt);
     if (!isHarnessContinuation) {
       // Hand the extractor this turn's model + registry before generation kicks
       // it off. Without a context it degrades to deterministic-only.

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { EvaluatorOverride } from "./evaluator-model";
+import type { RoleModelOverride } from "./model-routing";
 import type { GoalSettings } from "./types";
 
 function settingsPath(): string {
@@ -26,10 +26,10 @@ export function loadGoalSettings(): Partial<GoalSettings> | undefined {
 /**
  * Pull the ACTIVE routing entry for a role out of a parsed settings object.
  * Reads only `subagents.agentOverrides` — the key pi-subagents applies — so
- * the goal evaluator follows the same on/off toggle as every other subagent
+ * the routed role follows the same on/off toggle as every other subagent
  * (savedAgentOverrides is the inactive stash and is deliberately ignored).
  */
-export function evaluatorOverrideFrom(settings: unknown, role: string): EvaluatorOverride | undefined {
+export function roleOverrideFrom(settings: unknown, role: string): RoleModelOverride | undefined {
   if (typeof settings !== "object" || settings === null) return undefined;
   const subagents = (settings as { subagents?: unknown }).subagents;
   if (typeof subagents !== "object" || subagents === null) return undefined;
@@ -46,13 +46,13 @@ export function evaluatorOverrideFrom(settings: unknown, role: string): Evaluato
 }
 
 /**
- * Best-effort read of the live routing entry for the goal evaluator role.
+ * Best-effort read of the live routing entry for a model-routed role.
  * Re-reads settings.json on each call so /subagents-models enable|disable
  * takes effect mid-session without a restart.
  */
-export function loadEvaluatorOverride(role: string): EvaluatorOverride | undefined {
+export function loadRoleOverride(role: string): RoleModelOverride | undefined {
   try {
-    return evaluatorOverrideFrom(JSON.parse(readFileSync(settingsPath(), "utf-8")), role);
+    return roleOverrideFrom(JSON.parse(readFileSync(settingsPath(), "utf-8")), role);
   } catch {
     return undefined;
   }

@@ -14,6 +14,7 @@ import {
   deliveryPolicyOverlay,
 } from "../governance/delivery-overlay";
 import { shouldBlockLocalOnlyPush } from "../governance/push-guard";
+import { authorizeRunGrant, type RunGrant } from "../governance/run-grant";
 
 export interface GovernanceContext {
   policy: HarnessPolicy | undefined;
@@ -33,6 +34,11 @@ export interface GovernanceContext {
   agentType: "parent" | "subagent";
   recordAudit: (event: AuditEvent) => Promise<void>;
   promptUser: (message: string) => Promise<boolean>;
+  workContract?: {
+    repoDir: string;
+    revision: string;
+    runGrant: RunGrant | undefined;
+  };
 }
 
 export interface GovernanceDecision {
@@ -111,6 +117,54 @@ export class GovernanceRuntime {
       };
     }
 
+    const permDecision = permissions.evaluate(governed.call.capability, governed.call.target);
+    if (permDecision === "deny") {
+      await this.audit("deny", toolName, governed.call.capability);
+      return { block: true, reason: `${toolName} denied (capability: ${governed.call.capability})` };
+    }
+
+    // The approved Work Contract is the direct authority for reversible,
+    // structured writes. It both removes the duplicate per-operation prompt and
+    // prevents a failed containment check from falling back to a broader session
+    // permission.
+    if (governed.call.capability === "edit" && this.ctx.workContract) {
+      const grantDecision = await authorizeRunGrant(this.ctx.workContract.runGrant, {
+        repoDir: this.ctx.workContract.repoDir,
+        contractRevision: this.ctx.workContract.revision,
+        capability: governed.call.capability,
+        target: governed.call.target,
+      });
+      if (!grantDecision.allowed) {
+        await this.audit("deny", toolName, governed.call.capability, "work-contract");
+        return { block: true, reason: grantDecision.reason ?? "structured mutation is outside the Work Contract" };
+      }
+      await this.audit("allow", toolName, governed.call.capability, "work-contract");
+      return { block: false, operation: this.toOperation(governed), snapshotNeeded: false };
+    }
+
+    // Unattended is execution behavior, not approval. Read-only calls keep the
+    // normal low-risk path; delegation/interaction may coordinate; mutation
+    // requires the Run Grant branch above. Shell, MCP, unknown, and other exec
+    // surfaces fail closed even if yolo was accidentally left enabled.
+    if (this.ctx.autonomy === "unattended") {
+      if (governed.call.riskTier === "low" && governed.policyDecision?.decision !== "ask") {
+        await this.audit("allow", toolName, governed.call.capability, governed.policyDecision?.ruleId);
+        return { block: false, operation: this.toOperation(governed), snapshotNeeded: false };
+      }
+      if (
+        governed.call.recognized
+        && (governed.call.capability === "task" || governed.call.capability === "interaction")
+      ) {
+        await this.audit("allow", toolName, governed.call.capability, "autonomy:coordination");
+        return { block: false, operation: this.toOperation(governed), snapshotNeeded: false };
+      }
+      await this.audit("deny", toolName, governed.call.capability, "autonomy:run-grant-required");
+      return {
+        block: true,
+        reason: `${toolName} is excluded from unattended execution without an approved structured-mutation Run Grant`,
+      };
+    }
+
     // Yolo: skip the remaining PROMPTS and risk gating — but never an explicit
     // deny, and never the pre-critical rollback snapshot. A permission-manager
     // deny (a preset deny or a session-remembered deny) still blocks here, so a
@@ -138,19 +192,6 @@ export class GovernanceRuntime {
     // Explicit policy allow for unrecognized tools (MCP escape hatch)
     if (!governed.call.recognized && governed.policyDecision?.decision === "allow") {
       await this.audit("allow", toolName, governed.call.capability, governed.policyDecision.ruleId);
-      return { block: false, operation: this.toOperation(governed) };
-    }
-
-    // Permission evaluation
-    const permDecision = permissions.evaluate(governed.call.capability, governed.call.target);
-    if (permDecision === "deny") {
-      await this.audit("deny", toolName, governed.call.capability);
-      return { block: true, reason: `${toolName} denied (capability: ${governed.call.capability})` };
-    }
-
-    // Unattended autonomy: auto-allow known tools within the ceiling
-    if (this.ctx.autonomy === "unattended" && governed.call.recognized) {
-      await this.audit("allow", toolName, governed.call.capability, "autonomy:unattended");
       return { block: false, operation: this.toOperation(governed) };
     }
 

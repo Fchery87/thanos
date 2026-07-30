@@ -1,5 +1,3 @@
-import type { Context } from "@earendil-works/pi-ai";
-import { buildEvaluatorEvidenceMessage, EVALUATOR_RUBRIC } from "../evaluation/prompt-boundary";
 import { buildPromptSections, renderCompletionCriteria, renderContextEnvelope } from "../prompts/style";
 
 /**
@@ -9,19 +7,15 @@ import { buildPromptSections, renderCompletionCriteria, renderContextEnvelope } 
  */
 export const GOAL_DIRECTIVE_SENTINEL = "[harness:goal-directive]";
 
-export const EVALUATOR_SYSTEM = EVALUATOR_RUBRIC;
-
 /**
- * The worker must know how it is judged. The checker runs ONLY when the agent
- * calls `goal_complete` (not per turn) and is tool-less: it sees ONLY the final
- * message + last tool outputs of the turn in which goal_complete is called, so
- * proof that is not surfaced in that same turn does not count.
+ * The worker must know how it is judged. `goal_complete` is only a claim;
+ * SpecEngine decides it from accumulated repository and workflow evidence at
+ * agent_end.
  */
 const EVIDENCE_CONTRACT = [
-  "How you are judged: when you call `goal_complete`, a separate checker that cannot run tools",
-  "reads ONLY your final message and the last tool outputs of that turn. Work it cannot see",
-  "does not count — keep the concrete proof (test output, exit codes, counts, git status) in",
-  "the same turn where you call `goal_complete`.",
+  "How you are judged: `goal_complete` records only a completion claim. At agent_end,",
+  "SpecEngine checks the approved Work Contract against accumulated repository, command,",
+  "test, and workflow evidence. Missing deterministic evidence keeps the goal active.",
 ].join("\n");
 
 /**
@@ -32,8 +26,8 @@ const EVIDENCE_CONTRACT = [
 const COMPLETION_CONTRACT = [
   "Signal completion yourself: when every requirement is met AND verified, call the",
   "`goal_complete` tool with a summary of what you did and the evidence that proves it.",
-  "A fresh, tool-less checker confirms before the goal closes, so include real proof",
-  "(test output, exit codes, counts). Do not call it for partial progress, a plan, or",
+  "SpecEngine decides the claim from the approved Work Contract and concrete evidence.",
+  "Do not call it for partial progress, a plan, or",
   "unverified work.",
 ].join("\n");
 
@@ -42,9 +36,8 @@ const COMPLETION_CONTRACT = [
  * (see before_agent_start). Unlike the per-turn directives — which arrive as
  * user messages AFTER the agent has already decided to stop — this stands in
  * the system prompt for the whole turn, pushing the agent to finish more work
- * per turn and stop less. Fewer turns means fewer evaluator calls and far less
- * chance of nearing the turn ceiling. It restates the evidence contract because
- * the judge is tool-less: unsurfaced work reads as no progress.
+ * per turn and stop less. Fewer turns means less chance of nearing the turn
+ * ceiling.
  */
 export function buildGoalSystemPrompt(condition: string): string {
   return buildPromptSections([
@@ -96,21 +89,4 @@ export function buildContinueDirective(): string {
     "requirement is met AND verified, then call the `goal_complete` tool with the proof.",
     "(The active goal, the rules, and how you are judged are in your system prompt.)",
   ].join("\n");
-}
-
-export interface EvaluatorInput {
-  condition: string;
-  assistantClaim: string;
-  toolResultsText: string;
-  previousReason?: string;
-}
-
-export function buildEvaluatorContext(input: EvaluatorInput): Context {
-  const body = buildEvaluatorEvidenceMessage({
-    condition: input.condition,
-    previousReason: input.previousReason,
-    assistantClaim: input.assistantClaim,
-    toolResultsText: input.toolResultsText,
-  });
-  return { systemPrompt: EVALUATOR_SYSTEM, messages: [{ role: "user", content: body, timestamp: Date.now() }] };
 }

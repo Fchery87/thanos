@@ -101,7 +101,9 @@ function mustNotIsSatisfied(mustNot: string[], evidence: EvidenceRecord[]): bool
         ? `${record.runner} ${record.normalizedExecutable} ${record.args.join(" ")}`
         : record.kind === "command"
           ? `${record.family} ${record.normalizedExecutable} ${record.argv.join(" ")}`
-          : `${record.actor} ${record.claim} ${(record.scope ?? []).join(" ")}`;
+          : record.kind === "manual"
+            ? `${record.actor} ${record.claim} ${(record.scope ?? []).join(" ")}`
+            : `${record.workflowId} ${record.nodes.map((node) => `${node.ownerRunId}/${node.nodeId}/${node.runId}`).join(" ")}`;
     return mustNot.some((forbidden) => text.toLowerCase().includes(forbidden.toLowerCase()));
   });
 }
@@ -131,6 +133,8 @@ function evidenceSummary(record: EvidenceRecord): string {
       return `${record.argv.join(" ")} (exit ${record.exitCode})`;
     case "manual":
       return `manual: ${record.actor} — ${record.claim.slice(0, 80)}`;
+    case "workflow":
+      return `workflow ${record.workflowId}: ${record.nodes.map((node) => `${node.ownerRunId}/${node.nodeId}/${node.runId}`).join(", ")}`;
   }
 }
 
@@ -160,6 +164,7 @@ export function verifyCriteria(spec: FormalSpec, evidence: EvidenceRecord[]): Ve
       if (record.kind === "test") return testMatchesTaskCriterion(taskCriterion, record);
       if (record.kind === "command") return commandMatchesTaskCriterion(taskCriterion, record);
       if (record.kind === "manual") return pathsMatchTargets(taskCriterion.targets, record.scope ?? []);
+      if (record.kind === "workflow") return false;
       return true;
     });
     const matchedTypes = new Set(matchingEvidence.map((e) => e.kind));

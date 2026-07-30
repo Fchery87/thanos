@@ -1,0 +1,169 @@
+diff --git a/src/api/delegation.ts b/src/api/delegation.ts
+index fcf12c7..1d87674 100644
+--- a/src/api/delegation.ts
++++ b/src/api/delegation.ts
+@@ -219,6 +219,7 @@ export interface SubagentDelegationV2Request {
+ 	turnBudget?: SubagentDelegationTurnBudget;
+ 	toolBudget?: SubagentDelegationToolBudget;
+ 	skill?: string | string[] | boolean;
++	acceptance?: SubagentDelegationAcceptance;
+ 	artifacts?: boolean;
+ 	result: SubagentDelegationV2ResultRequest;
+ }
+@@ -260,6 +261,14 @@ export interface SubagentDelegationV2Usage {
+ 	durationMs: number;
+ }
+ 
++/** thanos-patch: V2 evidence envelope types (remove after upstream support) */
++export interface SubagentDelegationV2Artifact {
++	kind: string;
++	path: string;
++	sha256: string;
++	bytes: number;
++}
++
+ export interface SubagentDelegationV2TerminalResponse extends SubagentDelegationV2Started {
+ 	status: Exclude<SubagentDelegationV2Status, "invalid_request">;
+ 	error?: string;
+@@ -269,8 +278,15 @@ export interface SubagentDelegationV2TerminalResponse extends SubagentDelegation
+ 	thinking?: string;
+ 	exitCode?: number;
+ 	launchContractDigest?: string;
++	execution?: SubagentDelegationExecutionResult;
++	acceptance?: SubagentDelegationAcceptanceResult;
++	review?: SubagentDelegationReviewResult;
++	effects?: SubagentDelegationEffectsResult;
++	artifacts?: SubagentDelegationV2Artifact[];
+ 	result?: SubagentDelegationV2Value;
+ 	usage?: SubagentDelegationV2Usage;
++	warnings?: string[];
++	residualRisks?: string[];
+ }
+ 
+ /** A malformed V2 request can only be correlated by the valid identity fields it supplied. */
+diff --git a/src/slash/delegation-adapters.ts b/src/slash/delegation-adapters.ts
+index 121c3eb..7d393eb 100644
+--- a/src/slash/delegation-adapters.ts
++++ b/src/slash/delegation-adapters.ts
+@@ -1,3 +1,6 @@
++/** thanos-patch: V2 evidence envelope projection (remove after upstream support) */
++import { createHash } from "node:crypto";
++import { readFileSync, statSync } from "node:fs";
+ import {
+ 	SUBAGENT_DELEGATION_PROTOCOL_VERSION,
+ 	SUBAGENT_DELEGATION_V2_PROTOCOL_VERSION,
+@@ -11,11 +14,12 @@ import {
+ 	type SubagentDelegationUpdate,
+ 	type SubagentDelegationV2Request,
+ 	type SubagentDelegationV2Response,
++	type SubagentDelegationV2Artifact,
+ 	type SubagentDelegationV2Thinking,
+ 	type SubagentDelegationV2Value,
+ 	type SubagentDelegationV2Update,
+ } from "../api/delegation.ts";
+-import type { AcceptanceInput, AgentContract, EffectsProjection, ExecutionProjection, JsonSchemaObject, ReviewProjection, ToolBudgetConfig, TurnBudgetConfig, Usage } from "../shared/types.ts";
++import type { AcceptanceInput, AcceptanceLedger, AgentContract, ArtifactPaths, EffectsProjection, ExecutionProjection, JsonSchemaObject, ReviewProjection, ToolBudgetConfig, TurnBudgetConfig, Usage } from "../shared/types.ts";
+ import { isAgentContractV1 } from "../runs/shared/agent-contract.ts";
+ import { cloneJsonWithinByteLimit } from "./delegation-json.ts";
+ 
+@@ -110,7 +114,8 @@ export interface PromptTemplateBridgeResult {
+ 			sessionFile?: string;
+ 			agentContract?: AgentContract;
+ 			execution?: ExecutionProjection;
+-			acceptance?: SubagentDelegationAcceptanceResult;
++			acceptance?: AcceptanceLedger;
++			artifactPaths?: ArtifactPaths;
+ 			review?: ReviewProjection;
+ 			effects?: EffectsProjection;
+ 			usage?: Usage;
+@@ -400,7 +405,7 @@ export function toSubagentDelegationV2ExecutionParams(request: SubagentDelegatio
+ 		skill: request.skill,
+ 		output: false,
+ 		...(request.result.kind === "structured" ? { outputSchema: request.result.schema } : {}),
+-		acceptance: false,
++		acceptance: request.acceptance,
+ 		artifacts: request.artifacts,
+ 		delegatedThinkingOverride: request.thinking,
+ 		delegatedAllowZeroToolBudget: true,
+@@ -508,6 +513,28 @@ export function toSubagentDelegationResponse(
+ 
+ const MAX_V2_RESULT_BYTES = 1024 * 1024;
+ 
++type PromptTemplateBridgeChild = NonNullable<NonNullable<PromptTemplateBridgeResult["details"]>["results"]>[number];
++
++function artifactEvidence(child: PromptTemplateBridgeChild | undefined): SubagentDelegationV2Artifact[] {
++	const paths = child?.artifactPaths;
++	if (!paths) return [];
++	return Object.entries(paths).flatMap(([kind, path]) => {
++		if (typeof path !== "string") return [];
++		try {
++			const stat = statSync(path);
++			if (!stat.isFile()) return [];
++			return [{
++				kind: kind.replace(/Path$/, ""),
++				path,
++				sha256: createHash("sha256").update(readFileSync(path)).digest("hex"),
++				bytes: stat.size,
++			}];
++		} catch {
++			return [];
++		}
++	});
++}
++
+ export function toSubagentDelegationV2Response(
+ 	request: SubagentDelegationV2Request,
+ 	result: PromptTemplateBridgeResult,
+@@ -545,6 +572,9 @@ export function toSubagentDelegationV2Response(
+ 		}
+ 	}
+ 	const usage = child?.usage;
++	const warnings = [child?.skillsWarning, child?.outputSaveError, child?.transcriptError]
++		.filter((warning): warning is string => typeof warning === "string" && warning.length > 0);
++	const acceptance = child?.acceptance;
+ 	return {
+ 		version: SUBAGENT_DELEGATION_V2_PROTOCOL_VERSION,
+ 		requestId: request.requestId,
+@@ -558,6 +588,11 @@ export function toSubagentDelegationV2Response(
+ 		...(child?.thinking ? { thinking: child.thinking } : {}),
+ 		...(typeof child?.exitCode === "number" ? { exitCode: child.exitCode } : {}),
+ 		...(child?.launchContractDigest ? { launchContractDigest: child.launchContractDigest } : {}),
++		...(child?.execution ? { execution: child.execution as SubagentDelegationExecutionResult } : {}),
++		...(acceptance ? { acceptance: { status: acceptance.status, evidenceStatus: acceptance.evidenceStatus, explicit: acceptance.explicit } } : {}),
++		...(child?.review ? { review: child.review as SubagentDelegationReviewResult } : {}),
++		...(child?.effects ? { effects: child.effects as SubagentDelegationEffectsResult } : {}),
++		artifacts: artifactEvidence(child),
+ 		...(projectedResult ? { result: projectedResult } : {}),
+ 		...(usage ? {
+ 			usage: {
+@@ -571,6 +606,8 @@ export function toSubagentDelegationV2Response(
+ 				durationMs: progress?.durationMs ?? 0,
+ 			},
+ 		} : {}),
++		warnings,
++		residualRisks: acceptance?.childReport?.residualRisks ?? [],
+ 	};
+ }
+ 
+diff --git a/src/slash/delegation-request.ts b/src/slash/delegation-request.ts
+index e1dc2f0..315aafd 100644
+--- a/src/slash/delegation-request.ts
++++ b/src/slash/delegation-request.ts
+@@ -48,6 +48,7 @@ const v2SupportedFields = new Set([
+ 	"turnBudget",
+ 	"toolBudget",
+ 	"skill",
++	"acceptance",
+ 	"artifacts",
+ 	"result",
+ ]);
+@@ -130,6 +131,9 @@ function parseV2(value: Record<string, unknown>, requestId: string): SubagentDel
+ 	if (unsupportedField) return { ok: false, ...identity, error: `Unsupported delegation field: ${unsupportedField}.` };
+ 	const sharedError = validateSharedFields(value, identity);
+ 	if (sharedError) return sharedError;
++	// thanos-patch: V2 acceptance request validation (remove after upstream support)
++	const acceptanceErrors = validateAcceptanceInput(value.acceptance);
++	if (acceptanceErrors.length > 0) return { ok: false, ...identity, error: acceptanceErrors.join(" ") };
+ 	if (Buffer.byteLength(value.task as string, "utf8") > MAX_V2_TASK_BYTES) {
+ 		return { ok: false, ...identity, error: "Delegation task exceeds 1 MiB when UTF-8 encoded." };
+ 	}

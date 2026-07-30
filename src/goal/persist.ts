@@ -3,13 +3,12 @@ import type { GoalSettings } from "./types";
 
 export interface GoalPersistPayload {
   condition: string;
-  status: "active" | "paused";
 }
 
 export function serializeGoal(c: GoalController): GoalPersistPayload | undefined {
   const s = c.snapshot();
   if (!s || s.status === "achieved") return undefined;
-  return { condition: s.condition, status: s.status };
+  return { condition: s.condition };
 }
 
 export function restoreController(
@@ -20,6 +19,6 @@ export function restoreController(
 ): GoalController {
   const c = new GoalController(settings, now);
   c.set(payload.condition, tokensNow); // resets turns/timer/token baseline by design
-  if (payload.status === "paused") c.pause();
+  c.pause();
   return c;
 }

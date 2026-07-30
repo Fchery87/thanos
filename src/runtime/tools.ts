@@ -1,44 +1,28 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { completeSimple } from "@earendil-works/pi-ai/compat";
 import type { GoalController } from "../goal/controller";
-import type { GoalSettings } from "../goal/types";
-import { extractLastTurnFromBranch } from "../goal/extract";
-import { runEvaluatorWith } from "../goal/evaluator";
-import { confirmGoalCompletion } from "../goal/confirm";
-import { loadEvaluatorOverride } from "../goal/load-settings";
-import { pickEvaluatorModel, resolveEvaluatorAuth } from "../goal/evaluator-model";
 import { renderGoalStatusSegment } from "../goal/command";
-import type { GoalEventRecord } from "../goal/loop";
 import type { PolicyLoadState } from "../policy/state";
 import { AskParamsSchema, buildAskDecision, resolveHeadlessAsk, type AskQuestion } from "../interaction/ask";
 import { FindingParamsSchema, addFinding, formatReviewSummary, type ReviewFinding } from "../review/findings";
 
 export interface GoalCompleteToolDeps {
   goalController: GoalController;
-  goalSettings: GoalSettings;
-  recordGoalEvent: (event: GoalEventRecord) => Promise<void>;
 }
 
 /**
- * goal_complete tool: agent-signaled completion, evaluator-confirmed. The
- * agent calls this when it believes the active /goal is done. A fresh,
- * tool-less checker (the same evaluator, routed via the subagents toggle,
- * else the session model) confirms against the last turn's evidence before
- * the goal closes. On MET the loop terminates; on NOT_MET the agent keeps
- * working. Crucially, a checker ERROR never pauses the goal — it fails safe
- * to NOT_MET — so the per-turn "eval-error pause" class is gone entirely.
- * Parent sessions only.
+ * goal_complete records an untrusted Completion Claim. SpecEngine decides it
+ * at agent_end after repository and workflow evidence has settled.
  */
 export function registerGoalCompleteTool(pi: ExtensionAPI, deps: GoalCompleteToolDeps): void {
-  const { goalController, goalSettings, recordGoalEvent } = deps;
+  const { goalController } = deps;
 
   pi.registerTool({
     name: "goal_complete",
     label: "Goal Complete",
     description:
-      "Mark the active /goal complete — only after every requirement is implemented AND verified. A fresh checker confirms before it closes; not for partial progress, a plan, or unverified work.",
-    promptSnippet: "Mark the active /goal complete once it is fully finished and verified",
+      "Claim that the active /goal is complete. SpecEngine verifies repository and workflow evidence at agent_end; this tool cannot close the goal.",
+    promptSnippet: "Claim goal completion once every requirement is finished and verified",
     parameters: Type.Object({
       summary: Type.String({
         description:
@@ -51,53 +35,15 @@ export function registerGoalCompleteTool(pi: ExtensionAPI, deps: GoalCompleteToo
         return { content: [{ type: "text" as const, text: "goal_complete: no active /goal to complete." }], isError: true, details: undefined };
       }
 
-      // Judge real output, not just the claim: pull the last work turn from
-      // the session branch. When that read comes back empty (private branch
-      // API drift, or goal_complete called before any proof turn),
-      // confirmGoalCompletion fails CLOSED — it never judges the bare summary
-      // claim, so self-grading cannot silently sneak back in.
-      const sm = toolCtx.sessionManager as { getBranch?: () => Array<{ type?: string; message?: unknown }> } | undefined;
-      const evidence = extractLastTurnFromBranch(sm?.getBranch?.());
-
-      // Resolve the evaluator model exactly as the per-turn loop used to:
-      // routed override when routing is on, else the session model.
-      const override = loadEvaluatorOverride(goalSettings.evaluatorRole);
-      const routed = override
-        ? pickEvaluatorModel(override, toolCtx.modelRegistry.getAll(), (m) => toolCtx.modelRegistry.hasConfiguredAuth(m))
-        : undefined;
-      const primary = routed?.model ?? toolCtx.model;
-      if (!primary) {
-        return { content: [{ type: "text" as const, text: "goal_complete: no model available to verify completion — keep working and try again." }], details: undefined };
-      }
-
-      // Out-of-band completions bypass pi's request path, so auth must be
-      // resolved through the registry (auth.json, $ENV refs, OAuth) — a bare
-      // completeSimple only finds well-known env keys for builtin providers
-      // and resolves (not rejects!) with stopReason "error" for the rest.
-      const completeAuthed = async (model: NonNullable<typeof primary>, context: Parameters<typeof completeSimple>[1], reasoning?: string) => {
-        const auth = await resolveEvaluatorAuth(toolCtx.modelRegistry, model);
-        return completeSimple(model, context, { reasoning: (reasoning ?? "low") as "low", ...auth });
-      };
-
-      // Retry once on the session model (routing may point at a flaky
-      // provider); confirmGoalCompletion owns the fail-closed + fail-safe policy.
-      const verdict = await confirmGoalCompletion(
-        { condition: snap.condition, previousReason: snap.lastReason, summary: params.summary, evidence },
-        (input) => runEvaluatorWith((context) => completeAuthed(primary, context, routed?.thinking), input),
-        (input) => runEvaluatorWith((context) => completeAuthed(toolCtx.model ?? primary, context), input),
-      );
-
-      const action = goalController.confirmComplete(verdict);
+      goalController.claimComplete(params.summary);
       toolCtx.ui.setStatus("harness-goal", renderGoalStatusSegment(goalController.snapshot()));
-
-      if (action.kind === "achieved") {
-        await recordGoalEvent({ type: "goal_achieved", summary: action.reason, outcome: `turns=${action.turns}` });
-        toolCtx.ui.notify(`◎ /goal achieved in ${action.turns} turns — ${action.reason}`, "info");
-        return { content: [{ type: "text" as const, text: `Goal confirmed complete: ${action.reason}` }], terminate: true, details: undefined };
-      }
-
-      const reason = action.kind === "rejected" ? action.reason : "the goal is no longer active";
-      return { content: [{ type: "text" as const, text: `goal_complete rejected — not yet met: ${reason}. Keep working toward the goal, then call goal_complete again once you can show the proof.` }], details: undefined };
+      return {
+        content: [{
+          type: "text" as const,
+          text: "Completion claim recorded. SpecEngine will decide it at agent_end from deterministic repository and workflow evidence.",
+        }],
+        details: undefined,
+      };
     },
   });
 }

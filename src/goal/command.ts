@@ -19,6 +19,7 @@ export interface GoalCommandDeps {
   getTokens: () => number;
   notify: (message: string, level?: "info" | "warning") => void;
   sendFollowUp: (text: string) => Promise<void>;
+  authorizeFollowUp?: (text: string, condition: string) => void;
   recordEvent: (event: GoalEventRecord) => Promise<void>;
   /** Sync the controller's current state to on-disk persistence. Called
    *  directly by clear/pause/resume; `set` persists via `recordEvent`
@@ -88,7 +89,9 @@ export async function runGoalCommand(args: string, deps: GoalCommandDeps): Promi
       // condition, rules, and completion protocol ride in the system prompt
       // (buildGoalSystemPrompt) every active-goal turn, so the continuation
       // directive is the same terse nudge the per-turn loop sends.
-      await deps.sendFollowUp(buildContinueDirective());
+      const directive = buildContinueDirective();
+      deps.authorizeFollowUp?.(directive, deps.controller.snapshot()?.condition ?? "");
+      await deps.sendFollowUp(directive);
       return;
     }
     case "set": {
@@ -97,6 +100,7 @@ export async function runGoalCommand(args: string, deps: GoalCommandDeps): Promi
         const replacedNote = result.replaced ? " (replaced the previous goal)" : "";
         deps.notify(`◎ /goal active${replacedNote} — I will keep working until it is met. Permission prompts still apply and will pause the loop until answered.`);
         await deps.recordEvent({ type: "goal_set", summary: command.condition, outcome: "active" });
+        deps.authorizeFollowUp?.(result.firstDirective, command.condition);
         await deps.sendFollowUp(result.firstDirective);
       } else {
         // strict:false in tsconfig disables false-branch discriminant narrowing,
@@ -112,13 +116,14 @@ export interface RegisterGoalDeps {
   controller: GoalController;
   isSubagent: boolean;
   sendFollowUp: (text: string) => Promise<void>;
+  authorizeFollowUp?: (text: string, condition: string) => void;
   recordEvent: (event: GoalEventRecord) => Promise<void>;
   syncState: () => Promise<void>;
 }
 
 export function registerGoalCommand(pi: ExtensionAPI, deps: RegisterGoalDeps): void {
   pi.registerCommand("goal", {
-    description: "Set a self-checking goal; the agent keeps working until a fresh evaluator confirms it (/goal <condition> | pause | resume | clear).",
+    description: "Set a bounded autonomous goal; SpecEngine verifies completion (/goal <condition> | pause | resume | clear).",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       if (deps.isSubagent) {
         ctx.ui.notify("/goal is only available in the main session.", "warning");
@@ -130,6 +135,7 @@ export function registerGoalCommand(pi: ExtensionAPI, deps: RegisterGoalDeps): v
         getTokens: () => ctx.getContextUsage()?.tokens ?? 0,
         notify: (message, level) => ctx.ui.notify(message, level ?? "info"),
         sendFollowUp: deps.sendFollowUp,
+        authorizeFollowUp: deps.authorizeFollowUp,
         recordEvent: deps.recordEvent,
         syncState: deps.syncState,
       });

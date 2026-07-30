@@ -7,6 +7,7 @@ import type {
 import type { Capability } from "../permissions/rules";
 import { buildContractFromTaskContract } from "./contract";
 import { extractTaskContract } from "./contract-extractor";
+import { targetRoots } from "./work-contract";
 
 /**
  * Spec generation is synchronous by contract: a turn must never observe a missing
@@ -56,7 +57,7 @@ export function generateSpec(message: string, tier: SpecTier, options?: Generate
     allowedCapabilities: inferAllowedCapabilities(message),
     constraints: [],
     acceptanceCriteria: contract.acceptanceCriteria,
-    targetFiles: [],
+    targetFiles: targetRoots(taskContract),
     risks: [],
     createdAt: Date.now(),
   };

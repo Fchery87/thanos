@@ -1,10 +1,11 @@
-export type EvidenceKind = "diff" | "test" | "command" | "manual";
+export type EvidenceKind = "diff" | "test" | "command" | "manual" | "workflow";
 
 export type EvidenceRecord =
   | DiffEvidence
   | TestEvidence
   | CommandEvidence
-  | ManualEvidence;
+  | ManualEvidence
+  | WorkflowEvidence;
 
 export interface DiffEvidence {
   kind: "diff";
@@ -38,5 +39,19 @@ export interface ManualEvidence {
   actor: "user" | "evaluator";
   claim: string;
   scope?: string[];
+  passed: boolean;
+}
+
+export interface WorkflowEvidence {
+  kind: "workflow";
+  workflowId: string;
+  nodes: Array<{
+    nodeId: string;
+    ownerRunId: string;
+    runId: string;
+    launchContractDigest: string;
+    artifacts: Array<{ path: string; sha256: string }>;
+  }>;
+  reasons: string[];
   passed: boolean;
 }

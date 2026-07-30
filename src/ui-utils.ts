@@ -84,12 +84,22 @@ export function formatSpecForApproval(spec: FormalSpec, theme: TUITheme): string
   const allowedCaps = spec.allowedCapabilities.length > 0
     ? spec.allowedCapabilities.map(c => theme.fg("success", c)).join(", ")
     : theme.fg("dim", "none");
+  const workflow = spec.workflowPlan
+    ? [
+        "",
+        `${theme.bold("Workflow:")} ${spec.workflowPlan.id} (${spec.workflowPlan.nodes.length} bounded nodes)`,
+        ...spec.workflowPlan.nodes.map((node) =>
+          `  ${theme.fg("dim", "-")} ${node.id} → ${node.agent} [read-only]`),
+        `  ${theme.fg("dim", "-")} integration → parent [write: ${spec.workflowPlan.integration.targetRoots.join(", ")}]`,
+      ]
+    : [];
 
   return [
     `${theme.bold("Goal:")} ${spec.goal}`,
     "",
     `${theme.bold("Allowed capabilities:")} ${allowedCaps}`,
     `${theme.bold("Target files:")}         ${targetFiles}`,
+    ...workflow,
     "",
     `${theme.bold("Evidence required:")}`,
     criteria,

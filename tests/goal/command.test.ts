@@ -28,6 +28,7 @@ function deps(overrides: Partial<GoalCommandDeps> = {}): GoalCommandDeps {
     getTokens: () => 0,
     notify: vi.fn(),
     sendFollowUp: vi.fn(async () => {}),
+    authorizeFollowUp: vi.fn(),
     recordEvent: vi.fn(async () => {}),
     syncState: vi.fn(async () => {}),
     ...overrides,
@@ -49,6 +50,10 @@ describe("runGoalCommand", () => {
     expect(d.controller.snapshot()).toMatchObject({ condition: "all tests pass", status: "active" });
     expect(d.recordEvent).toHaveBeenCalledWith(expect.objectContaining({ type: "goal_set" }));
     expect(d.sendFollowUp).toHaveBeenCalledTimes(1);
+    expect(d.authorizeFollowUp).toHaveBeenCalledWith(
+      expect.stringContaining("[harness:goal-directive]"),
+      "all tests pass",
+    );
     expect(vi.mocked(d.sendFollowUp).mock.calls[0][0]).toContain("[harness:goal-directive]");
     // set persists via recordEvent (which itself syncs to disk in the real
     // wiring) — it must not also call syncState directly, or the state
@@ -125,6 +130,10 @@ describe("runGoalCommand", () => {
     vi.mocked(d.sendFollowUp).mockClear();
     await runGoalCommand("resume", d);
     expect(d.sendFollowUp).toHaveBeenCalledTimes(1);
+    expect(d.authorizeFollowUp).toHaveBeenCalledWith(
+      expect.stringContaining("[harness:goal-directive]"),
+      "a goal",
+    );
     const text = vi.mocked(d.sendFollowUp).mock.calls[0][0];
     // The resume directive is the same terse nudge the per-turn loop sends: the
     // condition/rules/completion protocol ride in the system prompt, not here.

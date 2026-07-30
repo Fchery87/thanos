@@ -9,14 +9,13 @@ const LOW_RISK = new Set(["read", "ls", "find", "grep"]);
 const HIGH_RISK = new Set(["write", "edit"]);
 
 // Interaction/delegation tools this harness explicitly registers or is built
-// around, beyond the LOW_RISK/HIGH_RISK builtins: task is the dormant legacy
-// delegation tool; ask/todo/report_finding/goal_complete are harness state
+// around, beyond the LOW_RISK/HIGH_RISK builtins: ask/todo/report_finding/goal_complete are harness state
 // and interaction tools; subagent is the live delegation entry point,
 // registered by the pi-subagents package this harness integrates with (its
 // per-call governance already comes from agent frontmatter tool lists and
 // worktree/policy narrowing, not from prompting on every dispatch). These
 // keep their historical "medium" tier.
-const KNOWN_MEDIUM_TOOLS = new Set(["task", "ask", "todo", "report_finding", "goal_complete", "subagent"]);
+const KNOWN_MEDIUM_TOOLS = new Set(["ask", "todo", "report_finding", "goal_complete", "subagent"]);
 
 // Binaries that only inspect state: they cannot write files or mutate the
 // working tree on their own. Redirections, substitutions, and expansions are

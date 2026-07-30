@@ -10,19 +10,19 @@ let dir: string;
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), "goal-")); });
 afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
 
-it("roundtrips an active goal keyed by repo path", async () => {
-  await saveGoalState(dir, { condition: "all tests pass", status: "active", repo: dir });
+it("roundtrips goal intent keyed by repo path without runtime authority", async () => {
+  await saveGoalState(dir, { condition: "all tests pass", repo: dir });
   const loaded = await loadGoalState(dir, dir);
-  expect(loaded).toEqual({ condition: "all tests pass", status: "active", repo: dir });
+  expect(loaded).toEqual({ condition: "all tests pass", repo: dir });
 });
 
 it("does not restore when the repo path differs", async () => {
-  await saveGoalState(dir, { condition: "x", status: "active", repo: "/other/repo" });
+  await saveGoalState(dir, { condition: "x", repo: "/other/repo" });
   expect(await loadGoalState(dir, dir)).toBeUndefined();
 });
 
 it("clearGoalState removes the file (achieved goals never restore)", async () => {
-  await saveGoalState(dir, { condition: "x", status: "paused", repo: dir });
+  await saveGoalState(dir, { condition: "x", repo: dir });
   await clearGoalState(dir);
   expect(await loadGoalState(dir, dir)).toBeUndefined();
 });
@@ -39,6 +39,6 @@ it("returns undefined (never throws) on a corrupt file", async () => {
 });
 
 it("rejects a condition longer than MAX_CONDITION", async () => {
-  await saveGoalState(dir, { condition: "x".repeat(4001), status: "active", repo: dir });
+  await saveGoalState(dir, { condition: "x".repeat(4001), repo: dir });
   expect(await loadGoalState(dir, dir)).toBeUndefined();
 });

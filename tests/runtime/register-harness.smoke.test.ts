@@ -93,7 +93,7 @@ const PARENT_COMMANDS = [
   "goal",
   "skills", "context", "policy", "tools", "spec", "waves",
   "subagents-models",
-  "audit", "rename", "status", "worktree",
+  "audit", "rename", "status",
   "lens",
 ].sort();
 
@@ -102,6 +102,10 @@ const SUBAGENT_COMMANDS = PARENT_COMMANDS.filter((name) => name !== "remember" &
 const ALL_EVENT_HOOKS = [
   "session_start", "session_tree", "model_select", "thinking_level_select",
   "session_shutdown", "before_agent_start", "tool_call", "tool_result", "agent_end",
+].sort();
+const PARENT_EVENT_HOOKS = [
+  ...ALL_EVENT_HOOKS,
+  "session_before_switch", "session_before_fork", "session_before_tree",
 ].sort();
 
 // All 8 registerShortcut("ctrl+shift+<x>", {...}) calls, registered
@@ -141,8 +145,8 @@ describe("registerHarness() registration surface (characterization baseline)", (
 
     expect(commandNames(api)).toEqual(PARENT_COMMANDS);
     expect(flagNames(api)).toEqual(["spec"]);
-    expect(eventNames(api)).toEqual(ALL_EVENT_HOOKS);
-    expect(toolNames(api)).toEqual(["ask", "goal_complete", "todo"].sort());
+    expect(eventNames(api)).toEqual(PARENT_EVENT_HOOKS);
+    expect(toolNames(api)).toEqual(["ask", "goal_complete", "todo", "workflow_yield"].sort());
     expect(shortcutNames(api)).toEqual(ALL_SHORTCUTS);
   });
 
@@ -160,7 +164,7 @@ describe("registerHarness() registration surface (characterization baseline)", (
     expect(flagNames(api)).toEqual(["spec"]);
     expect(eventNames(api)).toEqual(ALL_EVENT_HOOKS);
 
-    // goal_complete/todo/ask are parent-only; report_finding is subagent-only.
+    // goal_complete/workflow_yield/todo/ask are parent-only; report_finding is subagent-only.
     expect(toolNames(api)).toEqual(["report_finding"]);
 
     // Shortcuts are registered unconditionally — same set as the parent

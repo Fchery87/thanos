@@ -424,10 +424,48 @@ describe("register", () => {
     );
   });
 
-  it("review shortcut dispatches the heterogeneous jury prompt", async () => {
+  it("review shortcut executes the heterogeneous jury graph", async () => {
     const sendUserMessage = vi.fn(async () => undefined);
     const notify = vi.fn();
-    const { api } = createFakePi({ sendUserMessage } as Partial<RegisterApi>);
+    const requests: Array<Record<string, unknown>> = [];
+    const busHandlers = new Map<string, Set<(value: unknown) => void>>();
+    const events = {
+      on: (name: string, handler: (value: unknown) => void) => {
+        const set = busHandlers.get(name) ?? new Set();
+        set.add(handler);
+        busHandlers.set(name, set);
+        return () => set.delete(handler);
+      },
+      emit: (name: string, value: unknown) => {
+        if (name !== "prompt-template:subagent:request") {
+          for (const handler of busHandlers.get(name) ?? []) handler(value);
+          return;
+        }
+        const request = value as Record<string, unknown>;
+        requests.push(request);
+        queueMicrotask(() => {
+          const response = {
+            version: 2,
+            requestId: request.requestId,
+            ownerRunId: request.ownerRunId,
+            nodeId: request.nodeId,
+            runId: `run-${String(request.nodeId)}`,
+            status: "completed",
+            launchContractDigest: "a".repeat(64),
+            execution: { status: "completed", success: true, exitCode: 0 },
+            acceptance: { status: "accepted", evidenceStatus: "verified", explicit: true },
+            review: { status: "reviewed", findings: [] },
+            effects: {},
+            artifacts: [],
+            warnings: [],
+            residualRisks: [],
+            result: { kind: "text", text: `${String(request.nodeId)} complete` },
+          };
+          for (const handler of busHandlers.get("prompt-template:subagent:response") ?? []) handler(response);
+        });
+      },
+    };
+    const { api } = createFakePi({ sendUserMessage, events } as Partial<RegisterApi>);
     register(api);
 
     const registerShortcut = api.registerShortcut as ReturnType<typeof vi.fn>;
@@ -439,16 +477,21 @@ describe("register", () => {
     await reviewShortcut?.handler({
       hasUI: true,
       ui: { notify, setStatus: vi.fn(), theme: noopTheme },
+      cwd: process.cwd(),
+      sessionManager: {
+        getSessionFile: () => "/tmp/session.jsonl",
+        getSessionId: () => "session-1",
+      },
     });
 
-    expect(sendUserMessage).toHaveBeenCalledWith(
-      expect.stringContaining("reviewer-correctness"),
-      { deliverAs: "followUp" },
-    );
-    expect(sendUserMessage).toHaveBeenCalledWith(
-      expect.stringContaining("oracle"),
-      { deliverAs: "followUp" },
-    );
+    expect(sendUserMessage).not.toHaveBeenCalled();
+    expect(requests.map((request) => request.agent).sort()).toEqual([
+      "oracle",
+      "reviewer-correctness",
+      "reviewer-security",
+      "reviewer-tests",
+    ]);
+    expect(notify).toHaveBeenLastCalledWith("oracle complete", "info");
   });
 
   it("review shortcut is unavailable in subagent sessions", async () => {
