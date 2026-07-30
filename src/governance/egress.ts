@@ -57,32 +57,37 @@ export function classifyEgress(toolName: string, input: Record<string, unknown>)
   if (command.length === 0) return "unknown";
 
   const argv = command.split(/\s+/);
+  const normalizedTokens = argv.map((token) => token.replace(/^[;&|(){}]+|[;&|(){}]+$/g, ""));
   const baseCommand = argv[0] ?? "";
 
-  if (baseCommand === "git") {
-    const subcommand = findGitSubcommand(argv);
-    if (subcommand === undefined) return "unknown";
-    if (isGitPushSubcommand(subcommand)) {
-      if (hasCredentialsFlag(argv)) return "credentialed";
-      return "repo-remote";
+  // A bash input is a program, not one argv. Inspect every command position so
+  // `echo ready && curl ...`, pipelines, and subshells cannot inherit the first
+  // harmless command's classification.
+  if (hasCredentialsFlag(argv)) {
+    if (normalizedTokens.some(isNetworkCommand) || normalizedTokens.includes("git")) {
+      return "credentialed";
     }
-    if (GIT_READ_SUBCOMMANDS.has(subcommand)) return "local";
-    return "local";
   }
 
-  if (isNetworkCommand(baseCommand)) {
-    if (hasCredentialsFlag(argv)) return "credentialed";
+  if (normalizedTokens.some(isNetworkCommand)) {
     return "network";
   }
 
-  if (isPublishRelatedCommand(baseCommand)) {
-    const publishSubcommands = new Set(["publish", "push", "deploy", "upload"]);
-    const sub = argv.length > 1 ? argv[1] : "";
-    if (publishSubcommands.has(sub)) return "network";
-    // npm install, pip install, cargo build, etc. are local
-    return "local";
+  for (let i = 0; i < normalizedTokens.length; i++) {
+    if (normalizedTokens[i] !== "git") continue;
+    const subcommand = findGitSubcommand(normalizedTokens.slice(i));
+    if (subcommand === undefined) return "unknown";
+    if (isGitPushSubcommand(subcommand)) return "repo-remote";
   }
 
+  const publishSubcommands = new Set(["publish", "push", "deploy", "upload"]);
+  for (let i = 0; i < normalizedTokens.length - 1; i++) {
+    if (isPublishRelatedCommand(normalizedTokens[i] ?? "") && publishSubcommands.has(normalizedTokens[i + 1] ?? "")) {
+      return "network";
+    }
+  }
+
+  if (baseCommand === "git" && findGitSubcommand(argv) === undefined) return "unknown";
   return "local";
 }
 
@@ -98,11 +103,6 @@ function findGitSubcommand(tokens: string[]): string | undefined {
   }
   return undefined;
 }
-
-const GIT_READ_SUBCOMMANDS = new Set([
-  "status", "log", "diff", "show", "rev-parse", "ls-files", "blame",
-  "shortlog", "describe", "cat-file", "count-objects",
-]);
 
 export interface EgressDecision {
   allowed: boolean;

@@ -47,9 +47,18 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const ROOT = join(homedir(), ".pi", "agent", "npm", "node_modules", "pi-subagents", "src");
+const THANOS_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const PACKAGE_RELATIVE = join("agent", "npm", "node_modules", "pi-subagents");
+const V2_PATCH = join(THANOS_ROOT, "scripts", "patches", "pi-subagents-0.37.2-v2-evidence.patch");
+const V2_MARKERS = [
+  ["api", "delegation.ts", "thanos-patch: V2 evidence envelope types"],
+  ["slash", "delegation-request.ts", "thanos-patch: V2 acceptance request validation"],
+  ["slash", "delegation-adapters.ts", "thanos-patch: V2 evidence envelope projection"],
+];
 
 const patches = [
   {
@@ -74,6 +83,60 @@ const patches = [
 ];
 
 let applied = 0, already = 0, failed = 0;
+
+function applyV2EvidencePatch() {
+  const targets = V2_MARKERS.map(([dir, file, marker]) => ({
+    file: join(ROOT, dir, file),
+    marker,
+  }));
+  if (targets.some((target) => !existsSync(target.file))) {
+    console.log("[thanos-patch] V2 evidence targets missing (skipped)");
+    return;
+  }
+  if (targets.every((target) => readFileSync(target.file, "utf-8").includes(target.marker))) {
+    console.log("[thanos-patch] already applied: V2 delegation evidence envelope");
+    already++;
+    return;
+  }
+  if (!existsSync(V2_PATCH)) {
+    console.error(`[thanos-patch] V2 patch artifact missing: ${V2_PATCH}`);
+    failed++;
+    return;
+  }
+  const applyArgs = [`--directory=${PACKAGE_RELATIVE}`, "--whitespace=nowarn", V2_PATCH];
+  const check = spawnSync("git", ["apply", "--check", ...applyArgs], {
+    cwd: THANOS_ROOT,
+    encoding: "utf-8",
+  });
+  if (check.status !== 0) {
+    const reverse = spawnSync("git", ["apply", "--reverse", "--check", ...applyArgs], {
+      cwd: THANOS_ROOT,
+      encoding: "utf-8",
+    });
+    if (reverse.status === 0) {
+      console.log("[thanos-patch] V2 evidence patch is already present");
+      already++;
+      return;
+    }
+    console.error(`[thanos-patch] V2 evidence patch does not match pinned pi-subagents 0.37.2: ${(check.stderr ?? "").trim()}`);
+    failed++;
+    return;
+  }
+  const apply = spawnSync("git", ["apply", ...applyArgs], {
+    cwd: THANOS_ROOT,
+    encoding: "utf-8",
+  });
+  if (apply.status !== 0) {
+    console.error(`[thanos-patch] V2 evidence patch failed: ${(apply.stderr ?? "").trim()}`);
+    failed++;
+    return;
+  }
+  console.log("[thanos-patch] applied: V2 delegation evidence envelope");
+  applied++;
+}
+
+applyV2EvidencePatch();
+
 for (const p of patches) {
   if (!existsSync(p.file)) {
     console.log(`[thanos-patch] target missing (skipped): ${p.file}`);
@@ -161,34 +224,77 @@ function verifyFanoutGuard() {
   }
 }
 
-const verdict = verifyFanoutGuard();
-if (verdict.status === "ok") {
-  console.log(`[thanos-patch] verified: ${verdict.reason}`);
-} else if (verdict.status === "skipped") {
-  console.log(`[thanos-patch] verification skipped — ${verdict.reason}`);
-} else {
-  console.error(`[thanos-patch] BROKEN — ${verdict.reason}`);
+function verifyV2EvidenceEnvelope() {
+  const target = join(ROOT, "slash", "delegation-adapters.ts");
+  if (!existsSync(target)) return { status: "skipped", reason: "delegation adapter not installed" };
+  if (spawnSync("bun", ["--version"], { stdio: "ignore" }).status !== 0) {
+    return { status: "skipped", reason: "bun not on PATH" };
+  }
+  const dir = mkdtempSync(join(tmpdir(), "thanos-v2-verify-"));
+  try {
+    const probe = join(dir, "probe.mjs");
+    writeFileSync(
+      probe,
+      `const mod = await import(${JSON.stringify(target)});\n` +
+        `const request = { version: 2, requestId: "request-1", ownerRunId: "owner-1", nodeId: "node-1", agent: "reviewer", task: "review", context: "fresh", cwd: ".", acceptance: "verified", artifacts: true, result: { kind: "text" } };\n` +
+        `const acceptance = { status: "accepted", evidenceStatus: "verified", explicit: true, childReport: { residualRisks: ["risk"] } };\n` +
+        `const result = { content: [{ type: "text", text: "ok" }], isError: false, details: { runId: "run-1", results: [{ status: "completed", finalOutput: "ok", launchContractDigest: "${"a".repeat(64)}", execution: { status: "completed", success: true, exitCode: 0 }, acceptance, review: { status: "reviewed", findings: [] }, effects: { fileMutation: { status: "not-applicable", expected: false, attempted: false } } }] } };\n` +
+        `const response = mod.toSubagentDelegationV2Response(request, result, false);\n` +
+        `const ok = response.execution?.success === true && response.acceptance?.status === "accepted" && response.review?.status === "reviewed" && response.effects?.fileMutation?.status === "not-applicable" && Array.isArray(response.artifacts) && Array.isArray(response.warnings) && response.residualRisks?.[0] === "risk";\n` +
+        `console.log("THANOS_V2_PROBE:" + (ok ? "ok" : JSON.stringify(response)));\n`,
+      "utf-8",
+    );
+    const run = spawnSync("bun", ["run", probe], {
+      encoding: "utf-8",
+      timeout: 30_000,
+      env: { ...process.env, HOME: dir },
+    });
+    const match = /THANOS_V2_PROBE:([^\n]+)/.exec(run.stdout ?? "");
+    if (!match) {
+      const detail = (run.stderr ?? "").trim().split("\n").slice(-1)[0] || `exit ${run.status}`;
+      return { status: "skipped", reason: `V2 probe did not run (${detail})` };
+    }
+    return match[1] === "ok"
+      ? { status: "ok", reason: "V2 response carries execution, acceptance, review, effects, artifacts, warnings, and residual risks" }
+      : { status: "broken", reason: `V2 evidence envelope is incomplete (${match[1]})` };
+  } catch (error) {
+    return { status: "skipped", reason: error instanceof Error ? error.message : String(error) };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const verdicts = [verifyFanoutGuard(), verifyV2EvidenceEnvelope()];
+for (const verdict of verdicts) {
+  if (verdict.status === "ok") {
+    console.log(`[thanos-patch] verified: ${verdict.reason}`);
+  } else if (verdict.status === "skipped") {
+    console.log(`[thanos-patch] verification skipped — ${verdict.reason}`);
+  } else {
+    console.error(`[thanos-patch] BROKEN — ${verdict.reason}`);
+  }
 }
 
 console.log(`[thanos-patch] done — ${applied} applied, ${already} already present, ${failed} failed.`);
 
 // Behaviour is the gate. A patch that no longer applies but whose protection is
 // now provided upstream is reported for retirement, not treated as a failure.
-if (verdict.status === "broken") process.exit(1);
-if (failed > 0 && verdict.status === "ok") {
+if (verdicts.some((verdict) => verdict.status === "broken")) process.exit(1);
+if (failed > 0 && verdicts.every((verdict) => verdict.status === "ok")) {
   console.log(
     `[thanos-patch] ${failed} patch(es) no longer apply, but behaviour is correct — ` +
       `upstream likely absorbed the fix. Candidates for retirement; no action needed.`,
   );
   process.exit(0);
 }
-if (failed > 0 && verdict.status === "skipped") {
+if (failed > 0 && verdicts.some((verdict) => verdict.status === "skipped")) {
   // Same exit code the final line would give; spelled out because "couldn't
   // verify" and "verified broken" are different situations and the operator
   // should not have to infer which one produced the failure.
   console.error(
     `[thanos-patch] ${failed} patch(es) no longer apply and behaviour could not be verified ` +
-      `(${verdict.reason}) — treating as failure rather than assuming upstream absorbed it.`,
+      `(${verdicts.filter((verdict) => verdict.status === "skipped").map((verdict) => verdict.reason).join("; ")}) — ` +
+      "treating as failure rather than assuming upstream absorbed it.",
   );
   process.exit(1);
 }

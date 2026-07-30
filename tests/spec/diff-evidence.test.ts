@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync, unlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -95,6 +95,25 @@ describe("collectTurnDiffEvidence", () => {
     write(repo, "src/preexisting.ts", "export const d = 2;\n");
 
     expect((await collectTurnDiffEvidence(repo, baseline))?.paths).toEqual(["src/preexisting.ts"]);
+  });
+
+  it("detects an index mutation when pre-existing worktree content is staged", async () => {
+    write(repo, "src/committed.ts", "export const a = 2;\n");
+    const baseline = await snapshotWorkingTree(repo);
+    execFileSync("git", ["-C", repo, "add", "src/committed.ts"], { stdio: "pipe" });
+
+    expect((await collectTurnDiffEvidence(repo, baseline))?.paths).toEqual(["src/committed.ts"]);
+  });
+
+  it("hashes a symlink identity rather than following its target", async () => {
+    write(repo, "outside-a.txt", "same\n");
+    write(repo, "outside-b.txt", "same\n");
+    symlinkSync("../outside-a.txt", join(repo, "src/link.txt"));
+    const baseline = await snapshotWorkingTree(repo);
+    unlinkSync(join(repo, "src/link.txt"));
+    symlinkSync("../outside-b.txt", join(repo, "src/link.txt"));
+
+    expect((await collectTurnDiffEvidence(repo, baseline))?.paths).toEqual(["src/link.txt"]);
   });
 
   // An edit that was undone did not happen, so it cannot satisfy a criterion.

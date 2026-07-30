@@ -87,7 +87,7 @@ async function loadRoster(): Promise<RosterAgentDefinition[]> {
 //   before that fix this was gated to a legacy-only marker and NOT valid here).
 //
 // Deliberately excluded even though this harness registers them: ask, todo,
-// goal_complete, task are all registered ONLY under `if (!isSubagent)` in
+// goal_complete is registered ONLY under `if (!isSubagent)` in
 // src/index.ts — parent-only tools a live child could never call, so an
 // agent definition listing one of these would be exactly the same class of
 // bug as the historical report_finding break.

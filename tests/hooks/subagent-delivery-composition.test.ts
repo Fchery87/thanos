@@ -4,13 +4,12 @@ import { authorizeVia } from "../helpers/authorize";
 /**
  * Security-critical composition test through the LIVE gate.
  *
- * A child of an `unattended` + `local-only` repo runs headless (auto-approving
- * what the ceiling permits) WHILE local-only still denies `git push`. authorize()
+ * A child of an `unattended` + `local-only` repo runs headless while both the
+ * Run Grant requirement and local-only egress guard remain authoritative. authorize()
  * applies the delivery overlay + the argv-level push guard from the resolved
  * deliveryMode, so passing `deliveryMode: "local-only"` + `autonomy: "unattended"`
- * exercises the real composition. Proves: (a) a ceiling-permitted edit is
- * auto-approved without any prompt, and (b) a `git push` exec is still BLOCKED —
- * the local-only guard wins over unattended.
+ * exercises the real composition. Proves: (a) an edit without a Run Grant is
+ * blocked without a prompt, and (b) a `git push` is blocked by local-only first.
  */
 
 const promptThatThrows = async (): Promise<boolean> => {
@@ -29,14 +28,13 @@ function localOnlyChild(recordAudit = vi.fn(async () => undefined)) {
 }
 
 describe("subagent delivery composition (unattended + local-only)", () => {
-  it("auto-approves a ceiling-permitted edit WITHOUT prompting", async () => {
+  it("blocks an edit without a Run Grant and never prompts", async () => {
     const recordAudit = vi.fn(async () => undefined);
-    // edit → "ask" by default → unattended must auto-allow (overlay only denies push).
     const decision = await authorizeVia(localOnlyChild(recordAudit), "edit", { file_path: "src/foo.ts" });
 
-    expect(decision.block).toBe(false);
+    expect(decision.block).toBe(true);
     expect(recordAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ decision: "allow", ruleId: "autonomy:unattended" }),
+      expect.objectContaining({ decision: "deny", ruleId: "autonomy:run-grant-required" }),
     );
   });
 

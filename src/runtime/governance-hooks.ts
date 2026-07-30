@@ -6,21 +6,31 @@ import type { PermissionManager } from "../permissions/manager";
 import { gateDisabledByEnv } from "../permissions/yolo-config";
 import type { SpecEngine } from "../spec/engine";
 import { buildContinuationPrompt, gatedFailures, shouldReinject } from "../spec/gate";
-import { collectTurnDiffEvidence } from "../spec/diff-evidence";
+import { collectTurnDiffEvidence, snapshotWorkingTree } from "../spec/diff-evidence";
 import type { GoalController } from "../goal/controller";
 import { renderGoalStatusSegment } from "../goal/command";
+import { decideCompletionClaim } from "../goal/completion";
+import { buildContinueDirective as buildGoalContinueDirective } from "../goal/prompts";
 import { handleAgentEnd as handleGoalAgentEnd, type GoalEventRecord } from "../goal/loop";
-import { readAborted, readWillRetry } from "../goal/extract";
+import { readAborted, readTerminalFailure, readWillRetry } from "../goal/extract";
 import { makeAfterToolHandler } from "../hooks/after-tool";
 import type { LensLite } from "../lens/lite";
 import { appendHarnessEvent } from "../observability/harness-ledger";
-import { roleNarrowingOverlay } from "../governance/role-overlay";
 import { GovernanceRuntime } from "./governance-runtime";
 import { createSnapshot } from "../security/snapshot";
 import { issueContinuation } from "./continuation-auth";
-import { formatSpecForApproval, formatPanel, noopTheme, renderCriteriaLines } from "../ui-utils";
+import { formatPanel, noopTheme, renderCriteriaLines } from "../ui-utils";
 import type { DeliveryRuntime } from "./commands/delivery";
 import type { PolicyLoadState } from "../policy/state";
+import { approvePendingWorkContract } from "./work-contract-approval";
+import { handleWorkflowAgentEnd, type WorkflowAgentEndResult } from "../workflows/agent-end";
+import { captureRepositoryRevisionIdentity } from "../workflows/revision";
+import { runJuryWorkflow } from "../workflows/runtime";
+import {
+  workflowAllowsGoalCompletion,
+  type WorkflowRuntime,
+  type WorkflowSnapshot,
+} from "../workflows/state";
 
 const CTX_EXEC_TOOLS = new Set(["ctx_execute", "ctx_execute_file", "ctx_batch_execute"]);
 const CTX_EXEC_MAX_TIMEOUT_MS = 110_000;
@@ -65,6 +75,14 @@ export interface GovernanceHooksDeps {
   isSubagent: boolean;
   goalController: GoalController;
   recordGoalEvent: (event: GoalEventRecord) => Promise<void>;
+  workflowRuntime: WorkflowRuntime;
+}
+
+function workflowOwnsContinuation(snapshot: WorkflowSnapshot | undefined): boolean {
+  if (!snapshot || snapshot.phase === "completed" || snapshot.phase === "cancelled" || snapshot.phase === "handed_off") {
+    return false;
+  }
+  return snapshot.phase !== "paused" || snapshot.mode === "standalone";
 }
 
 /**
@@ -78,6 +96,7 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
   const {
     policyStatePromise, deliveryRuntime, childRole, spec, permissions,
     sessionId, agentType, lens, isSubagent, goalController, recordGoalEvent,
+    workflowRuntime,
   } = deps;
 
   pi.on("tool_call", async (event, ctx: ExtensionContext) => {
@@ -86,39 +105,26 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
       return { block: true, reason: `Policy configuration error: ${policyState.error}` };
     }
 
-    const overlay = [...roleNarrowingOverlay(childRole), ...(await deliveryRuntime.getOverlay())];
-    const effectivePolicy = overlay.length
-      ? { ...policyState.policy, rules: [...overlay, ...policyState.policy.rules] }
-      : policyState.policy;
-
     const delivery = await deliveryRuntime.getState();
 
     // Explicit-spec approval gate: fires before governance runtime
     const active = spec.activeSpec;
     if (active?.approvalStatus === "pending") {
-      if (!ctx.hasUI) {
-        return { block: true, reason: "Explicit spec needs approval but no UI available" };
-      }
-      // Approval must be given against the contract that will actually be
-      // enforced. Blocking here is deliberate: showing a deterministic placeholder
-      // and upgrading it after the user clicked "approve" would make the approval
-      // meaningless. A no-op when no extractor is wired.
-      await spec.settleContract();
-      const approved = await ctx.ui.confirm(
-        "Spec Approval Required",
-        formatSpecForApproval(active, ctx.ui.theme ?? noopTheme),
-      );
-      if (approved) {
-        active.approvalStatus = "approved";
-      } else {
-        active.approvalStatus = "rejected";
-        permissions.remember("*", "*", "deny");
-        // Terminal: drop the spec so agent_end has nothing to verify and the
-        // gate cannot restart the refused work. The session-wide deny above is
-        // only a turn-scoped stop (clearSessionRules() drops it next turn),
-        // which is correct precisely because the loop can no longer resume.
-        spec.rejectActiveSpec();
-        return { block: true, reason: `User rejected spec: ${active.goal}` };
+      const approval = await approvePendingWorkContract(spec, {
+        repoDir: process.cwd(),
+        runId: sessionId,
+        hasUI: ctx.hasUI,
+        theme: ctx.ui.theme ?? noopTheme,
+        confirm: (title, message) => ctx.ui.confirm(title, message),
+      });
+      if (!approval.approved) {
+        const reason = (approval as { approved: false; reason: string }).reason;
+        if (reason.startsWith("user rejected")) {
+          // Turn-scoped stop; rejectActiveSpec() already made the refusal
+          // terminal for the task itself.
+          permissions.remember("*", "*", "deny");
+        }
+        return { block: true, reason };
       }
     }
 
@@ -129,19 +135,26 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
       active?.tier === "explicit" ? active.allowedCapabilities : undefined;
 
     const gov = new GovernanceRuntime({
-      policy: effectivePolicy,
+      policy: policyState.policy,
       permissions,
       yolo: permissions.isYolo,
       autonomy: delivery?.autonomy ?? "attended",
       deliveryMode: delivery?.mode,
       childRole,
       specScope,
+      workContract: active?.tier === "explicit" && active.approvalStatus === "approved"
+        ? {
+            repoDir: process.cwd(),
+            revision: spec.workContractRevision ?? "",
+            runGrant: spec.runGrant,
+          }
+        : undefined,
       hasUI: ctx.hasUI,
       sessionId,
       agentType,
       recordAudit: async (e) => {
-        const auditLogger = effectivePolicy.audit.enabled
-          ? new AuditLogger(effectivePolicy.audit.path ?? join(process.cwd(), ".harness", "audit.jsonl"))
+        const auditLogger = policyState.policy.audit.enabled
+          ? new AuditLogger(policyState.policy.audit.path ?? join(process.cwd(), ".harness", "audit.jsonl"))
           : undefined;
         return auditLogger?.record(e);
       },
@@ -221,6 +234,50 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
       }
     }
 
+    const completionClaim = goalController.takeCompletionClaim();
+    let workflowResult: WorkflowAgentEndResult = { owned: false, state: "inactive" };
+    if (!isSubagent && workflowOwnsContinuation(workflowRuntime.current)) {
+      workflowResult = await handleWorkflowAgentEnd({
+        runtime: workflowRuntime,
+        cwd: ctx.cwd,
+        sendContinuation: async (directive) => {
+          issueContinuation(sessionId, "waves", directive);
+          await pi.sendUserMessage(directive, { deliverAs: "followUp" });
+        },
+        runJury: () => runJuryWorkflow(pi, ctx, ctx.signal),
+        captureRevision: captureRepositoryRevisionIdentity,
+        recordWorkflowEvidence: (references, verdict) => {
+          const snapshot = workflowRuntime.current;
+          const active = snapshot?.phase === "paused" ? snapshot.resume : snapshot;
+          if (active && "plan" in active) {
+            spec.recordWorkflowEvidenceRefs(active.plan, references, verdict);
+          }
+        },
+        verify: () => spec.verify(),
+      }, {
+        aborted: turnAborted,
+        willRetry: readWillRetry(event),
+        terminalFailure: readTerminalFailure(event),
+        goalClaimed: completionClaim !== undefined,
+      });
+    }
+    const wavesOwnsTurn = workflowResult.owned;
+    if (
+      workflowResult.owned
+      && workflowResult.state === "paused"
+      && workflowRuntime.current?.phase === "paused"
+      && workflowRuntime.current.mode === "goal_attached"
+    ) {
+      const goal = goalController.snapshot();
+      if (goal?.status === "active") {
+        const directive = buildGoalContinueDirective();
+        spec.startTurn(goal.condition, true);
+        spec.turnBaseline = snapshotWorkingTree(process.cwd()).catch(() => undefined);
+        issueContinuation(sessionId, "goal", directive);
+        await pi.sendUserMessage(directive, { deliverAs: "followUp" });
+      }
+    }
+
     // Abort is not consulted here: verification is a pure read of collected
     // evidence. Whether an aborted turn may continue is the gate's decision, and
     // shouldReinject takes `aborted` directly.
@@ -263,14 +320,14 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
       );
 
       // The gate defers to an active /goal (goalActive) so the two loops never
-      // both queue a follow-up in the same turn — the goal evaluator is the
-      // sole continuation driver while a goal is active.
+      // both queue a follow-up in the same turn — the Goal Loop is the sole
+      // continuation driver while a goal is active.
       if (shouldReinject({
         results,
         attempts: spec.gateAttempts,
         isSubagent,
         enabled: !gateDisabledByEnv(),
-        goalActive,
+        goalActive: goalActive || wavesOwnsTurn,
         aborted: turnAborted,
         specApproved: spec.activeSpec?.approvalStatus !== "rejected",
       })) {
@@ -297,21 +354,60 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
       }
     }
 
+    // A goal_complete call is only a claim. Decide it here, after SpecEngine
+    // settled the contract and collected repository evidence. This is the one
+    // operator-task acceptance path; the claim cannot terminate a turn itself.
+    if (completionClaim !== undefined) {
+      const verdict = workflowAllowsGoalCompletion(workflowRuntime.current)
+        ? decideCompletionClaim(completionClaim, results, {
+            contractApproved: spec.activeSpec?.approvalStatus === "approved",
+          })
+        : {
+            met: false,
+            reason: "Goal-Attached Waves has not reached fresh jury-approved acceptance",
+          };
+      const action = goalController.confirmComplete(verdict);
+      if (action.kind === "achieved") {
+        if (workflowRuntime.current?.phase === "awaiting_acceptance"
+          && workflowRuntime.current.mode === "goal_attached") {
+          workflowRuntime.complete("SpecEngine accepted the Goal-Attached Waves Work Contract");
+        }
+        await recordGoalEvent({ type: "goal_achieved", summary: action.reason, outcome: `turns=${action.turns}` });
+        ctx.ui.notify(`◎ /goal achieved in ${action.turns} turns — ${action.reason}`, "info");
+      } else if (action.kind === "rejected") {
+        ctx.ui.notify(`◎ completion claim rejected — ${action.reason}`, "warning");
+        if (workflowRuntime.current?.phase === "awaiting_acceptance"
+          && workflowRuntime.current.mode === "goal_attached") {
+          const next = workflowRuntime.reopenIntegration("integration_turn_budget_exhausted");
+          if (next.phase === "integrating") {
+            const directive = buildContinuationPrompt(results, next.integrationTurns);
+            issueContinuation(sessionId, "waves", directive);
+            await pi.sendUserMessage(directive, { deliverAs: "followUp" });
+          }
+        }
+      }
+    } else if (workflowResult.owned && workflowResult.state === "awaiting_goal_claim") {
+      issueContinuation(sessionId, "waves", workflowResult.directive);
+      await pi.sendUserMessage(workflowResult.directive, { deliverAs: "followUp" });
+    }
+
     // ── /goal loop ─────────────────────────────────────────────────────
     // Runs regardless of spec state. It is a no-op unless a goal is active,
     // and the gate above already deferred to it, so at most one follow-up is
     // queued per turn. The evaluator no longer runs here — completion is
-    // signaled by the goal_complete tool (which confirms via the evaluator);
-    // a work turn only advances the counter and re-prompts or pauses.
-    await handleGoalAgentEnd({
-      controller: goalController,
-      sendDirective: async (directive) => { pi.sendUserMessage(directive, { deliverAs: "followUp" }); },
-      issueContinuation: (directive) => { issueContinuation(sessionId, "goal", directive); },
-      notify: (message, level) => ctx.ui.notify(message, level ?? "info"),
-      recordEvent: recordGoalEvent,
-      getTokens: () => ctx.getContextUsage()?.tokens ?? 0,
-      isSubagent,
-    }, { willRetry: readWillRetry(event), aborted: turnAborted });
+    // signaled by the goal_complete tool and decided above by SpecEngine; a
+    // work turn only advances the counter and re-prompts or pauses.
+    if (!wavesOwnsTurn) {
+      await handleGoalAgentEnd({
+        controller: goalController,
+        sendDirective: async (directive) => { pi.sendUserMessage(directive, { deliverAs: "followUp" }); },
+        issueContinuation: (directive) => { issueContinuation(sessionId, "goal", directive); },
+        notify: (message, level) => ctx.ui.notify(message, level ?? "info"),
+        recordEvent: recordGoalEvent,
+        getTokens: () => ctx.getContextUsage()?.tokens ?? 0,
+        isSubagent,
+      }, { willRetry: readWillRetry(event), aborted: turnAborted });
+    }
     ctx.ui.setStatus("harness-goal", renderGoalStatusSegment(goalController.snapshot()));
   });
 }

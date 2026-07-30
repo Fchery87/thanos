@@ -2,8 +2,8 @@ import { completeSimple } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadEvaluatorOverride } from "../goal/load-settings";
-import { pickEvaluatorModel, resolveEvaluatorAuth } from "../goal/evaluator-model";
+import { loadRoleOverride } from "../goal/load-settings";
+import { pickRoleModel, resolveRoleModelAuth } from "../goal/model-routing";
 import { buildContractExtractionPrompt, parseContractResponse } from "./extractor-prompt";
 import { noopExtractionReporter, type ExtractionReporter } from "./extraction-log";
 import type { SpecTier } from "./types";
@@ -106,11 +106,11 @@ export class ContractExtractor {
 
       // Separated from the rest of the try so an auth failure is reported as
       // itself rather than as the catch-all "threw". It was by far the most
-      // likely silent failure: resolveEvaluatorAuth throws for every
+      // likely silent failure: resolveRoleModelAuth throws for every
       // models.json-configured provider without a resolvable key.
-      let auth: Awaited<ReturnType<typeof resolveEvaluatorAuth>>;
+      let auth: Awaited<ReturnType<typeof resolveRoleModelAuth>>;
       try {
-        auth = await resolveEvaluatorAuth(context.modelRegistry, model);
+        auth = await resolveRoleModelAuth(context.modelRegistry, model);
       } catch (err) {
         this.report({ outcome: "auth_failed", detail: errorLabel(err) });
         return undefined;
@@ -174,11 +174,11 @@ export class ContractExtractor {
     }
   }
 
-  /** Routed override when routing is on, else the session model — same as /goal. */
+  /** Routed override when routing is on, else the session model. */
   private resolveModel(context: ExtractorContext): ExtractorContext["model"] {
-    const override = loadEvaluatorOverride(this.settings.extractorRole);
+    const override = loadRoleOverride(this.settings.extractorRole);
     if (!override) return context.model;
-    const routed = pickEvaluatorModel(
+    const routed = pickRoleModel(
       override,
       context.modelRegistry.getAll(),
       (model) => context.modelRegistry.hasConfiguredAuth(model),

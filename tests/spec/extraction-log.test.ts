@@ -54,7 +54,7 @@ describe("ContractExtractor reports why it gave up", () => {
     expect(reports).toEqual([{ outcome: "no_model", detail: "role=evaluator" }]);
   });
 
-  // The most likely silent failure in production: resolveEvaluatorAuth throws
+  // The most likely silent failure in production: resolveRoleModelAuth throws
   // for any models.json-configured provider without a resolvable key, and the
   // old code swallowed it into the same undefined as everything else.
   it("reports `auth_failed` distinctly rather than as a generic throw", async () => {

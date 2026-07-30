@@ -1,9 +1,10 @@
 import type { Capability } from "../permissions/rules";
 import type { TaskContract, TaskCriterionSource } from "./task-contract";
+import type { WavePlan } from "../workflows/types";
 
 export type SpecTier = "instant" | "ambient" | "explicit";
 export type ApprovalStatus = "not_required" | "pending" | "approved" | "rejected";
-export type EvidenceRequirement = "diff" | "test" | "command" | "manual";
+export type EvidenceRequirement = "diff" | "test" | "command" | "manual" | "workflow";
 
 export interface AcceptanceCriterion {
   id: string;
@@ -40,5 +41,6 @@ export interface FormalSpec {
   acceptanceCriteria: AcceptanceCriterion[];
   targetFiles: string[];
   risks: string[];
+  workflowPlan?: WavePlan;
   createdAt: number;
 }

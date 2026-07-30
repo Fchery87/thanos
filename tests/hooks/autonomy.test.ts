@@ -10,7 +10,7 @@ const promptThatThrows = async (): Promise<boolean> => {
 };
 
 describe("unattended autonomy gate (live GovernanceRuntime.authorize)", () => {
-  it("auto-approves an edit the ceiling permits WITHOUT prompting", async () => {
+  it("denies an edit without a process-local Run Grant", async () => {
     const recordAudit = vi.fn(async () => undefined);
     // edit → "ask" by default → would normally prompt. Unattended must allow.
     const decision = await authorizeVia(
@@ -19,13 +19,13 @@ describe("unattended autonomy gate (live GovernanceRuntime.authorize)", () => {
       { file_path: "src/foo.ts" },
     );
 
-    expect(decision.block).toBe(false);
+    expect(decision.block).toBe(true);
     expect(recordAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ decision: "allow", ruleId: "autonomy:unattended" }),
+      expect.objectContaining({ decision: "deny", ruleId: "autonomy:run-grant-required" }),
     );
   });
 
-  it("does not persist allow rules — no ceiling mutation across calls", async () => {
+  it("denies unattended shell execution instead of persisting allow rules", async () => {
     const permissions = new PermissionManager();
     const rememberSpy = vi.spyOn(permissions, "remember");
 
@@ -43,14 +43,14 @@ describe("unattended autonomy gate (live GovernanceRuntime.authorize)", () => {
       { command: "grep 'a|b' ." },
     );
 
-    expect(first.block).toBe(false);
-    expect(second.block).toBe(false);
+    expect(first.block).toBe(true);
+    expect(second.block).toBe(true);
 
     // No session rule was ever persisted — the ceiling is never mutated.
     expect(rememberSpy).not.toHaveBeenCalled();
 
-    // With no session rules, exec stays "ask" (the unattended branch, not a
-    // leaked "allow", is what permitted the calls).
+    // With no session rules, exec stays "ask"; unattended execution never
+    // mutates the durable or session permission ceiling.
     expect(permissions.evaluate("exec", "any-other-command")).toBe("ask");
   });
 
@@ -113,7 +113,7 @@ describe("unattended autonomy gate (live GovernanceRuntime.authorize)", () => {
     );
   });
 
-  it("DOES auto-allow an unrecognized tool when an explicit policy rule allows it", async () => {
+  it("does not run an unrecognized tool unattended even when policy allows it", async () => {
     const recordAudit = vi.fn(async () => undefined);
     const trustingPolicy: HarnessPolicy = {
       ...personalPolicy,
@@ -126,9 +126,9 @@ describe("unattended autonomy gate (live GovernanceRuntime.authorize)", () => {
       {},
     );
 
-    expect(decision.block).toBe(false);
+    expect(decision.block).toBe(true);
     expect(recordAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ decision: "allow", ruleId: "trust-deploy-mcp" }),
+      expect.objectContaining({ decision: "deny" }),
     );
   });
 

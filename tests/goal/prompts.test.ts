@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildFirstDirective, buildContinueDirective, buildEvaluatorContext, buildGoalSystemPrompt,
-  EVALUATOR_SYSTEM, GOAL_DIRECTIVE_SENTINEL,
+  buildFirstDirective, buildContinueDirective, buildGoalSystemPrompt,
+  GOAL_DIRECTIVE_SENTINEL,
 } from "../../src/goal/prompts";
 
 describe("goal directives", () => {
@@ -31,10 +31,10 @@ describe("goal directives", () => {
     expect(buildFirstDirective("cond")).toContain("goal_complete");
   });
 
-  it("the first directive explains the checker's blindness so the worker surfaces evidence", () => {
+  it("the first directive explains that SpecEngine decides the completion claim", () => {
     const d = buildFirstDirective("cond");
-    expect(d).toMatch(/cannot run tools/i);
-    expect(d).toMatch(/final (message|reply)/i);
+    expect(d).toMatch(/SpecEngine/i);
+    expect(d).toMatch(/Work Contract/i);
     expect(d).toMatch(/goal_complete/i);
   });
 });
@@ -47,39 +47,13 @@ describe("buildGoalSystemPrompt", () => {
     expect(s).toMatch(/plan/i);
   });
 
-  it("restates the evidence contract because the judge is tool-less", () => {
+  it("restates the SpecEngine evidence contract", () => {
     const s = buildGoalSystemPrompt("cond");
-    expect(s).toMatch(/cannot run tools/i);
-    expect(s).toMatch(/final (message|reply)/i);
+    expect(s).toMatch(/SpecEngine/i);
+    expect(s).toMatch(/Work Contract/i);
   });
 
   it("is not a follow-up directive — carries no goal sentinel", () => {
     expect(buildGoalSystemPrompt("cond").includes(GOAL_DIRECTIVE_SENTINEL)).toBe(false);
-  });
-});
-
-describe("buildEvaluatorContext", () => {
-  it("puts condition + last turn window in the user message, no tools", () => {
-    const ctx = buildEvaluatorContext({
-      condition: "tests pass",
-      assistantClaim: "ran npm test, 0 failures",
-      toolResultsText: "exit 0",
-      previousReason: "was 1 failing",
-    });
-    expect(ctx.systemPrompt).toBe(EVALUATOR_SYSTEM);
-    expect(ctx.tools).toBeUndefined();
-    expect(ctx.messages).toHaveLength(1);
-    const body = ctx.messages[0].content as string;
-    expect(body).toContain('"condition"');
-    expect(body).toContain("tests pass");
-    expect(body).toContain("0 failures");
-    expect(body).toContain("exit 0");
-    expect(body).toContain("was 1 failing");
-    expect(body).toContain('"source":"goal.assistantClaim"');
-  });
-
-  it("forces the VERDICT/REASON protocol in the system prompt", () => {
-    expect(EVALUATOR_SYSTEM).toContain("VERDICT:");
-    expect(EVALUATOR_SYSTEM).toContain("REASON:");
   });
 });

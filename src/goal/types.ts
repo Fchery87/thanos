@@ -7,11 +7,10 @@ export interface GoalSettings {
    */
   maxTokens: number;       // pause on hit; 0 = off
   checkpointEvery: number; // pause every N turns; 0 = off
-  evaluatorRole: string;   // model-routing role for the evaluator
 }
 
 export const DEFAULT_GOAL_SETTINGS: GoalSettings = {
-  maxTurns: 25, maxTokens: 0, checkpointEvery: 0, evaluatorRole: "evaluator",
+  maxTurns: 25, maxTokens: 0, checkpointEvery: 0,
 };
 
 export function resolveGoalSettings(partial?: Partial<GoalSettings>): GoalSettings {

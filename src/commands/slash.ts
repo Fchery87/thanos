@@ -1,16 +1,33 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { AuditEvent } from "../audit/types";
 import type { PermissionManager } from "../permissions/manager";
 import { capabilityForTool } from "../governance/tool-call";
 import type { PolicyLoadState } from "../policy/state";
 import type { SpecEngine } from "../spec/engine";
-import { runWorktreeGc } from "../agents/task-tool";
+import type { GoalSnapshot } from "../goal/types";
+import { buildContinueDirective as buildGoalContinueDirective } from "../goal/prompts";
 import { handleSubagentModelsCommand } from "../agents/model-routing";
-import { formatBadge, formatLabel, formatValue, formatPanel, makeTerminalSafeOptions } from "../ui-utils";
+import { formatBadge, formatLabel, formatValue, formatPanel, makeTerminalSafeOptions, noopTheme } from "../ui-utils";
 import { renderAuditPanel, renderPolicyPanel, renderSessionSnapshotPanel, renderSpecVerificationPanel } from "../commands/presenters";
-import { buildWavesCommandPrompt } from "../waves/command";
+import {
+  buildIntegrationDirective,
+  createWorkflowRunner,
+  formatWorkflowOutcome,
+  planWavesWorkflow,
+  workflowEvidenceRefs,
+} from "../workflows/runtime";
+import { parseWavesCommand } from "../workflows/command";
+import {
+  WORKFLOW_JOURNAL_ENTRY,
+  type WorkflowRuntime,
+  type WorkflowSnapshot,
+} from "../workflows/state";
+import type { WavePlan, WorkflowRunResult } from "../workflows/types";
+import { approvePendingWorkContract } from "../runtime/work-contract-approval";
+import { snapshotWorkingTree } from "../spec/diff-evidence";
+import { issueContinuation } from "../runtime/continuation-auth";
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
@@ -20,12 +37,41 @@ function fmtN(n: number): string {
   return n.toLocaleString();
 }
 
+function formatWavesStatus(snapshot: WorkflowSnapshot | undefined): string {
+  if (!snapshot) return "Waves — no workflow on the active session branch.";
+  const active = snapshot.phase === "paused" ? snapshot.resume : snapshot;
+  const counters = "integrationTurns" in active
+    ? ` · integration ${active.integrationTurns}/${active.plan.integration.limits.maxIntegrationTurns} · jury ${active.juryRounds}/${active.plan.integration.limits.maxJuryRounds}`
+    : "";
+  const reason = "reason" in snapshot ? `\n  reason: ${snapshot.reason}` : "";
+  return `Waves ${snapshot.phase} — ${snapshot.goal}${counters}${reason}`;
+}
+
+function buildResumeDirective(
+  workflow: Extract<WorkflowSnapshot, { phase: "integrating" }>,
+): string {
+  return [
+    "[harness:waves-integrate] Resume the approved Waves integration.",
+    `Goal: ${workflow.goal}`,
+    `Write only within: ${workflow.plan.integration.targetRoots.join(", ")}`,
+    `Integration turns consumed: ${workflow.integrationTurns}/${workflow.plan.integration.limits.maxIntegrationTurns}.`,
+    ...(workflow.correction
+      ? ["Pending structured jury corrections:", workflow.correction]
+      : []),
+    "When this exact repository revision is ready for jury review, call workflow_yield.",
+  ].join("\n");
+}
+
 export function registerSlashCommands(
   pi: ExtensionAPI,
   opts: {
     permissions: PermissionManager;
     spec: SpecEngine;
     policyPromise: Promise<PolicyLoadState>;
+    isSubagent: boolean;
+    sessionId: string;
+    workflowRuntime: WorkflowRuntime;
+    getGoal: () => GoalSnapshot | undefined;
     /**
      * Whether a /goal is running. `/spec` needs it for the same reason
      * `agent_end` does: while a goal is active the verify gate stands down
@@ -36,7 +82,10 @@ export function registerSlashCommands(
     isGoalActive: () => boolean;
   },
 ): void {
-  const { permissions, spec, policyPromise, isGoalActive } = opts;
+  const {
+    permissions, spec, policyPromise, isGoalActive, isSubagent,
+    sessionId, workflowRuntime, getGoal,
+  } = opts;
 
   // ── /skills ───────────────────────────────────────────────────────────────
   // Browse all loaded skills in one place.
@@ -147,22 +196,279 @@ export function registerSlashCommands(
     },
   });
 
+  const returnContinuationToGoal = async (): Promise<void> => {
+    const goal = getGoal();
+    if (!goal || goal.status !== "active") return;
+    const directive = buildGoalContinueDirective();
+    spec.startTurn(goal.condition, true);
+    spec.turnBaseline = snapshotWorkingTree(process.cwd()).catch(() => undefined);
+    issueContinuation(sessionId, "goal", directive);
+    await pi.sendUserMessage(directive, { deliverAs: "followUp" });
+  };
+
+  const authorizeWorkflowPlan = async (
+    plan: WavePlan,
+    ctx: ExtensionCommandContext,
+    options: { bindJournalPlan: boolean },
+  ): Promise<boolean> => {
+    const workflowGoal = workflowRuntime.current?.goal ?? plan.goal;
+    if (
+      !spec.activeSpec
+      || spec.activeSpec.tier !== "explicit"
+      || spec.activeSpec.goal !== workflowGoal
+    ) {
+      spec.startTurn(workflowGoal, true);
+    }
+    await spec.settleContract();
+    if (options.bindJournalPlan) workflowRuntime.bindPlan(plan);
+    spec.bindWorkflowPlan(plan);
+    const identity = ctx.sessionManager.getSessionFile() ?? ctx.sessionManager.getSessionId();
+    if (!identity) {
+      workflowRuntime.pause("session_identity_unavailable");
+      ctx.ui.notify("Waves paused because the current Pi session identity is unavailable.", "warning");
+      if (workflowRuntime.current.mode === "goal_attached") await returnContinuationToGoal();
+      return false;
+    }
+    const approval = await approvePendingWorkContract(spec, {
+      repoDir: ctx.cwd,
+      runId: identity,
+      hasUI: ctx.hasUI,
+      theme: ctx.ui.theme ?? noopTheme,
+      confirm: (title, message) => ctx.ui.confirm(title, message),
+    });
+    if (!approval.approved) {
+      const { reason } = approval as { approved: false; reason: string };
+      if (workflowRuntime.current?.phase !== "paused") workflowRuntime.pause(reason);
+      ctx.ui.notify(`Waves paused — ${reason}.`, "warning");
+      if (workflowRuntime.current?.mode === "goal_attached") await returnContinuationToGoal();
+      return false;
+    }
+    if (workflowRuntime.current?.phase === "awaiting_approval") workflowRuntime.approve();
+    spec.turnBaseline = spec.runGrant
+      ? Promise.resolve(new Map(spec.runGrant.baseline))
+      : snapshotWorkingTree(ctx.cwd).catch(() => undefined);
+    return true;
+  };
+
+  const investigateWorkflow = async (
+    plan: WavePlan,
+    ctx: ExtensionCommandContext,
+  ): Promise<WorkflowRunResult> => {
+    const current = workflowRuntime.current;
+    if (current?.phase !== "investigating") {
+      return { state: "invalid_plan", results: [], reasons: ["Waves is not investigating"] };
+    }
+    const completedNodeIds = new Set(current.acceptedEvidence.map((reference) => reference.nodeId));
+    const result = await createWorkflowRunner(pi, ctx, ctx.signal, current.acceptedEvidence)
+      .run(plan, { completedNodeIds });
+    const references = workflowEvidenceRefs(result);
+    workflowRuntime.recordInvestigationProgress(
+      references,
+      result.results.map(({ node }) => node.id),
+    );
+    if (result.state === "completed") {
+      workflowRuntime.completeInvestigation([]);
+    } else {
+      workflowRuntime.pause(result.reasons.join("; ") || "investigation_failed");
+      if (workflowRuntime.current?.mode === "goal_attached") await returnContinuationToGoal();
+    }
+    return result;
+  };
+
+  const queueIntegration = async (
+    plan: WavePlan,
+    result: WorkflowRunResult,
+    ctx: ExtensionCommandContext,
+  ): Promise<void> => {
+    const current = workflowRuntime.current;
+    if (current?.phase !== "integrating") {
+      throw new Error("Waves stopped because the approved workflow state could not be reconstructed");
+    }
+    const directive = buildIntegrationDirective(plan, result, current.acceptedEvidence);
+    issueContinuation(sessionId, "waves", directive);
+    await pi.sendUserMessage(directive, { deliverAs: "followUp" });
+    ctx.ui.notify("Investigation accepted. Integration Owner continuation queued.", "info");
+  };
+
+  const executePlanning = async (
+    goal: string,
+    ctx: ExtensionCommandContext,
+  ): Promise<void> => {
+    if (!spec.activeSpec) spec.startTurn(goal, true);
+    const planning = await planWavesWorkflow(pi, ctx, goal, ctx.signal);
+    if (planning.state !== "planned") {
+      if (workflowRuntime.current?.phase === "planning") {
+        workflowRuntime.pause(planning.reasons.join("; ") || "planning_failed");
+        if (workflowRuntime.current.mode === "goal_attached") await returnContinuationToGoal();
+      }
+      ctx.ui.notify(`${planning.state}: ${planning.reasons.join("; ")}`, "warning");
+      return;
+    }
+    if (!await authorizeWorkflowPlan(planning.plan, ctx, { bindJournalPlan: true })) return;
+    const result = await investigateWorkflow(planning.plan, ctx);
+    if (result.state !== "completed") {
+      ctx.ui.notify(formatWorkflowOutcome(result), "warning");
+      return;
+    }
+    await queueIntegration(planning.plan, result, ctx);
+  };
+
   // ── /waves ────────────────────────────────────────────────────────────────
-  // Explicit opt-in bounded parallel orchestration.
+  // Explicit opt-in bounded orchestration over the public Delegation Authority
+  // protocol. Missing evidence stops the graph; it never falls back to a prompt.
   pi.registerCommand("waves", {
-    // Says prompt, not orchestration, because that is what it is. The runtime
-    // that verified handoffs and enforced disjoint write ownership
-    // (waves/runtime.ts, waves/plan.ts, waves/verify.ts) was unreachable after
-    // delegation moved to pi-subagents and was deleted on 2026-07-27. Only
-    // waves/command.ts survives, and all it does is compose this prompt.
-    description: "Send a decomposition prompt: plan independent slices, fan out workers, synthesize. A prompt, not an enforced runtime.",
+    description: "Run or control a parent-owned, evidence-gated workflow.",
     handler: async (args, ctx) => {
-      const goal = args.trim();
-      if (!goal) {
-        ctx.ui.notify("Pass a goal: /waves <goal>", "warning");
+      if (isSubagent) {
+        ctx.ui.notify("Waves orchestration is only available in the main session.", "warning");
         return;
       }
-      await pi.sendUserMessage(buildWavesCommandPrompt(goal), { deliverAs: "followUp" });
+      const command = parseWavesCommand(args);
+      if (command.kind === "invalid") {
+        ctx.ui.notify(command.reason, "warning");
+        return;
+      }
+      if (command.kind === "status") {
+        ctx.ui.notify(formatWavesStatus(workflowRuntime.current), "info");
+        return;
+      }
+      if (command.kind === "pause") {
+        try {
+          const paused = workflowRuntime.pause("operator_paused");
+          ctx.ui.notify(`Waves paused — ${paused.workflowId}. Run /waves resume to continue.`, "warning");
+          if (paused.mode === "goal_attached") await returnContinuationToGoal();
+        } catch (error) {
+          ctx.ui.notify(error instanceof Error ? error.message : String(error), "warning");
+        }
+        return;
+      }
+      if (command.kind === "cancel") {
+        try {
+          const cancelled = workflowRuntime.cancel("operator_cancelled");
+          spec.reset();
+          ctx.ui.notify(`Waves cancelled — ${cancelled.workflowId}. Working-tree changes were preserved.`, "warning");
+          if (cancelled.mode === "goal_attached") await returnContinuationToGoal();
+        } catch (error) {
+          ctx.ui.notify(error instanceof Error ? error.message : String(error), "warning");
+        }
+        return;
+      }
+      if (command.kind === "handoff") {
+        try {
+          const { destination } = workflowRuntime.handoff();
+          const parentSession = ctx.sessionManager.getSessionFile();
+          let replacement: { cancelled: boolean };
+          try {
+            replacement = await ctx.newSession({
+              ...(parentSession ? { parentSession } : {}),
+              setup: async (sessionManager) => {
+                sessionManager.appendCustomEntry(WORKFLOW_JOURNAL_ENTRY, destination);
+              },
+              withSession: async (replacementCtx) => {
+                replacementCtx.ui.notify(
+                  `Waves handoff received — ${destination.workflowId}. Run /waves resume for fresh approval.`,
+                  "info",
+                );
+              },
+            });
+          } catch (error) {
+            workflowRuntime.restoreFailedHandoff("session_replacement_failed");
+            throw error;
+          }
+          if (replacement.cancelled) {
+            workflowRuntime.restoreFailedHandoff("session_replacement_cancelled");
+            ctx.ui.notify("Waves handoff cancelled; the source workflow is paused and recoverable.", "warning");
+          }
+        } catch (error) {
+          ctx.ui.notify(error instanceof Error ? error.message : String(error), "warning");
+        }
+        return;
+      }
+      if (command.kind === "resume") {
+        try {
+          if (command.maxIntegrationTurns !== undefined || command.maxJuryRounds !== undefined) {
+            workflowRuntime.reviseLimits({
+              ...(command.maxIntegrationTurns === undefined
+                ? {}
+                : { maxIntegrationTurns: command.maxIntegrationTurns }),
+              ...(command.maxJuryRounds === undefined
+                ? {}
+                : { maxJuryRounds: command.maxJuryRounds }),
+            });
+          }
+          const resumed = workflowRuntime.resume();
+          if (resumed.phase === "planning") {
+            await executePlanning(resumed.goal, ctx);
+            return;
+          }
+          if (!await authorizeWorkflowPlan(resumed.plan, ctx, { bindJournalPlan: false })) return;
+          const approved = workflowRuntime.current;
+          if (approved?.phase === "investigating") {
+            const result = await investigateWorkflow(approved.plan, ctx);
+            if (result.state !== "completed") {
+              ctx.ui.notify(formatWorkflowOutcome(result), "warning");
+              return;
+            }
+            await queueIntegration(approved.plan, result, ctx);
+            return;
+          }
+          if (approved?.phase === "reviewing") {
+            const directive =
+              "[harness:waves-review] Settle the recorded workflow_yield. Do not mutate the repository; Waves will verify revision freshness at agent_end.";
+            issueContinuation(sessionId, "waves", directive);
+            await pi.sendUserMessage(directive, { deliverAs: "followUp" });
+            ctx.ui.notify("Waves review resumed.", "info");
+            return;
+          }
+          if (approved?.phase === "awaiting_acceptance") {
+            const directive = approved.mode === "goal_attached"
+              ? "Waves jury approval is recorded. Call goal_complete with the evidence-backed completion reason."
+              : "Waves acceptance is pending. Resolve the reported SpecEngine evidence gaps, then call workflow_yield on the new revision.";
+            issueContinuation(sessionId, "waves", directive);
+            await pi.sendUserMessage(directive, { deliverAs: "followUp" });
+            ctx.ui.notify("Waves acceptance resumed.", "info");
+            return;
+          }
+          if (approved?.phase !== "integrating") {
+            ctx.ui.notify(`Waves resumed into ${approved?.phase ?? "unknown"}; use /waves status for the pending action.`, "info");
+            return;
+          }
+          const directive = buildResumeDirective(approved);
+          issueContinuation(sessionId, "waves", directive);
+          await pi.sendUserMessage(directive, { deliverAs: "followUp" });
+          ctx.ui.notify("Waves resumed.", "info");
+        } catch (error) {
+          ctx.ui.notify(error instanceof Error ? error.message : String(error), "warning");
+        }
+        return;
+      }
+
+      const goalState = getGoal();
+      const attaching = command.kind === "attach_goal";
+      if (attaching && (!goalState || goalState.status === "achieved")) {
+        ctx.ui.notify("No nonterminal /goal exists to attach. Set one first or use /waves <goal>.", "warning");
+        return;
+      }
+      if (!attaching && goalState && goalState.status !== "achieved") {
+        ctx.ui.notify("A nonterminal /goal already exists. Use /waves goal, or finish/clear the goal first.", "warning");
+        return;
+      }
+      const goal = command.kind === "attach_goal"
+        ? goalState?.condition
+        : command.goal;
+      if (!goal) {
+        ctx.ui.notify("Waves could not resolve a goal to execute.", "warning");
+        return;
+      }
+      try {
+        workflowRuntime.start({ goal, mode: attaching ? "goal_attached" : "standalone" });
+      } catch (error) {
+        ctx.ui.notify(error instanceof Error ? error.message : String(error), "warning");
+        return;
+      }
+      ctx.ui.notify("Running evidence-gated waves workflow…", "info");
+      if (!attaching || !spec.activeSpec) spec.startTurn(goal, true);
+      await executePlanning(goal, ctx);
     },
   });
 
@@ -329,36 +635,4 @@ export function registerSlashCommands(
     },
   });
 
-  // ── /worktree ─────────────────────────────────────────────────────────────
-  pi.registerCommand("worktree", {
-    description: "Manage subagent worktrees. Usage: /worktree gc",
-    handler: async (args, ctx) => {
-      const theme = ctx.ui.theme;
-      const sub = (args ?? "").trim().toLowerCase();
-
-      if (sub !== "gc") {
-        ctx.ui.notify(
-          formatPanel(theme, "Worktree", "Usage: /worktree gc — remove orphaned worktrees from crashed runs", "dim"),
-          "info",
-        );
-        return;
-      }
-
-      ctx.ui.notify(formatPanel(theme, "Worktree GC", "Scanning for orphaned worktrees…", "dim"), "info");
-      try {
-        const removed = await runWorktreeGc(process.cwd());
-        if (removed.length === 0) {
-          ctx.ui.notify(formatPanel(theme, "Worktree GC", theme.fg("success", "No orphaned worktrees found."), "dim"), "info");
-        } else {
-          const lines = removed.map((wt) => `  ${theme.fg("dim", "removed")} ${wt.branch}`);
-          ctx.ui.notify(
-            formatPanel(theme, `Worktree GC — ${removed.length} removed`, lines, "dim"),
-            "info",
-          );
-        }
-      } catch (err) {
-        ctx.ui.notify(formatPanel(theme, "Worktree GC Error", String(err), "error"), "warning");
-      }
-    },
-  });
 }

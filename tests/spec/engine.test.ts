@@ -36,7 +36,7 @@ describe("SpecEngine lifecycle", () => {
   it("uses default-fail contract criteria for generated specs", () => {
     const spec = new SpecEngine();
 
-    const active = spec.startTurn("Add pagination with tests and update docs", false);
+    const active = spec.startTurn("Add billing pagination with tests and update docs", false);
 
     expect(active?.taskContract.criteria.some((criterion) => criterion.kind === "build")).toBe(true);
     expect(active?.acceptanceCriteria.map((c) => c.statement)).toEqual([
@@ -49,6 +49,7 @@ describe("SpecEngine lifecycle", () => {
     // A docs update is a file edit → diff (the runtime can emit it); it was
     // previously "manual", which the runtime agent cannot produce.
     expect(active?.acceptanceCriteria[2]?.evidenceRequired).toEqual(["diff"]);
+    expect(active?.targetFiles).toEqual(["src/billing", "tests/billing"]);
   });
 
   it("derives acceptance criteria from the task contract for rename requests", () => {
@@ -88,6 +89,15 @@ describe("SpecEngine lifecycle", () => {
     const spec = new SpecEngine();
 
     const active = spec.startTurn("Implement a new feature for the billing flow", true);
+
+    expect(active?.tier).toBe("explicit");
+    expect(active?.approvalStatus).toBe("pending");
+  });
+
+  it("honors explicit approval even for a short command-owned goal", () => {
+    const spec = new SpecEngine();
+
+    const active = spec.startTurn("fix auth", true);
 
     expect(active?.tier).toBe("explicit");
     expect(active?.approvalStatus).toBe("pending");
@@ -199,6 +209,7 @@ describe("SpecEngine lifecycle", () => {
     expect(spec.activeSpec?.id).toBe(idBefore); // same object, mutated in place
     expect(spec.activeSpec?.taskContract.criteria[0]?.source).toBe("semantic_extraction");
     expect(spec.activeSpec?.acceptanceCriteria.map((c) => c.id)).toEqual(["semantic-primary"]);
+    expect(spec.activeSpec?.targetFiles).toEqual(["src/reporting"]);
   });
 
   it("keeps the deterministic contract when extraction rejects, throws, or is malformed", async () => {

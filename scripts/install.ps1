@@ -149,7 +149,7 @@ function Install-Harness {
   if (Get-Command bun -ErrorAction SilentlyContinue) { bun install } else { npm install }
   Info "Registering Thanos as a Pi package..."
   pi install .
-  Info "Patching pi-subagents (fanout-child double-registration guard)..."
+  Info "Applying and verifying bounded pi-subagents compatibility patches..."
   try {
     node (Join-Path $ThanosDir "scripts\patch-pi-subagents.mjs")
     if ($LASTEXITCODE -ne 0) { Warn "pi-subagents patch skipped (non-fatal)" }

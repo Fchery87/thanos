@@ -7,7 +7,7 @@ import type { PolicyLoadState } from "../policy/state";
 import type { ThinkingLevel } from "./thinking-levels";
 import { renderAuditPanel, renderPolicyPanel, renderSessionSnapshotPanel, renderSpecVerificationPanel } from "../commands/presenters";
 import { formatValue, formatPanel, noopTheme } from "../ui-utils";
-import { buildJuryPrompt } from "../review/jury";
+import { formatWorkflowOutcome, runJuryWorkflow } from "../workflows/runtime";
 
 /**
  * Resolve the loaded policy, or notify+return undefined on a config error.
@@ -140,18 +140,15 @@ export function registerDiagnosticShortcuts(pi: ExtensionAPI, deps: DiagnosticSh
   });
 
   pi.registerShortcut("ctrl+shift+r", {
-    // Neither "spawns" nor "delegates": review/jury-runtime.ts, which shaped and
-    // synthesized critic results, went with the orchestration tier on
-    // 2026-07-27. What is left is buildJuryPrompt, sent to the current agent.
-    // Whether three critics and an oracle actually run is up to the model.
-    description: "Send a code-review prompt (critic jury + devil's advocate)",
+    description: "Run an evidence-gated critic jury and devil's advocate",
     handler: async (ctx) => {
       if (deps.isSubagent) {
         ctx.ui.notify("Code review is only available in the main session.", "warning");
         return;
       }
-      ctx.ui.notify("Sending the code-review prompt…", "info");
-      await pi.sendUserMessage(buildJuryPrompt(), { deliverAs: "followUp" });
+      ctx.ui.notify("Running evidence-gated critic jury…", "info");
+      const result = await runJuryWorkflow(pi, ctx);
+      ctx.ui.notify(formatWorkflowOutcome(result), result.state === "completed" ? "info" : "warning");
     },
   });
 }

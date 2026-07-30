@@ -19,7 +19,7 @@ import { MCPManager } from "../mcp/manager";
 // registerSearchTool removed — superseded by npm:pi-web-access
 import type { ReviewFinding } from "../review/findings";
 import { LensLite, registerLensLiteCommand } from "../lens/lite";
-import { appendHarnessEvent } from "../observability/harness-ledger";
+import { appendHarnessEvent, createOrderedHarnessRecorder } from "../observability/harness-ledger";
 import { detectChildRole, isSubagentProcess } from "../agents/child-role";
 import { registerThinkingCommand } from "./commands/thinking";
 import { registerModelEvents } from "./model-events";
@@ -37,6 +37,11 @@ import { registerGoalCompleteTool, registerAskTool, registerReportFindingTool } 
 import { registerSessionStart } from "./session-start";
 import { registerBeforeAgentStart } from "./before-agent-start";
 import { registerGovernanceHooks } from "./governance-hooks";
+import { snapshotWorkingTree } from "../spec/diff-evidence";
+import { issueContinuation } from "./continuation-auth";
+import { WorkflowRuntime, WORKFLOW_JOURNAL_ENTRY } from "../workflows/state";
+import { registerWorkflowYieldTool } from "../workflows/tool";
+import { registerWorkflowSessionGuards } from "../workflows/session-control";
 
 
 export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean }) {
@@ -56,6 +61,22 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   const sessionId = crypto.randomUUID();
   const agentType = isSubagent ? "subagent" : "parent" as const;
   const todoRuntime = new TodoRuntime();
+  const recordWorkflowLifecycle = createOrderedHarnessRecorder();
+  const workflowRuntime = new WorkflowRuntime({
+    append: (snapshot) => pi.appendEntry(WORKFLOW_JOURNAL_ENTRY, snapshot),
+    recordLifecycle: (event) => {
+      if (isSubagent) return;
+      void recordWorkflowLifecycle({
+        type: "waves_lifecycle",
+        taskId: sessionId,
+        summary: `Waves ${event.from ? `${event.from} → ` : ""}${event.to}`,
+        outcome: event.to,
+        createdAt: new Date().toISOString(),
+      }).catch((error) => {
+        console.error("[harness][waves]", error instanceof Error ? error.message : String(error));
+      });
+    },
+  });
   let reviewFindings: ReviewFinding[] = [];
   const lens = new LensLite(sessionId);
 
@@ -98,7 +119,9 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     clearReviewFindings: () => { reviewFindings = []; },
     goalController,
     goalSettings,
+    workflowRuntime,
   });
+  if (!isSubagent) registerWorkflowSessionGuards(pi, workflowRuntime);
 
   // ── --spec flag ────────────────────────────────────────────────────
   pi.registerFlag("spec", {
@@ -169,18 +192,21 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     isSubagent,
     syncState: syncGoalStateToDisk,
     sendFollowUp: async (text) => { pi.sendUserMessage(text, { deliverAs: "followUp" }); },
+    authorizeFollowUp: (text, condition) => {
+      // The Goal Intent becomes the one explicit Work Contract for the run.
+      // The generated continuation is authorized so before_agent_start keeps
+      // this contract and baseline instead of replacing it with the directive.
+      spec.startTurn(condition, true);
+      spec.turnBaseline = snapshotWorkingTree(process.cwd()).catch(() => undefined);
+      issueContinuation(sessionId, "goal", text);
+    },
     recordEvent: recordGoalEvent,
   });
 
-  // ── goal_complete tool: agent-signaled completion, evaluator-confirmed ──
-  // The agent calls this when it believes the active /goal is done. A fresh,
-  // tool-less checker (the same evaluator, routed via the subagents toggle,
-  // else the session model) confirms against the last turn's evidence before
-  // the goal closes. On MET the loop terminates; on NOT_MET the agent keeps
-  // working. Crucially, a checker ERROR never pauses the goal — it fails safe
-  // to NOT_MET — so the per-turn "eval-error pause" class is gone entirely.
+  // ── goal_complete tool: agent-signaled claim, SpecEngine-decided at agent_end ──
   if (!isSubagent) {
-    registerGoalCompleteTool(pi, { goalController, goalSettings, recordGoalEvent });
+    registerGoalCompleteTool(pi, { goalController });
+    registerWorkflowYieldTool(pi, { runtime: workflowRuntime });
   }
 
   // ── Slash commands ─────────────────────────────────────────────────
@@ -188,6 +214,10 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     permissions,
     spec,
     policyPromise: policyStatePromise,
+    isSubagent,
+    sessionId,
+    workflowRuntime,
+    getGoal: () => goalController.snapshot(),
     isGoalActive: () => goalController.isActive(),
   });
   registerLensLiteCommand(pi, lens);
@@ -223,22 +253,13 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     isSubagent,
     goalController,
     recordGoalEvent,
+    workflowRuntime,
   });
 
   // ── Web search tool ────────────────────────────────────────────────
   // registerSearchTool removed — superseded by npm:pi-web-access
 
   if (!isSubagent) {
-    // THANOS_LEGACY_TASK was the gate for the dormant Thanos `task` tool
-    // (superseded by pi-subagents `subagent` engine). It has been removed
-    // as of the Phenomenal Harness program; use subagent delegation instead.
-    if (process.env.THANOS_LEGACY_TASK === "1") {
-      console.warn(
-        "[harness] THANOS_LEGACY_TASK=1 is no longer supported. " +
-        "The legacy `task` tool has been removed. Use the `subagent` tool from pi-subagents for delegation."
-      );
-    }
-
     registerTodoTool(pi, todoRuntime);
     registerAskTool(pi, policyStatePromise);
   }

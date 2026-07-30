@@ -4,23 +4,16 @@ import {
   loadRegistry, readRepoId, resolveDeliveryState,
   type DeliveryMode, type ResolvedDelivery,
 } from "../../governance/delivery";
-import { deliveryPolicyOverlay } from "../../governance/delivery-overlay";
 import { DELIVERY_MODE_HELP, DELIVERY_MODES, saveRegistry, upsertRegistryEntry } from "../../governance/delivery-select";
-import type { PolicyRule } from "../../policy/types";
 import { noopTheme } from "../../ui-utils";
 
 /**
- * Owns the session's resolved delivery state (mode/autonomy) and its derived
- * policy overlay, both of which the first-launch selector, /delivery, and
- * /yolo can swap mid-session via applySelection() — a granted mode then
- * takes effect immediately, without a restart. One instance per
- * registerHarness() call; session_start, the tool_call governance gate, and
- * every command below read it through getState()/getOverlay() rather than
- * a raw `let` so a swap is visible everywhere at once.
+ * Owns the session's resolved delivery state (mode/autonomy). GovernanceRuntime
+ * derives the delivery overlay once at authorization, so there is one policy
+ * composition path rather than two independently cached copies.
  */
 export class DeliveryRuntime {
   private statePromise: Promise<ResolvedDelivery>;
-  private overlayPromise: Promise<PolicyRule[]>;
 
   constructor(cwd: string) {
     // Resolved in BOTH parent and child processes. A subagent's cwd is a
@@ -36,16 +29,10 @@ export class DeliveryRuntime {
     // to the safe default (local-only/attended) — fail-safe, but path-only
     // entries don't propagate to subagents.
     this.statePromise = resolveDeliveryState(cwd);
-    // The overlay is derived once per RESOLUTION, not per tool call.
-    this.overlayPromise = this.statePromise.then((d) => deliveryPolicyOverlay(d.mode));
   }
 
   getState(): Promise<ResolvedDelivery> {
     return this.statePromise;
-  }
-
-  getOverlay(): Promise<PolicyRule[]> {
-    return this.overlayPromise;
   }
 
   static statusLabel(d: ResolvedDelivery): string {
@@ -71,7 +58,6 @@ export class DeliveryRuntime {
     await saveRegistry(upsertRegistryEntry(await loadRegistry(), repoId, mode));
     const next = await resolveDeliveryState(process.cwd());
     this.statePromise = Promise.resolve(next);
-    this.overlayPromise = Promise.resolve(deliveryPolicyOverlay(next.mode));
     if (next.yoloLocked) permissions.lockYolo();
     const theme = ctx.ui.theme ?? noopTheme;
     ctx.ui.setStatus("harness-delivery", theme.fg("accent", DeliveryRuntime.statusLabel(next)));

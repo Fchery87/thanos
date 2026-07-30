@@ -108,3 +108,19 @@ describe("confirmComplete", () => {
   });
 });
 
+describe("completion claims", () => {
+  it("records a claim without achieving the goal and consumes it once", () => {
+    const c = new GoalController(); c.set("a", 0);
+    expect(c.claimComplete("tests and contract verified")).toBe(true);
+    expect(c.snapshot()?.status).toBe("active");
+    expect(c.takeCompletionClaim()).toBe("tests and contract verified");
+    expect(c.takeCompletionClaim()).toBeUndefined();
+  });
+
+  it("rejects claims outside an active goal", () => {
+    const c = new GoalController();
+    expect(c.claimComplete("done")).toBe(false);
+    c.set("a", 0); c.pause();
+    expect(c.claimComplete("done")).toBe(false);
+  });
+});

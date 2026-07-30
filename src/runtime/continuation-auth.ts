@@ -1,4 +1,4 @@
-export type ContinuationKind = "spec" | "goal";
+export type ContinuationKind = "spec" | "goal" | "waves";
 
 interface ContinuationRecord {
   id: string;

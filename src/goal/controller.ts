@@ -16,6 +16,7 @@ interface Internal {
   tokensBase: number;
   lastReason?: string;
   achieved?: { at: number; reason: string; turns: number };
+  completionClaim?: string;
 }
 
 export type SetResult =
@@ -34,7 +35,7 @@ export class GoalController {
 
   snapshot(): GoalSnapshot | undefined {
     if (!this.g) return undefined;
-    const { lastTokens: _t, turnsBase: _tb, tokensBase: _kb, ...pub } = this.g;
+    const { lastTokens: _t, turnsBase: _tb, tokensBase: _kb, completionClaim: _claim, ...pub } = this.g;
     return { ...pub };
   }
 
@@ -104,11 +105,8 @@ export class GoalController {
   }
 
   /**
-   * Agent-signaled completion, judged by the fresh evaluator. On MET the goal is
-   * achieved; on NOT_MET it stays active and the agent keeps working (the reason
-   * is surfaced back through the tool result). The evaluator is consulted ONLY
-   * here — never per turn — so its cost and its failure modes are confined to
-   * the moment completion is actually claimed.
+   * Apply SpecEngine's verdict to an agent-signaled Completion Claim. On MET
+   * the goal is achieved; on NOT_MET it stays active and records the reason.
    */
   confirmComplete(verdict: Verdict): CompletionAction {
     if (!this.g || this.g.status !== "active") return { kind: "noop" };
@@ -119,6 +117,19 @@ export class GoalController {
       return { kind: "achieved", reason: verdict.reason, turns: this.g.turnsEvaluated };
     }
     return { kind: "rejected", reason: verdict.reason };
+  }
+
+  claimComplete(summary: string): boolean {
+    if (!this.g || this.g.status !== "active") return false;
+    this.g.completionClaim = summary.trim();
+    return true;
+  }
+
+  takeCompletionClaim(): string | undefined {
+    if (!this.g || this.g.status !== "active") return undefined;
+    const claim = this.g.completionClaim;
+    this.g.completionClaim = undefined;
+    return claim;
   }
 
   /**

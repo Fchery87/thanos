@@ -114,7 +114,7 @@ async function writeRegistry(contents: unknown): Promise<void> {
 }
 
 describe("subagent delivery wiring (real register + tool_call gate)", () => {
-  it("Scenario A: registered unattended + local-only — auto-approves edit, blocks git push", async () => {
+  it("Scenario A: registered unattended + local-only — requires a Run Grant and blocks git push", async () => {
     await writeRegistry({
       version: 1,
       default: { mode: "local-only", autonomy: "attended" },
@@ -132,16 +132,15 @@ describe("subagent delivery wiring (real register + tool_call gate)", () => {
     const handler = getToolCallHandler(api);
     const ctx = makeCtx(repoDir, /* hasUI */ false);
 
-    // EDIT is capability "edit", tier "high" → normally "ask". Under the repo's
-    // resolved UNATTENDED autonomy the gate must auto-approve (return undefined)
-    // even with no UI — proving autonomy was resolved + applied via register().
+    // UNATTENDED is execution behavior, not mutation approval. A child with no
+    // process-local Run Grant must fail closed without prompting.
     // Use a path that does NOT exist in the temp repo so the lens
     // read-before-modify guard does not independently block the edit.
     const editResult = await handler(
       { toolName: "edit", input: { path: "src/does-not-exist.ts", new_string: "x" } },
       ctx,
     );
-    expect(editResult).toBeUndefined();
+    expect(editResult).toMatchObject({ block: true, reason: expect.stringContaining("Run Grant") });
     expect(ctx.ui.confirm).not.toHaveBeenCalled(); // no interactive prompt was needed
 
     // git push must STILL be denied by the local-only overlay — the overlay deny

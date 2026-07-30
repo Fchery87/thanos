@@ -33,10 +33,11 @@ const TOOL_CAPABILITY: Record<string, Capability> = {
   write: "edit",
   edit: "edit",
   bash: "exec",
-  task: "task",
   ask: "interaction",
   todo: "interaction",
   report_finding: "interaction",
+  goal_complete: "interaction",
+  subagent: "task",
 };
 
 export function capabilityForTool(toolName: string): Capability {

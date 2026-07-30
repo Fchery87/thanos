@@ -28,6 +28,7 @@ export function makeGovContext(overrides: Partial<GovernanceContext> = {}): Gove
     deliveryMode: undefined,
     childRole: undefined,
     specScope: undefined,
+    workContract: undefined,
     hasUI: true,
     sessionId: "s1",
     agentType: "parent",

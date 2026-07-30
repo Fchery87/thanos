@@ -5,9 +5,11 @@
 - Use `/models` to select the active model.
 - Use `/goal <condition>` for bounded autonomous work.
 - Use `/todo` to track phased work.
-- `Ctrl+Shift+R` and `/waves <goal>` compose a review or decomposition prompt and
-  send it. Nothing enforces the structure they describe — treat their output as
-  the model's own work, held to the same evidence bar as any other turn.
+- `Ctrl+Shift+R` runs the structured read-only critic jury.
+- `/waves <goal>` starts the parent-owned, journaled workflow; delegated nodes
+  investigate read-only and the main session alone integrates. Use `/waves
+  status|pause|resume|cancel|handoff` to control it, and `workflow_yield` to
+  bind a candidate revision for jury and SpecEngine acceptance.
 
 ## Validation Gates
 

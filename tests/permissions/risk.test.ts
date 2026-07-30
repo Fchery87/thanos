@@ -15,7 +15,6 @@ describe("classifyRisk — non-bash tools (unchanged contract)", () => {
   });
 
   it("keeps known harness interaction/delegation tools medium", () => {
-    expect(classifyRisk("task", {})).toBe("medium");
     expect(classifyRisk("ask", {})).toBe("medium");
     expect(classifyRisk("todo", {})).toBe("medium");
     expect(classifyRisk("report_finding", {})).toBe("medium");
@@ -33,7 +32,7 @@ describe("classifyRisk — unrecognized tools (e.g. MCP servers) are high risk",
 
 describe("isRecognizedTool", () => {
   it("is true for every built-in and harness-registered tool", () => {
-    for (const name of ["read", "ls", "find", "grep", "write", "edit", "bash", "task", "ask", "todo", "report_finding", "goal_complete", "subagent"]) {
+    for (const name of ["read", "ls", "find", "grep", "write", "edit", "bash", "ask", "todo", "report_finding", "goal_complete", "subagent"]) {
       expect(isRecognizedTool(name)).toBe(true);
     }
   });

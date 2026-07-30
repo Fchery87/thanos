@@ -8,7 +8,7 @@ export interface ReinjectInputs {
   attempts: number;
   isSubagent: boolean;
   enabled: boolean;
-  /** While a /goal is active, the goal evaluator is the sole continuation driver. */
+  /** While a /goal is active, the Goal Loop is the sole continuation driver. */
   goalActive: boolean;
   /** True when the user aborted the turn (ESC) — never restart aborted work. */
   aborted?: boolean;

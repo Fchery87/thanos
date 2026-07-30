@@ -76,6 +76,12 @@ describe("classifyEgress", () => {
     expect(classifyEgress("bash", { command: "nc -l 8080" })).toBe("network");
     expect(classifyEgress("bash", { command: "ncat example.com 80" })).toBe("network");
   });
+
+  it("inspects every command in a compound shell program", () => {
+    expect(classifyEgress("bash", { command: "echo ready && curl https://example.com" })).toBe("network");
+    expect(classifyEgress("bash", { command: "printf ok | wget https://example.com/file" })).toBe("network");
+    expect(classifyEgress("bash", { command: "(git status; git push origin main)" })).toBe("repo-remote");
+  });
 });
 
 describe("evaluateEgress", () => {
