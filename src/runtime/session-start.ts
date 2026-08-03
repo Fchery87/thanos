@@ -13,7 +13,7 @@ import { restoreController } from "../goal/persist";
 import { renderGoalStatusSegment } from "../goal/command";
 import { renderWelcomeHeader, formatTimeAgo, type WelcomeMcpSummary, type WelcomePolicySummary } from "../welcome/header";
 import { checkForUpdate } from "../welcome/update-check";
-import { checkPatchDrift, formatPatchDriftWarning } from "../welcome/patch-drift";
+import { formatReapplyNotice, reapplyPatchesIfVersionMatches } from "../welcome/patch-drift";
 import { formatPanel } from "../ui-utils";
 import { DeliveryRuntime } from "./commands/delivery";
 import type { TodoRuntime } from "./commands/todo";
@@ -177,12 +177,14 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
         }
       }).catch(() => {});
 
-      // Detection only. External package source is mutated at controlled
-      // install/update time, never as a side effect of opening a session.
-      checkPatchDrift().then(async (result) => {
-        if (!result.installed || result.missingMarkers.length === 0) return;
-        const warning = formatPatchDriftWarning(result);
-        if (warning) ctx.ui.notify(warning, "warning");
+      // Self-heals the one case that is provably safe: a reinstall wiped the
+      // patches but left the pinned version in place, so the patches still
+      // apply verbatim. A genuine version change is left alone and only warns —
+      // there, the patches may no longer describe the code, and that is a human
+      // decision at a controlled update boundary.
+      reapplyPatchesIfVersionMatches().then((result) => {
+        const notice = formatReapplyNotice(result);
+        if (notice) ctx.ui.notify(notice.message, notice.level);
       }).catch(() => {});
     }
 
