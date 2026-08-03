@@ -1,4 +1,5 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -222,6 +223,59 @@ describe("automatic re-apply after a reinstall", () => {
     expect(ran).toBe(0);
     expect(result).toEqual({ status: "busy" });
     expect(formatReapplyNotice(result)).toBeUndefined();
+  });
+
+  it("surfaces a crashed holder's lock instead of clearing it", async () => {
+    const root = await fakeInstall("0.37.2", false);
+    const lockPath = join(await tempRoot(), "lock");
+    await mkdir(lockPath, { recursive: true });
+    // Backdate well past LOCK_STALE_MS: the holder is gone, not slow.
+    const old = new Date(Date.now() - 60 * 60_000);
+    await utimes(lockPath, old, old);
+
+    let ran = 0;
+    const result = await reapplyPatchesIfVersionMatches({
+      root,
+      thanosRoot: await fakeThanosRoot("0.37.2"),
+      lockPath,
+      runPatchScript: async () => { ran++; },
+    });
+
+    // Deleting a lock we merely believe is abandoned is the check-then-act race
+    // that lets two sessions rewrite node_modules at once. Warn, never reclaim.
+    expect(ran).toBe(0);
+    expect(result).toMatchObject({ status: "stale-lock", lockPath });
+    expect(existsSync(lockPath)).toBe(true);
+    const notice = formatReapplyNotice(result);
+    expect(notice?.level).toBe("warning");
+    expect(notice?.message).toContain("crashed");
+  });
+
+  it("releases the lock after a run so the next session can take it", async () => {
+    const root = await fakeInstall("0.37.2", false);
+    const thanosRoot = await fakeThanosRoot("0.37.2");
+    const lockPath = join(await tempRoot(), "lock");
+
+    const apply = async () => {
+      for (const target of PATCH_TARGETS) await writeFile(join(root, target.file), target.marker, "utf-8");
+    };
+    expect((await reapplyPatchesIfVersionMatches({ root, thanosRoot, lockPath, runPatchScript: apply })).status)
+      .toBe("reapplied");
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it("releases the lock even when the patch script throws", async () => {
+    const root = await fakeInstall("0.37.2", false);
+    const lockPath = join(await tempRoot(), "lock");
+    const result = await reapplyPatchesIfVersionMatches({
+      root,
+      thanosRoot: await fakeThanosRoot("0.37.2"),
+      lockPath,
+      runPatchScript: async () => { throw new Error("boom"); },
+    });
+    expect(result.status).toBe("failed");
+    // A lock leaked on the error path would wedge every later session.
+    expect(existsSync(lockPath)).toBe(false);
   });
 
   it("reports an absent package without attempting a run", async () => {

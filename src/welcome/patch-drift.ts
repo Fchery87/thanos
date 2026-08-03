@@ -107,28 +107,37 @@ export function formatPatchDriftWarning(
 
 // A patch run rewrites files under node_modules; two sessions opening at once
 // would otherwise race on the same tree. mkdir is atomic on every platform we
-// target, so the directory itself is the lock. Losing the race is not an error —
-// the winner is fixing the same tree — so the loser stays silent.
+// target, so the directory itself is the lock, and acquisition is the single
+// atomic syscall — there is deliberately no check-then-act path anywhere here.
+//
+// In particular a crashed holder is NOT reclaimed. Reclaiming means deciding a
+// lock is stale and then removing it, and those are two steps: a second session
+// that made the same decision can delete the fresh lock the first one just took
+// (rm -rf does not check ownership) and both proceed. Renaming instead of
+// removing only narrows that window, because the rename still acts on whatever
+// occupies the path at that instant rather than the directory that was judged
+// stale. Every variant trades a rare wedge for a rare double-run, and a
+// double-run is the failure this lock exists to prevent.
+//
+// So a stale lock is surfaced instead of cleared: the caller turns it into a
+// visible "run it yourself" warning. That is self-limiting rather than a
+// permanent wedge — the manual run clears the drift, and a clean tree never
+// reaches the lock again.
 const LOCK_STALE_MS = 5 * 60_000;
 
-async function withPatchLock<T>(lockPath: string, run: () => Promise<T>): Promise<T | undefined> {
+type LockOutcome<T> = { kind: "held"; value: T } | { kind: "contended"; stale: boolean };
+
+async function withPatchLock<T>(lockPath: string, run: () => Promise<T>): Promise<LockOutcome<T>> {
   try {
     await mkdir(lockPath);
   } catch {
-    // A lock older than any plausible patch run belongs to a crashed holder.
-    // Reclaim it rather than wedging every future session behind a directory
-    // that nobody is left alive to remove.
-    try {
-      const held = await stat(lockPath);
-      if (Date.now() - held.mtimeMs < LOCK_STALE_MS) return undefined;
-      await rm(lockPath, { recursive: true, force: true });
-      await mkdir(lockPath);
-    } catch {
-      return undefined;
-    }
+    // Age is reported, never acted on. An unreadable lock is treated as live:
+    // the conservative reading is that someone else is mid-run.
+    const age = await stat(lockPath).then((held) => Date.now() - held.mtimeMs).catch(() => 0);
+    return { kind: "contended", stale: age >= LOCK_STALE_MS };
   }
   try {
-    return await run();
+    return { kind: "held", value: await run() };
   } finally {
     await rm(lockPath, { recursive: true, force: true }).catch(() => {});
   }
@@ -142,6 +151,7 @@ export type PatchReapplyResult =
   | { status: "not-installed" }
   | { status: "clean" }
   | { status: "busy" }
+  | { status: "stale-lock"; lockPath: string; missingMarkers: string[] }
   | { status: "reapplied"; version: string; markers: string[] }
   | { status: "version-mismatch"; installed?: string; pinned?: string; missingMarkers: string[] }
   | { status: "failed"; detail: string; missingMarkers: string[] };
@@ -192,8 +202,9 @@ export async function reapplyPatchesIfVersionMatches(
     };
   }
 
+  const lockPath = options.lockPath ?? defaultPatchLockPath();
   const outcome = await withPatchLock(
-    options.lockPath ?? defaultPatchLockPath(),
+    lockPath,
     async (): Promise<PatchReapplyResult> => {
       try {
         await (options.runPatchScript ?? spawnPatchScript)(scriptPath);
@@ -220,7 +231,10 @@ export async function reapplyPatchesIfVersionMatches(
     },
   );
 
-  return outcome ?? { status: "busy" };
+  if (outcome.kind === "held") return outcome.value;
+  return outcome.stale
+    ? { status: "stale-lock", lockPath, missingMarkers: drift.missingMarkers }
+    : { status: "busy" };
 }
 
 export function formatReapplyNotice(
@@ -253,6 +267,16 @@ export function formatReapplyNotice(
           `does not match the pinned ${result.pinned ?? "unknown"} the patches were cut against.`,
       };
     }
+    case "stale-lock":
+      return {
+        level: "warning",
+        message:
+          `pi-subagents compatibility patches are missing (${result.missingMarkers.length}/${PATCH_TARGETS.length}), ` +
+          `but a previous patch run left a lock behind and appears to have crashed.\n` +
+          `Not cleared automatically — removing a lock another session may still hold is how two runs end up ` +
+          `rewriting node_modules at once.\n` +
+          `Run manually: node "${patchScriptPath}"  (then remove "${result.lockPath}" if it persists)`,
+      };
     case "failed":
       return {
         level: "warning",
