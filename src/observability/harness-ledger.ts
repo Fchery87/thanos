@@ -17,6 +17,14 @@ export type HarnessEventType =
   | "goal_paused"
   | "waves_lifecycle";
 
+/**
+ * Bumped only if a producer starts writing a row shape an old reader can't
+ * parse. Optional per row (older rows and non-decision-relevant event types
+ * omit it) so this stays backward compatible rather than forcing every
+ * producer to declare a version up front.
+ */
+export const HARNESS_EVENT_SCHEMA_VERSION = 1;
+
 export interface HarnessEvent {
   type: HarnessEventType;
   taskId: string;
@@ -25,6 +33,12 @@ export interface HarnessEvent {
   evidence?: string[];
   outcome: string;
   createdAt: string;
+  /** See HARNESS_EVENT_SCHEMA_VERSION. */
+  schemaVersion?: number;
+  /** Repository/cwd this row was recorded in — the ledger is per-repo, so this identifies which one. */
+  repository?: string;
+  /** Effective budget in force when this row was recorded, where relevant (e.g. an extractor timeout). */
+  timeoutMs?: number;
 }
 
 export function serializeHarnessEvent(event: HarnessEvent): string {

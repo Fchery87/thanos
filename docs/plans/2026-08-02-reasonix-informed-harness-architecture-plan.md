@@ -1,6 +1,6 @@
 # Plan: Reasonix-informed harness architecture
 
-**Status:** in progress — Phase 0 closed (`inconclusive`, 2026-08-02) · **Date:** 2026-08-02 · **Owner:** parent integration session
+**Status:** in progress — Phases 0–4 landed (Phase 0 closed `inconclusive`) · **Date:** 2026-08-02 · **Owner:** parent integration session
 
 ## Goal
 
@@ -596,6 +596,32 @@ Add only if a public inventory/reader is introduced:
 
 Use hostile seeded strings to prove prompts/secrets never serialize. Drive live
 producers with injected scratch cwd/sinks.
+
+### Recorded outcome — 2026-08-03
+
+Producer audit found only 6 of 12 declared `HarnessEventType` values ever
+produced (`gate_failure`, `spec_extraction`, `goal_set`, `goal_achieved`,
+`goal_paused`, `waves_lifecycle`); the other 6 were declaration-only. Recorded
+an honest live/planned matrix in `docs/harness-evolution.md` rather than
+wiring speculative producers for events nothing needs yet. `HarnessEvent`
+gained optional `schemaVersion`/`repository`/`timeoutMs`; `spec_extraction`'s
+live producer now populates all three. Added a closing amendment to ADR 0006
+recording the Phase 0 decision-gate's `inconclusive` outcome (not superseded —
+the "decides against `src/spec/`" condition was never met). Deleted
+`docs/evaluations/prompt-system.md` (described the fully-removed fabricated
+`eval-prompts.mjs` system) and removed `docs/architecture/prompt-system.md`'s
+stale "Remaining Phase Map" (listed already-true runtime-ownership as future
+work, and a rejected fabricated-eval direction as pending).
+
+**Follow-up, not done here:** `docs/plans/2026-07-27-harness-simplification-plan.md`
+is now fully resolved (every phase landed or closed) and per `AGENTS.md`
+should be deleted with any durable decisions moved to ADRs. Left it live
+rather than unilaterally authoring several ADRs mid-flight while implementing
+a different plan — the MCP-wiring and unreachable-code-deletion decisions in
+particular deserve their own considered pass.
+
+`tests/index.test.ts` needed no change — nothing there references ledger
+event types or the deleted eval doc.
 
 ---
 

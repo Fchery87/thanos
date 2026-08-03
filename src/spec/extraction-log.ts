@@ -1,4 +1,4 @@
-import { appendHarnessEvent } from "../observability/harness-ledger";
+import { appendHarnessEvent, HARNESS_EVENT_SCHEMA_VERSION } from "../observability/harness-ledger";
 
 /**
  * Why a turn's semantic extraction ended the way it did.
@@ -63,7 +63,16 @@ export const noopExtractionReporter: ExtractionReporter = () => {};
  * a second way for the turn to fail. A lost log line is strictly better than a
  * broken turn.
  */
-export function createLedgerExtractionReporter(taskId: string, cwd = process.cwd()): ExtractionReporter {
+export function createLedgerExtractionReporter(
+  taskId: string,
+  cwd = process.cwd(),
+  /**
+   * The extractor's configured timeout budget, if known at construction time.
+   * Recorded as a structured field on every row (not just `timeout`-outcome
+   * ones) so a future reader never has to parse it back out of `detail`.
+   */
+  effectiveTimeoutMs?: number,
+): ExtractionReporter {
   return (report) => {
     const evidence = [report.detail, report.criteriaCount === undefined ? undefined : `criteria=${report.criteriaCount}`]
       .filter((item): item is string => Boolean(item));
@@ -74,6 +83,9 @@ export function createLedgerExtractionReporter(taskId: string, cwd = process.cwd
       ...(evidence.length > 0 ? { evidence } : {}),
       outcome: report.outcome === "accepted" ? "ok" : "fell_back",
       createdAt: new Date().toISOString(),
+      schemaVersion: HARNESS_EVENT_SCHEMA_VERSION,
+      repository: cwd,
+      ...(effectiveTimeoutMs === undefined ? {} : { timeoutMs: effectiveTimeoutMs }),
     }, cwd).catch(() => {});
   };
 }

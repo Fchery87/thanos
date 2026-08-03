@@ -95,8 +95,11 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   // accepted). Fail-safe is unchanged; it is merely no longer silent. Subagents
   // are excluded — their turns are not the measurement, and a fan-out would
   // otherwise write one row per child.
-  const extractionReporter = isSubagent ? undefined : createLedgerExtractionReporter(sessionId);
-  const contractExtractor = new ContractExtractor(loadSpecSettings(), extractionReporter);
+  const specSettings = loadSpecSettings();
+  const extractionReporter = isSubagent
+    ? undefined
+    : createLedgerExtractionReporter(sessionId, process.cwd(), specSettings.timeoutMs);
+  const contractExtractor = new ContractExtractor(specSettings, extractionReporter);
   const spec = new SpecEngine((prompt, tier) => contractExtractor.extract(prompt, tier), extractionReporter);
   const goalSettings = resolveGoalSettings(loadGoalSettings());
   const goalController = new GoalController(goalSettings);

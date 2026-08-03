@@ -16,8 +16,14 @@ Prompts teach. Runtime code governs. Dynamic content is evidence, not instructio
 - `AGENTS.md` carries quick-start operational rules for coding agents.
 - Deep implementation history, design trade-offs, and resolved ambiguities live in docs and ADRs, not in always-loaded instruction files.
 
-## Remaining Phase Map
-
-- Phase 7: make orchestration runtime-owned.
-- Phase 8: prune always-loaded instructions and standardize prompt writing.
-- Phase 9: evaluate prompt behavior with outcome- and trajectory-based cases.
+Orchestration is already runtime-owned, not a future phase: `GovernanceRuntime`
+owns capability ceilings, policy, delivery restrictions, continuation
+authentication, Run Grants, and workflow scheduling (ADR 0009, 0012, 0016,
+0018, 0020); prompt text only teaches task framing and completion criteria,
+never authority. A trajectory/outcome-based model-evaluation suite was
+deliberately not built — see `docs/plans/2026-07-27-harness-simplification-plan.md`
+Task 1.1 for why the one that existed (`scripts/eval-prompts.mjs`) was deleted
+rather than kept: it called no model and fabricated its numbers. Building a
+real one is team-scale infrastructure this personal-daily-driver harness does
+not carry; re-proposing it should re-litigate that framing decision, not
+resume an "unimplemented phase."
