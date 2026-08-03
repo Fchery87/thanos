@@ -1,4 +1,6 @@
-import { buildPromptSections, renderCompletionCriteria, renderContextEnvelope } from "../prompts/style";
+import { buildPromptSections, renderCompletionCriteria } from "../prompts/style";
+import { makeContextEnvelope } from "../context/envelope";
+import { renderContextEnvelopeOrOmit } from "../context/render";
 
 /**
  * What each evidence kind means to the verifier, stated in the extractor's own
@@ -38,7 +40,18 @@ export function buildContractExtractionPrompt(request: string): string {
     },
     {
       heading: "Request",
-      body: renderContextEnvelope({ origin: "user", trusted: false, content: request }),
+      // A malformed request (control chars, over budget) must not crash
+      // extraction — fall back to a plain quoted excerpt rather than throw.
+      body: renderContextEnvelopeOrOmit(makeContextEnvelope({
+        id: "extractor-request",
+        origin: "user",
+        authority: "request",
+        scope: "turn",
+        source: "extractor-request",
+        trusted: false,
+        content: request,
+        maxBytes: 20_000,
+      })) ?? `content:${JSON.stringify(request.slice(0, 20_000))}`,
     },
     { heading: "Evidence kinds", body: EVIDENCE_VOCABULARY },
     {
