@@ -31,6 +31,11 @@ context-mode/
 # ── pi-lens runtime data ─────────────────────────────────────────────
 .pi-lens/
 
+# ── pi-subagents runtime artifacts ───────────────────────────────────
+# Per-run input/output/meta/transcript files for delegated subagent runs
+# (background result via file polling, ADR 0005). Ephemeral session data.
+.pi-subagents/
+
 # ── Binaries ─────────────────────────────────────────────────────────
 agent/bin/
 
