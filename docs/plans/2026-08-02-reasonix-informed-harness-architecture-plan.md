@@ -650,6 +650,38 @@ Never use destructive stash operations on the active working tree. If the
 failure evidence does not justify a robust solution, explicitly kill this phase
 and retain snapshot-only behavior.
 
+### Recorded decision — 2026-08-03: killed, no field evidence exists to evaluate
+
+Read `src/security/snapshot.ts` (unchanged — `createSnapshot` uses `stash
+create` + `stash store`, never `stash push`, so the working tree is never
+touched; already covered by `tests/security/snapshot.test.ts` for tracked,
+staged, unstaged, untracked-file, non-git-directory, idempotent, and
+repeated-snapshot cases) and its one call site in
+`src/runtime/governance-hooks.ts` (`await createSnapshot(process.cwd())` when
+`decision.snapshotNeeded`, for every critical op, including under yolo).
+
+**There is no field data to measure.** The call site awaits `createSnapshot`
+but discards its boolean result — success and failure are indistinguishable
+outside the process, and neither is ever logged. `grep -ic snapshot` against
+both `.harness/evolution/events.jsonl` and `.harness/audit.jsonl` in this
+harness's own real, live-used repository returns **zero** in each. A search of
+this session's memory records and every ADR turned up no recorded user-loss or
+recovery-failure incident — every "snapshot"/"rollback" mention found is about
+the yolo permission gate correctly setting `snapshotNeeded`, not about the
+snapshot itself failing or a user losing work.
+
+Zero observed attempts is not weak evidence of a problem — it is the total
+absence of the evidence Phase 5 is gated on. Per this phase's own rule, that
+kills it: **no recovery plan, no code change.** `src/security/snapshot.ts` and
+its call site keep their exact current behavior.
+
+Deliberately not done as part of killing this phase: adding a ledger event
+type so future snapshot attempts *do* get logged. That would be new producer
+code in a phase explicitly scoped to evaluation, not implementation, and this
+plan's own kill criteria rule out a proposed evaluation depending on data that
+doesn't exist yet. If snapshot visibility becomes worth having, it is a small,
+separately-scoped follow-up — not a prerequisite this phase needed to clear.
+
 ---
 
 ## Verification and delivery gates
