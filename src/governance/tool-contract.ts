@@ -23,7 +23,7 @@ export interface ToolContractEntry {
   readOnly: boolean;
   description: string;
   schema?: unknown;
-  documentation: "required" | "generated" | "not-applicable";
+  documentation: "generated" | "not-applicable";
 }
 
 export interface ToolContractSnapshot {

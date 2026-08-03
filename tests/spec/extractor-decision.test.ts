@@ -4,12 +4,14 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   ACCEPT_RATE_THRESHOLD,
+  DECISION_SCHEMA_VERSION,
   decideExtractorFate,
   MIN_QUALIFYING_SAMPLE,
   readExtractionLedgerRows,
   type ObservationWindow,
 } from "../../src/spec/extractor-decision";
 import type { ExtractionOutcome } from "../../src/spec/extraction-log";
+import { HARNESS_EVENT_SCHEMA_VERSION } from "../../src/observability/harness-ledger";
 
 const window: ObservationWindow = {
   id: "window-1",
@@ -150,6 +152,27 @@ describe("decideExtractorFate", () => {
     const row = makeRow("accepted", { schemaVersion: 999 });
     const decision = decideExtractorFate({ window, rows: [row] });
     expect(decision.rejectionReasons.future_schema).toBe(1);
+  });
+
+  it("checks a row's schemaVersion against the ledger row schema, not the decision-record schema", () => {
+    // These two constants version different things (the ledger row shape vs
+    // ExtractorDecisionRecord's own output shape) and happen to both be 1
+    // today — this pins the *row* check to HARNESS_EVENT_SCHEMA_VERSION
+    // specifically, so a future change to DECISION_SCHEMA_VERSION alone
+    // can't silently make this comparison wrong.
+    const atCurrentRowSchema = makeRow("accepted", { schemaVersion: HARNESS_EVENT_SCHEMA_VERSION });
+    const decision = decideExtractorFate({ window, rows: [atCurrentRowSchema] });
+    expect(decision.rejectionReasons.future_schema).toBeUndefined();
+    expect(decision.acceptedRowCount).toBe(1);
+
+    const pastCurrentRowSchema = makeRow("accepted", { schemaVersion: HARNESS_EVENT_SCHEMA_VERSION + 1 });
+    const rejected = decideExtractorFate({ window, rows: [pastCurrentRowSchema] });
+    expect(rejected.rejectionReasons.future_schema).toBe(1);
+  });
+
+  it("DECISION_SCHEMA_VERSION labels the output record, independent of the row check", () => {
+    const decision = decideExtractorFate({ window, rows: [] });
+    expect(decision.schemaVersion).toBe(DECISION_SCHEMA_VERSION);
   });
 
   it("passes gate-failure count through untouched, never as a decision input", () => {

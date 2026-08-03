@@ -1,6 +1,6 @@
 import { buildPromptSections, renderCompletionCriteria } from "../prompts/style";
 import { makeContextEnvelope } from "../context/envelope";
-import { renderContextEnvelopeOrOmit } from "../context/render";
+import { renderBoundedFallbackContent, renderContextEnvelopeOrOmit } from "../context/render";
 
 /**
  * What each evidence kind means to the verifier, stated in the extractor's own
@@ -51,7 +51,7 @@ export function buildContractExtractionPrompt(request: string): string {
         trusted: false,
         content: request,
         maxBytes: 20_000,
-      })) ?? `content:${JSON.stringify(request.slice(0, 20_000))}`,
+      })) ?? renderBoundedFallbackContent(request, 20_000),
     },
     { heading: "Evidence kinds", body: EVIDENCE_VOCABULARY },
     {

@@ -58,39 +58,47 @@ describe("instruction surface", () => {
     }
 
     const files = collectTsFiles(srcRoot).filter((f) => f !== ledgerDeclarationFile);
-    const sources = files.map((f) => readFileSync(f, "utf-8"));
+    // Strip comments before matching: a `// e.g. type: "gate_pass"` remark
+    // or a docstring mentioning an event name must not be able to fake a
+    // live producer for this check.
+    const sources = files.map((f) =>
+      readFileSync(f, "utf-8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/\/\/.*$/gm, ""));
 
     function hasLiveProducer(eventType: HarnessEventType): boolean {
       const needle = `type: "${eventType}"`;
       return sources.some((source) => source.includes(needle));
     }
 
-    // The set this reconciliation found live, cross-checked below against
-    // both actual source occurrence and the doc's own claims.
-    const expectedLive: HarnessEventType[] = [
-      "gate_failure", "spec_extraction", "goal_set", "goal_achieved", "goal_paused", "waves_lifecycle",
-    ];
-    const expectedPlanned: HarnessEventType[] = [
-      "gate_pass", "review_disagreement", "wave_handoff_rejected", "delivery_gate_failed", "manual_override", "harness_change",
-    ];
-
-    for (const type of expectedLive) {
-      expect(hasLiveProducer(type), `expected a live producer for "${type}" somewhere under src/`).toBe(true);
-    }
-    for (const type of expectedPlanned) {
-      expect(hasLiveProducer(type), `"${type}" has a producer now — docs/harness-evolution.md must stop calling it planned`).toBe(false);
-    }
+    // Every HarnessEventType member must appear here as exactly one of
+    // "live"/"planned" — a Record (not two separate arrays) so TypeScript
+    // itself rejects a new event type added to the union without a status
+    // assigned here, rather than this test silently skipping it.
+    const eventStatus: Record<HarnessEventType, "live" | "planned"> = {
+      gate_failure: "live",
+      spec_extraction: "live",
+      goal_set: "live",
+      goal_achieved: "live",
+      goal_paused: "live",
+      waves_lifecycle: "live",
+      gate_pass: "planned",
+      review_disagreement: "planned",
+      wave_handoff_rejected: "planned",
+      delivery_gate_failed: "planned",
+      manual_override: "planned",
+      harness_change: "planned",
+    };
 
     const evolutionDoc = readFileSync(join(process.cwd(), "docs", "harness-evolution.md"), "utf-8");
-    for (const type of expectedLive) {
+    for (const [type, status] of Object.entries(eventStatus) as [HarnessEventType, "live" | "planned"][]) {
+      expect(hasLiveProducer(type), `"${type}" is "${status}" but its live-producer status disagrees`)
+        .toBe(status === "live");
+
       const row = evolutionDoc.split("\n").find((line) => line.includes(`\`${type}\``));
       expect(row, `docs/harness-evolution.md has no row for "${type}"`).toBeDefined();
-      expect(row, `docs/harness-evolution.md doesn't mark "${type}" live`).toContain("**live**");
-    }
-    for (const type of expectedPlanned) {
-      const row = evolutionDoc.split("\n").find((line) => line.includes(`\`${type}\``));
-      expect(row, `docs/harness-evolution.md has no row for "${type}"`).toBeDefined();
-      expect(row, `docs/harness-evolution.md doesn't mark "${type}" planned`).toContain("planned");
+      expect(row, `docs/harness-evolution.md doesn't mark "${type}" ${status}`)
+        .toContain(status === "live" ? "**live**" : "planned");
     }
   });
 });

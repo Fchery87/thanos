@@ -157,7 +157,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   // ── /doctor — one read of everything that can drift silently ──────
   registerDoctorCommand(pi, {
     isSubagent, policyStatePromise, mcpManager, deliveryRuntime,
-    goalController, spec, workflowRuntime,
+    goalController, spec, workflowRuntime, specSettings,
   });
 
   // ── Thinking level selector (command + ctrl+shift+k shortcut) ──────

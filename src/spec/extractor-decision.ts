@@ -1,6 +1,7 @@
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 import type { ExtractionOutcome } from "./extraction-log";
+import { HARNESS_EVENT_SCHEMA_VERSION } from "../observability/harness-ledger";
 
 /**
  * Whether `src/spec/`'s ambient model call earns its keep is decided from the
@@ -29,7 +30,16 @@ const ALL_OUTCOMES = new Set<string>([...QUALIFYING_OUTCOMES, ...OPERATIONAL_OUT
 export const MIN_QUALIFYING_SAMPLE = 30;
 export const ACCEPT_RATE_THRESHOLD = 0.5;
 
-/** Bumped only if the ledger row shape changes in a way old readers cannot parse. */
+/**
+ * Versions `ExtractorDecisionRecord`'s own output shape — bumped only if that
+ * shape changes in a way an old reader of the *decision output* couldn't
+ * parse. This is deliberately a separate version space from
+ * `HARNESS_EVENT_SCHEMA_VERSION` (the ledger *row* shape `classifyRow` reads
+ * from): they happen to both be `1` today, but they version different
+ * things and will diverge independently. `classifyRow`'s `future_schema`
+ * check compares a row's `schemaVersion` against `HARNESS_EVENT_SCHEMA_VERSION`,
+ * not this constant.
+ */
 export const DECISION_SCHEMA_VERSION = 1;
 
 const SUMMARY_PREFIX = "semantic extraction: ";
@@ -148,7 +158,7 @@ function classifyRow(row: unknown, window: ObservationWindow): RowClassification
     return { reason: "scope_mismatch" };
   }
 
-  if (typeof candidate.schemaVersion === "number" && candidate.schemaVersion > DECISION_SCHEMA_VERSION) {
+  if (typeof candidate.schemaVersion === "number" && candidate.schemaVersion > HARNESS_EVENT_SCHEMA_VERSION) {
     return { reason: "future_schema" };
   }
 
@@ -237,19 +247,27 @@ export async function readExtractionLedgerRows(
   let truncated = false;
 
   for (const filePath of filePaths) {
-    const rl = createInterface({ input: createReadStream(filePath, { encoding: "utf-8" }), crlfDelay: Infinity });
-    for await (const line of rl) {
-      if (line.trim() === "") continue;
-      if (rows.length >= maxLines) {
-        truncated = true;
-        rl.close();
-        break;
+    const stream = createReadStream(filePath, { encoding: "utf-8" });
+    const rl = createInterface({ input: stream, crlfDelay: Infinity });
+    try {
+      for await (const line of rl) {
+        if (line.trim() === "") continue;
+        if (rows.length >= maxLines) {
+          truncated = true;
+          break;
+        }
+        try {
+          rows.push(JSON.parse(line));
+        } catch {
+          rows.push({ type: "malformed_line" });
+        }
       }
-      try {
-        rows.push(JSON.parse(line));
-      } catch {
-        rows.push({ type: "malformed_line" });
-      }
+    } finally {
+      // rl.close() alone does not release the underlying file descriptor —
+      // destroy the stream explicitly so an early break on truncation
+      // doesn't leak it.
+      rl.close();
+      stream.destroy();
     }
     if (truncated) break;
   }

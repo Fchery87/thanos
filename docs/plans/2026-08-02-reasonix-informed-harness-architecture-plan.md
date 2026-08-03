@@ -178,8 +178,9 @@ wrong repository/revision, wrong window, and missing provenance.
 
 Implemented `src/spec/extractor-decision.ts` (`decideExtractorFate`,
 `readExtractionLedgerRows`) and ran it read-only against the live
-`.harness/evolution/events.jsonl`, repository `/home/nochaserz/.pi`, revision
-`56ce1e5c86ee5986f18ab3eb60067304ff7a84fc`, window `2026-07-01`–`2026-08-02`:
+`.harness/evolution/events.jsonl`, repository `~/.pi` (the harness's own
+primary checkout), revision `56ce1e5c86ee5986f18ab3eb60067304ff7a84fc`, window
+`2026-07-01`–`2026-08-02`:
 
 | Metric | Value |
 |---|---|

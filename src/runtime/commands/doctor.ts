@@ -1,11 +1,11 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { MCPManager, ServerStatus } from "../../mcp/manager";
 import type { PolicyLoadState } from "../../policy/state";
-import { checkPatchDrift, formatPatchDriftWarning } from "../../welcome/patch-drift";
+import { checkPatchDrift as defaultCheckPatchDrift, formatPatchDriftWarning, type PatchDriftResult } from "../../welcome/patch-drift";
 import type { TUITheme } from "../../ui-utils";
 import { formatPanel } from "../../ui-utils";
 import { buildToolContractSnapshot, type ToolContractSnapshot } from "../../governance/tool-contract";
-import { loadSpecSettings } from "../../spec/extractor";
+import type { SpecExtractionSettings } from "../../spec/extractor";
 import type { GoalController } from "../../goal/controller";
 import type { SpecEngine } from "../../spec/engine";
 import type { WorkflowRuntime } from "../../workflows/state";
@@ -19,6 +19,17 @@ export interface DoctorCommandDeps {
   goalController: GoalController;
   spec: SpecEngine;
   workflowRuntime: WorkflowRuntime;
+  /**
+   * The extraction settings actually in effect for this session — the same
+   * snapshot `register-harness.ts` already loaded once at startup and bound
+   * into `ContractExtractor`/`createLedgerExtractionReporter`. Re-reading
+   * `loadSpecSettings()` live here would let /doctor report a value that
+   * disagrees with what the running extractor and ledger rows actually use
+   * if `settings.json` changes mid-session.
+   */
+  specSettings: SpecExtractionSettings;
+  /** Injectable for tests; defaults to the real check (reads pi-subagents' installed source under $HOME). */
+  checkPatchDrift?: () => Promise<PatchDriftResult>;
 }
 
 export type DiagnosticSeverity = "error" | "warning" | "info";
@@ -184,8 +195,12 @@ const SEVERITY_ICON: Record<DiagnosticSeverity, (theme: TUITheme, glyph: string)
 const SEVERITY_GLYPH: Record<DiagnosticSeverity, string> = { info: "✓", warning: "!", error: "✗" };
 
 export function renderDoctorDiagnostics(diagnostics: readonly Diagnostic[], theme: TUITheme): string {
-  const lines = diagnostics.map((d) =>
-    `  ${SEVERITY_ICON[d.severity](theme, SEVERITY_GLYPH[d.severity])} ${theme.fg("accent", d.subsystem.padEnd(10))} ${theme.fg("dim", d.message)}`);
+  const lines = diagnostics.flatMap((d) => {
+    const sourceLabel = d.source ? theme.fg("dim", ` (${d.source})`) : "";
+    const line = `  ${SEVERITY_ICON[d.severity](theme, SEVERITY_GLYPH[d.severity])} ${theme.fg("accent", d.subsystem.padEnd(10))} ${theme.fg("dim", d.message)}${sourceLabel}`;
+    if (!d.remediation) return [line];
+    return [line, `      ${theme.fg("dim", "→")} ${theme.fg("dim", d.remediation)}`];
+  });
   const worst = worstSeverity(diagnostics);
   return formatPanel(theme, "Harness Health", lines, worst === "error" ? "error" : worst === "warning" ? "warning" : "success");
 }
@@ -205,7 +220,10 @@ export function renderDoctorDiagnostics(diagnostics: readonly Diagnostic[], them
  * do, no model call, no mutation, and nothing that needs a live turn.
  */
 export function registerDoctorCommand(pi: ExtensionAPI, deps: DoctorCommandDeps): void {
-  const { isSubagent, policyStatePromise, mcpManager, deliveryRuntime, goalController, spec, workflowRuntime } = deps;
+  const {
+    isSubagent, policyStatePromise, mcpManager, deliveryRuntime, goalController, spec, workflowRuntime,
+    specSettings, checkPatchDrift = defaultCheckPatchDrift,
+  } = deps;
 
   pi.registerCommand("doctor", {
     description: "Check harness health: policy, MCP servers, delivery mode, tools, active state, and pi-subagents patch drift.",
@@ -237,12 +255,12 @@ export function registerDoctorCommand(pi: ExtensionAPI, deps: DoctorCommandDeps)
         goalStatus: goalSnapshot?.status ?? "none",
         workflowPhase: workflowRuntime.current?.phase,
         specActive: spec.activeSpec !== undefined,
-        extraction: (() => { const s = loadSpecSettings(); return { enabled: s.extraction, timeoutMs: s.timeoutMs }; })(),
+        extraction: { enabled: specSettings.extraction, timeoutMs: specSettings.timeoutMs },
       };
 
       const diagnostics = collectDoctorDiagnostics(inputs);
       const worst = worstSeverity(diagnostics);
-      ctx.ui.notify(renderDoctorDiagnostics(diagnostics, theme), worst === "info" ? "info" : "warning");
+      ctx.ui.notify(renderDoctorDiagnostics(diagnostics, theme), worst);
     },
   });
 }

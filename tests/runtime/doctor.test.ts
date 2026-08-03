@@ -213,19 +213,33 @@ describe("registerDoctorCommand", () => {
     };
   }
 
-  it("main session: registers /doctor and runs without mutating any dependency", async () => {
-    const { api, registered } = makeFakePi();
-    const { ctx, notify } = makeFakeCtx();
+  const okPolicy = Promise.resolve({ kind: "ok", policy: { version: 1, preset: "team", rules: [], audit: { enabled: false, path: "x" }, headless: { defaultDecision: "deny" } } } as never);
 
-    registerDoctorCommand(api, {
+  // Every test here injects checkPatchDrift and specSettings rather than
+  // letting the handler fall through to the real defaults, which read
+  // $HOME (installed pi-subagents source, ~/.pi/agent/settings.json) —
+  // wrapping these calls in a scratch cwd would not isolate them, since
+  // neither is cwd-relative.
+  function baseDeps(overrides: Record<string, unknown> = {}) {
+    return {
       isSubagent: false,
-      policyStatePromise: Promise.resolve({ kind: "ok", policy: { version: 1, preset: "team", rules: [], audit: { enabled: false, path: "x" }, headless: { defaultDecision: "deny" } } } as never),
+      policyStatePromise: okPolicy,
       mcpManager: null,
       deliveryRuntime: { getState: async () => ({ registered: true, mode: "local-only" }) } as never,
       goalController: new GoalController(),
       spec: new SpecEngine(),
       workflowRuntime: new WorkflowRuntime(),
-    });
+      specSettings: { extraction: true, extractorRole: "evaluator", timeoutMs: 10_000 },
+      checkPatchDrift: async () => ({ installed: true, missingMarkers: [] }),
+      ...overrides,
+    };
+  }
+
+  it("main session: registers /doctor and runs without mutating any dependency", async () => {
+    const { api, registered } = makeFakePi();
+    const { ctx, notify } = makeFakeCtx();
+
+    registerDoctorCommand(api, baseDeps() as never);
 
     await registered.handler("", ctx);
 
@@ -238,15 +252,7 @@ describe("registerDoctorCommand", () => {
     const { api, registered } = makeFakePi();
     const { ctx, notify } = makeFakeCtx();
 
-    registerDoctorCommand(api, {
-      isSubagent: true,
-      policyStatePromise: Promise.resolve({ kind: "ok", policy: { version: 1, preset: "team", rules: [], audit: { enabled: false, path: "x" }, headless: { defaultDecision: "deny" } } } as never),
-      mcpManager: null,
-      deliveryRuntime: { getState: async () => undefined } as never,
-      goalController: new GoalController(),
-      spec: new SpecEngine(),
-      workflowRuntime: new WorkflowRuntime(),
-    });
+    registerDoctorCommand(api, baseDeps({ isSubagent: true, deliveryRuntime: { getState: async () => undefined } }) as never);
 
     await registered.handler("", ctx);
 
@@ -256,25 +262,73 @@ describe("registerDoctorCommand", () => {
     expect(level).toBe("warning");
   });
 
-  it("never starts an MCP server, probes the network, calls a model, or appends a ledger row", async () => {
+  it("reads MCP status exactly once — never starts a server, probes the network, calls a model, or appends a ledger row", async () => {
     const getStatuses = vi.fn(() => []);
     const { api, registered } = makeFakePi();
     const { ctx } = makeFakeCtx();
 
-    registerDoctorCommand(api, {
-      isSubagent: false,
-      policyStatePromise: Promise.resolve({ kind: "ok", policy: { version: 1, preset: "team", rules: [], audit: { enabled: false, path: "x" }, headless: { defaultDecision: "deny" } } } as never),
-      mcpManager: { getStatuses } as never,
-      deliveryRuntime: { getState: async () => ({ registered: true, mode: "local-only" }) } as never,
-      goalController: new GoalController(),
-      spec: new SpecEngine(),
-      workflowRuntime: new WorkflowRuntime(),
-    });
+    registerDoctorCommand(api, baseDeps({ mcpManager: { getStatuses } }) as never);
 
     await registered.handler("", ctx);
 
     // getStatuses is a synchronous read of already-known state, called
     // exactly once — never a connect/start call, never polled.
     expect(getStatuses).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the injected specSettings snapshot rather than reading settings.json live", async () => {
+    const { api, registered } = makeFakePi();
+    const { ctx, notify } = makeFakeCtx();
+
+    registerDoctorCommand(api, baseDeps({
+      specSettings: { extraction: true, extractorRole: "evaluator", timeoutMs: 42_000 },
+    }) as never);
+
+    await registered.handler("", ctx);
+
+    const [panel] = notify.mock.calls[0] as [string];
+    expect(panel).toContain("42000ms");
+  });
+
+  it("uses the injected checkPatchDrift rather than reading the real pi-subagents install", async () => {
+    const { api, registered } = makeFakePi();
+    const { ctx, notify } = makeFakeCtx();
+    const checkPatchDrift = vi.fn(async () => ({ installed: true, missingMarkers: ["needle-x"] }));
+
+    registerDoctorCommand(api, baseDeps({ checkPatchDrift }) as never);
+    await registered.handler("", ctx);
+
+    expect(checkPatchDrift).toHaveBeenCalledTimes(1);
+    const [panel] = notify.mock.calls[0] as [string];
+    expect(panel).toContain("subagents");
+  });
+
+  it("surfaces a diagnostic's remediation text and source label, not just its message", async () => {
+    const { api, registered } = makeFakePi();
+    const { ctx, notify } = makeFakeCtx();
+
+    registerDoctorCommand(api, baseDeps({
+      policyStatePromise: Promise.resolve({ kind: "error", error: "malformed policy JSON" } as never),
+    }) as never);
+
+    await registered.handler("", ctx);
+
+    const [panel] = notify.mock.calls[0] as [string];
+    expect(panel).toContain("malformed policy JSON");
+    expect(panel).toContain("Fix the policy file's syntax");
+  });
+
+  it("passes the worst diagnostic severity straight through to notify, never downgrading error to warning", async () => {
+    const { api, registered } = makeFakePi();
+    const { ctx, notify } = makeFakeCtx();
+
+    registerDoctorCommand(api, baseDeps({
+      policyStatePromise: Promise.resolve({ kind: "error", error: "bad policy" } as never),
+    }) as never);
+
+    await registered.handler("", ctx);
+
+    const [, level] = notify.mock.calls[0] as [string, string];
+    expect(level).toBe("error");
   });
 });

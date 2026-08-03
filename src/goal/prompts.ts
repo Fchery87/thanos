@@ -1,6 +1,6 @@
 import { buildPromptSections, renderCompletionCriteria } from "../prompts/style";
 import { makeContextEnvelope } from "../context/envelope";
-import { renderContextEnvelopeOrOmit } from "../context/render";
+import { renderBoundedFallbackContent, renderContextEnvelopeOrOmit } from "../context/render";
 
 /**
  * Marks every goal-injected user message. before_agent_start treats this like
@@ -61,7 +61,7 @@ export function buildGoalSystemPrompt(condition: string): string {
         trusted: false,
         content: condition,
         maxBytes: 4_000,
-      })) ?? `content:${JSON.stringify(condition.slice(0, 4_000))}`,
+      })) ?? renderBoundedFallbackContent(condition, 4_000),
     },
     {
       heading: "Action",

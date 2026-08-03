@@ -2,22 +2,25 @@
 
 **Status:** Accepted
 
-`src/security/snapshot.ts`'s `createSnapshot` records a recovery point before
-every critical (mutating) tool call — `git stash create` + `stash store`,
-never `stash push`, so the working tree is never touched even on failure. A
-2026-08-02 architecture plan proposed evaluating whether this needed to grow
-into a full rewind/recovery feature (retention policy, explicit user
-confirmation, conflict behavior, tracked/staged/unstaged/untracked/symlink/
-binary semantics) and scoped that evaluation, deliberately, ahead of any
+`src/security/snapshot.ts`'s `createSnapshot` attempts to record a recovery
+point before every critical (mutating) tool call — `git stash create` +
+`stash store`, never `stash push`, so the working tree is never touched even
+on failure. It is an attempt, not a guarantee: it returns `false` (no
+snapshot recorded) for a clean tree, for untracked-only changes (`stash
+create` does not capture them), and for any underlying git failure, and its
+one call site (`governance-hooks.ts`) discards that boolean. A 2026-08-02
+architecture plan proposed evaluating whether this needed to grow into a full
+rewind/recovery feature (retention policy, explicit user confirmation,
+conflict behavior, tracked/staged/unstaged/untracked/symlink/binary
+semantics) and scoped that evaluation, deliberately, ahead of any
 implementation.
 
-The evaluation found no evidence to weigh. `governance-hooks.ts`'s one call
-site awaits `createSnapshot`'s boolean result and discards it; success and
-failure have never been distinguishable outside the process, let alone
-logged. A search of this harness's own real, live-used
-`.harness/evolution/events.jsonl` and `.harness/audit.jsonl`, every ADR, and
-this project's session memory records found zero recorded snapshot attempts
-and zero user-reported loss or recovery-failure incidents.
+The evaluation found no evidence to weigh. Because success and failure are
+never distinguishable outside the process, let alone logged, a search of this
+harness's own real, live-used `.harness/evolution/events.jsonl` and
+`.harness/audit.jsonl`, every ADR, and this project's session memory records
+found zero recorded snapshot attempts and zero user-reported loss or
+recovery-failure incidents.
 
 Zero observed attempts is not weak evidence of a problem — it is the total
 absence of the evidence a recovery feature would need to be justified by.
