@@ -1,9 +1,14 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { MCPManager } from "../../mcp/manager";
+import type { MCPManager, ServerStatus } from "../../mcp/manager";
 import type { PolicyLoadState } from "../../policy/state";
 import { checkPatchDrift, formatPatchDriftWarning } from "../../welcome/patch-drift";
+import type { TUITheme } from "../../ui-utils";
 import { formatPanel } from "../../ui-utils";
-import { buildToolContractSnapshot } from "../../governance/tool-contract";
+import { buildToolContractSnapshot, type ToolContractSnapshot } from "../../governance/tool-contract";
+import { loadSpecSettings } from "../../spec/extractor";
+import type { GoalController } from "../../goal/controller";
+import type { SpecEngine } from "../../spec/engine";
+import type { WorkflowRuntime } from "../../workflows/state";
 import type { DeliveryRuntime } from "./delivery";
 
 export interface DoctorCommandDeps {
@@ -11,14 +16,178 @@ export interface DoctorCommandDeps {
   policyStatePromise: Promise<PolicyLoadState>;
   mcpManager: MCPManager | null;
   deliveryRuntime: DeliveryRuntime;
+  goalController: GoalController;
+  spec: SpecEngine;
+  workflowRuntime: WorkflowRuntime;
 }
 
-type Level = "ok" | "warn" | "bad";
+export type DiagnosticSeverity = "error" | "warning" | "info";
 
-interface Check {
-  name: string;
-  level: Level;
-  detail: string;
+/**
+ * A structured health finding, testable independently of terminal rendering.
+ * `code` is the stable, machine-checkable identity of a finding — tests
+ * assert on it rather than on rendered text, so `renderDoctorDiagnostics`
+ * can change wording freely without breaking coverage.
+ */
+export interface Diagnostic {
+  severity: DiagnosticSeverity;
+  code: string;
+  subsystem: string;
+  source?: string;
+  message: string;
+  remediation?: string;
+}
+
+/** Already-resolved data `collectDoctorDiagnostics` needs — no promises, no live objects with side effects. */
+export interface DoctorInputs {
+  policy: PolicyLoadState;
+  mcpStatuses: readonly ServerStatus[];
+  delivery: { registered: boolean; mode: string; autonomy?: string } | undefined;
+  patchDrift: { warning?: string; error?: string };
+  toolContract: ToolContractSnapshot;
+  goalStatus: "active" | "paused" | "achieved" | "none";
+  workflowPhase: string | undefined;
+  specActive: boolean;
+  extraction: { enabled: boolean; timeoutMs: number };
+}
+
+const SEVERITY_RANK: Record<DiagnosticSeverity, number> = { info: 0, warning: 1, error: 2 };
+
+/** The most severe level across all diagnostics — a healthy check can never downgrade an error found elsewhere. */
+export function worstSeverity(diagnostics: readonly Diagnostic[]): DiagnosticSeverity {
+  return diagnostics.reduce<DiagnosticSeverity>(
+    (worst, d) => (SEVERITY_RANK[d.severity] > SEVERITY_RANK[worst] ? d.severity : worst),
+    "info",
+  );
+}
+
+/**
+ * Pure, synchronous, and read-only: no model, network, filesystem, or MCP
+ * call, and no mutation of policy/permissions/delivery/acceptance state.
+ * Check order is fixed so two runs over identical inputs always render
+ * identically.
+ */
+export function collectDoctorDiagnostics(inputs: DoctorInputs): readonly Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+
+  // ── Policy ──────────────────────────────────────────────────────────
+  // A policy that fails to parse blocks every governed tool call, so this
+  // is the one whose failure is loudest in practice and least obvious in
+  // cause.
+  diagnostics.push(inputs.policy.kind === "ok"
+    ? {
+        severity: "info",
+        code: "policy.ok",
+        subsystem: "policy",
+        message: `preset ${inputs.policy.policy.preset}, ${inputs.policy.policy.rules.length} rule(s), audit ${inputs.policy.policy.audit.enabled ? "on" : "off"}`,
+      }
+    : {
+        severity: "error",
+        code: "policy.error",
+        subsystem: "policy",
+        message: inputs.policy.error,
+        remediation: "Fix the policy file's syntax, then restart the session.",
+      });
+
+  // ── MCP ─────────────────────────────────────────────────────────────
+  // `blocked` is kept a distinct code from `failed`: a blocked server is not
+  // broken, it is refused by the trust gate and is waiting on a decision
+  // (/mcp → trust). Folding it into "failed" would send you debugging a
+  // server that is working exactly as designed.
+  if (inputs.mcpStatuses.length === 0) {
+    diagnostics.push({ severity: "info", code: "mcp.none", subsystem: "mcp", message: "no servers configured" });
+  } else {
+    const connected = inputs.mcpStatuses.filter((s) => s.connected);
+    const blocked = inputs.mcpStatuses.filter((s) => s.blocked);
+    const failed = inputs.mcpStatuses.filter((s) => s.error && !s.blocked);
+    const disabled = inputs.mcpStatuses.filter((s) => s.disabled);
+    const parts = [`${connected.length}/${inputs.mcpStatuses.length} connected`];
+    if (disabled.length > 0) parts.push(`${disabled.length} disabled`);
+    if (blocked.length > 0) parts.push(`${blocked.length} untrusted: ${blocked.map((s) => s.name).join(", ")}`);
+    if (failed.length > 0) parts.push(`${failed.length} failed: ${failed.map((s) => s.name).join(", ")}`);
+
+    diagnostics.push(failed.length > 0
+      ? { severity: "error", code: "mcp.failed", subsystem: "mcp", message: parts.join(" · "), remediation: "Check server logs; failing servers do not block other tool calls." }
+      : blocked.length > 0
+        ? { severity: "warning", code: "mcp.blocked", subsystem: "mcp", message: parts.join(" · "), remediation: "/mcp → trust to approve, or leave untrusted." }
+        : { severity: "info", code: "mcp.connected", subsystem: "mcp", message: parts.join(" · ") });
+  }
+
+  // ── Delivery ────────────────────────────────────────────────────────
+  // An unregistered repo silently resolves to the safe default, which is
+  // correct but worth being able to see rather than infer.
+  diagnostics.push(inputs.delivery
+    ? {
+        severity: inputs.delivery.registered ? "info" : "warning",
+        code: inputs.delivery.registered ? "delivery.registered" : "delivery.unregistered",
+        subsystem: "delivery",
+        message: deliveryLabel(inputs.delivery),
+        remediation: inputs.delivery.registered ? undefined : "/delivery to register this repo explicitly.",
+      }
+    : { severity: "warning", code: "delivery.unresolved", subsystem: "delivery", message: "no delivery state resolved" });
+
+  // ── Tool contract ───────────────────────────────────────────────────
+  // Same projection /tools and docs/reference.md use — a mismatch there
+  // would mean runtime classification and this diagnostic view disagree.
+  const tc = inputs.toolContract.summary;
+  diagnostics.push({
+    severity: tc.unknown > 0 ? "warning" : "info",
+    code: tc.unknown > 0 ? "tools.unknown_present" : "tools.ok",
+    subsystem: "tools",
+    source: `rev ${inputs.toolContract.revision.slice(0, 15)}`,
+    message: `${tc.active} active, ${tc.recognized} recognized, ${tc.unknown} unknown`,
+  });
+
+  // ── Active state (goal / workflow / spec) ──────────────────────────
+  // Read-only session-state summary: what's currently driving continuation.
+  const stateParts = [
+    `goal ${inputs.goalStatus}`,
+    `workflow ${inputs.workflowPhase ?? "none"}`,
+    `spec ${inputs.specActive ? "active" : "none"}`,
+  ];
+  diagnostics.push({ severity: "info", code: "state.summary", subsystem: "state", message: stateParts.join(" · ") });
+
+  // ── Extraction settings ─────────────────────────────────────────────
+  // Config only — the keep/delete question itself is decided by
+  // src/spec/extractor-decision.ts against the ledger, not here.
+  diagnostics.push({
+    severity: "info",
+    code: inputs.extraction.enabled ? "extraction.enabled" : "extraction.disabled",
+    subsystem: "extraction",
+    message: inputs.extraction.enabled
+      ? `enabled, ${inputs.extraction.timeoutMs}ms timeout`
+      : "disabled in settings.json",
+  });
+
+  // ── pi-subagents patch drift ────────────────────────────────────────
+  // A package update silently reverts the Thanos source patches, and the
+  // first symptom is a fanout crash on a reviewer run.
+  diagnostics.push(inputs.patchDrift.error
+    ? { severity: "warning", code: "subagents.patch_check_failed", subsystem: "subagents", message: `patch check failed: ${inputs.patchDrift.error}` }
+    : inputs.patchDrift.warning
+      ? { severity: "warning", code: "subagents.patch_drift", subsystem: "subagents", message: inputs.patchDrift.warning.replace(/\s+/g, " ").trim() }
+      : { severity: "info", code: "subagents.patch_ok", subsystem: "subagents", message: "pi-subagents patches intact" });
+
+  return diagnostics;
+}
+
+function deliveryLabel(state: { mode: string; autonomy?: string; registered: boolean }): string {
+  const label = state.autonomy ? `${state.mode} · ${state.autonomy}` : state.mode;
+  return state.registered ? label : `${label} — repo not registered, using the safe default`;
+}
+
+const SEVERITY_ICON: Record<DiagnosticSeverity, (theme: TUITheme, glyph: string) => string> = {
+  info: (theme, glyph) => theme.fg("success", glyph),
+  warning: (theme, glyph) => theme.fg("warning", glyph),
+  error: (theme, glyph) => theme.fg("error", glyph),
+};
+const SEVERITY_GLYPH: Record<DiagnosticSeverity, string> = { info: "✓", warning: "!", error: "✗" };
+
+export function renderDoctorDiagnostics(diagnostics: readonly Diagnostic[], theme: TUITheme): string {
+  const lines = diagnostics.map((d) =>
+    `  ${SEVERITY_ICON[d.severity](theme, SEVERITY_GLYPH[d.severity])} ${theme.fg("accent", d.subsystem.padEnd(10))} ${theme.fg("dim", d.message)}`);
+  const worst = worstSeverity(diagnostics);
+  return formatPanel(theme, "Harness Health", lines, worst === "error" ? "error" : worst === "warning" ? "warning" : "success");
 }
 
 /**
@@ -27,126 +196,53 @@ interface Check {
  *
  * Every check here already ran somewhere: patch drift and the policy load are
  * startup notifications, MCP status lives in `/mcp`, delivery mode in
- * `/delivery`. The problem is that each announces itself once, at launch, in a
- * stream you scroll past — and every one of them fails *quietly*. A reverted
- * pi-subagents patch, a policy file that stopped parsing, an MCP server the
- * trust gate refused: none of those interrupt you, and all of them change what
- * the harness does.
+ * `/delivery`, tool classification in `/tools`. The problem is that each
+ * announces itself once, at launch, in a stream you scroll past — and every
+ * one of them fails *quietly*.
  *
  * Deliberately reports only what it can establish from state the harness
  * already holds. No new subsystem, no network beyond what the checks already
- * do, and nothing that needs a live turn.
+ * do, no model call, no mutation, and nothing that needs a live turn.
  */
 export function registerDoctorCommand(pi: ExtensionAPI, deps: DoctorCommandDeps): void {
-  const { isSubagent, policyStatePromise, mcpManager, deliveryRuntime } = deps;
+  const { isSubagent, policyStatePromise, mcpManager, deliveryRuntime, goalController, spec, workflowRuntime } = deps;
 
   pi.registerCommand("doctor", {
-    description: "Check harness health: policy, MCP servers, delivery mode, and pi-subagents patch drift.",
+    description: "Check harness health: policy, MCP servers, delivery mode, tools, active state, and pi-subagents patch drift.",
     handler: async (_args, ctx) => {
       if (isSubagent) {
         ctx.ui.notify("/doctor is only available in the main session.", "warning");
         return;
       }
       const theme = ctx.ui.theme;
-      const checks: Check[] = [];
 
-      // ── Policy ──────────────────────────────────────────────────────────
-      // A policy that fails to parse blocks every governed tool call, so this
-      // is the one whose failure is loudest in practice and least obvious in
-      // cause.
-      const policyState = await policyStatePromise;
-      checks.push(policyState.kind === "ok"
-        ? {
-            name: "policy",
-            level: "ok",
-            detail: `preset ${policyState.policy.preset}, ${policyState.policy.rules.length} rule(s), audit ${policyState.policy.audit.enabled ? "on" : "off"}`,
-          }
-        : { name: "policy", level: "bad", detail: policyState.error });
-
-      // ── MCP ─────────────────────────────────────────────────────────────
-      // `blocked` is separated from `error` on purpose: a blocked server is not
-      // broken, it is refused by the trust gate and is waiting on a decision
-      // (/mcp → trust). Rolling it into "failed" would send you debugging a
-      // server that is working exactly as designed.
-      const statuses = mcpManager?.getStatuses() ?? [];
-      if (statuses.length === 0) {
-        checks.push({ name: "mcp", level: "ok", detail: "no servers configured" });
-      } else {
-        const connected = statuses.filter((s) => s.connected);
-        const blocked = statuses.filter((s) => s.blocked);
-        const failed = statuses.filter((s) => s.error && !s.blocked);
-        const disabled = statuses.filter((s) => s.disabled);
-        const parts = [`${connected.length}/${statuses.length} connected`];
-        if (disabled.length > 0) parts.push(`${disabled.length} disabled`);
-        if (blocked.length > 0) parts.push(`${blocked.length} untrusted (/mcp → trust): ${blocked.map((s) => s.name).join(", ")}`);
-        if (failed.length > 0) parts.push(`${failed.length} failed: ${failed.map((s) => s.name).join(", ")}`);
-        checks.push({
-          name: "mcp",
-          level: failed.length > 0 ? "bad" : blocked.length > 0 ? "warn" : "ok",
-          detail: parts.join(" · "),
-        });
-      }
-
-      // ── Delivery ────────────────────────────────────────────────────────
-      // An unregistered repo silently resolves to the safe default, which is
-      // correct but worth being able to see rather than infer.
+      const policy = await policyStatePromise;
       const delivery = await deliveryRuntime.getState();
-      checks.push(delivery
-        ? {
-            name: "delivery",
-            level: delivery.registered ? "ok" : "warn",
-            detail: delivery.registered
-              ? DeliveryRuntimeLabel(delivery)
-              : `${DeliveryRuntimeLabel(delivery)} — repo not registered, using the safe default (/delivery to register)`,
-          }
-        : { name: "delivery", level: "warn", detail: "no delivery state resolved" });
-
-      // ── Tool contract ───────────────────────────────────────────────────
-      // Same projection /tools and docs/reference.md use — a mismatch here
-      // would mean runtime classification and the diagnostic view disagree.
-      // pi.getAllTools()/getActiveTools() are live registry reads, not a
-      // probe: no server start, network call, model call, or mutation.
-      const toolSnapshot = buildToolContractSnapshot({
-        tools: pi.getAllTools(),
-        activeToolNames: pi.getActiveTools(),
-      });
-      checks.push({
-        name: "tools",
-        level: toolSnapshot.summary.unknown > 0 ? "warn" : "ok",
-        detail: `${toolSnapshot.summary.active} active, ${toolSnapshot.summary.recognized} recognized, ${toolSnapshot.summary.unknown} unknown (rev ${toolSnapshot.revision.slice(0, 15)})`,
-      });
-
-      // ── pi-subagents patch drift ────────────────────────────────────────
-      // A package update silently reverts the Thanos source patches, and the
-      // first symptom is a fanout crash on a reviewer run.
+      let patchDrift: DoctorInputs["patchDrift"] = {};
       try {
         const drift = await checkPatchDrift();
         const warning = formatPatchDriftWarning(drift);
-        checks.push(warning
-          ? { name: "subagents", level: "warn", detail: warning.replace(/\s+/g, " ").trim() }
-          : { name: "subagents", level: "ok", detail: "pi-subagents patches intact" });
+        if (warning) patchDrift = { warning };
       } catch (err) {
-        checks.push({ name: "subagents", level: "warn", detail: `patch check failed: ${err instanceof Error ? err.message : String(err)}` });
+        patchDrift = { error: err instanceof Error ? err.message : String(err) };
       }
 
-      const icon = (level: Level) => level === "ok"
-        ? theme.fg("success", "✓")
-        : level === "warn" ? theme.fg("warning", "!") : theme.fg("error", "✗");
+      const goalSnapshot = goalController.snapshot();
+      const inputs: DoctorInputs = {
+        policy,
+        mcpStatuses: mcpManager?.getStatuses() ?? [],
+        delivery,
+        patchDrift,
+        toolContract: buildToolContractSnapshot({ tools: pi.getAllTools(), activeToolNames: pi.getActiveTools() }),
+        goalStatus: goalSnapshot?.status ?? "none",
+        workflowPhase: workflowRuntime.current?.phase,
+        specActive: spec.activeSpec !== undefined,
+        extraction: (() => { const s = loadSpecSettings(); return { enabled: s.extraction, timeoutMs: s.timeoutMs }; })(),
+      };
 
-      const lines = checks.map((c) => `  ${icon(c.level)} ${theme.fg("accent", c.name.padEnd(10))} ${theme.fg("dim", c.detail)}`);
-      const worst: Level = checks.some((c) => c.level === "bad")
-        ? "bad"
-        : checks.some((c) => c.level === "warn") ? "warn" : "ok";
-
-      ctx.ui.notify(
-        formatPanel(theme, "Harness Health", lines, worst === "bad" ? "error" : worst === "warn" ? "warning" : "success"),
-        worst === "ok" ? "info" : "warning",
-      );
+      const diagnostics = collectDoctorDiagnostics(inputs);
+      const worst = worstSeverity(diagnostics);
+      ctx.ui.notify(renderDoctorDiagnostics(diagnostics, theme), worst === "info" ? "info" : "warning");
     },
   });
-}
-
-/** Local copy of the delivery label so /doctor does not depend on class statics. */
-function DeliveryRuntimeLabel(state: { mode: string; autonomy?: string }): string {
-  return state.autonomy ? `${state.mode} · ${state.autonomy}` : state.mode;
 }

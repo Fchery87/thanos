@@ -152,7 +152,10 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   registerMcpCommand(pi, { isSubagent, mcpManager });
 
   // ── /doctor — one read of everything that can drift silently ──────
-  registerDoctorCommand(pi, { isSubagent, policyStatePromise, mcpManager, deliveryRuntime });
+  registerDoctorCommand(pi, {
+    isSubagent, policyStatePromise, mcpManager, deliveryRuntime,
+    goalController, spec, workflowRuntime,
+  });
 
   // ── Thinking level selector (command + ctrl+shift+k shortcut) ──────
   registerThinkingCommand(pi);
