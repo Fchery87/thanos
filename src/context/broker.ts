@@ -1,6 +1,6 @@
 import type { MemoryRecord } from "../memory/types";
 import { formatMemoriesForInjection } from "../memory/injector";
-import { renderContextEnvelope } from "./render";
+import { renderContextEnvelopeOrOmit } from "./render";
 import { makeContextEnvelope } from "./envelope";
 
 export interface PromptAssembly {
@@ -26,14 +26,24 @@ export function assemblePrompt(input: {
   const memoriesBlock = formatMemoriesForInjection(input.memories);
   if (!memoriesBlock) return {};
 
-  return {
-    memoriesMessage: renderContextEnvelope(makeContextEnvelope({
-      id: "project-memories",
-      origin: "memory",
-      authority: "preference",
-      trusted: false,
-      content: memoriesBlock,
-      maxBytes: 12_000,
-    })),
-  };
+  // The freshest record's timestamp — a bounded, real freshness signal rather
+  // than a placeholder, since these ten records can span very different ages.
+  const capturedAtMs = input.memories.reduce<number | undefined>(
+    (latest, record) => (latest === undefined || record.timestamp > latest ? record.timestamp : latest),
+    undefined,
+  );
+
+  const memoriesMessage = renderContextEnvelopeOrOmit(makeContextEnvelope({
+    id: "project-memories",
+    origin: "memory",
+    authority: "preference",
+    scope: "project",
+    source: ".harness/memory.json",
+    trusted: false,
+    ...(capturedAtMs !== undefined ? { capturedAt: new Date(capturedAtMs).toISOString() } : {}),
+    content: memoriesBlock,
+    maxBytes: 12_000,
+  }));
+
+  return memoriesMessage ? { memoriesMessage } : {};
 }

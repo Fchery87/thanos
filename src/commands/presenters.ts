@@ -4,6 +4,8 @@ import type { FormalSpec } from "../spec/types";
 import type { VerificationResult } from "../spec/verification";
 import type { TUITheme } from "../ui-utils";
 import { formatBadge, formatLabel, formatPanel, formatValue, renderCriteriaLines } from "../ui-utils";
+import type { ToolContractSnapshot } from "../governance/tool-contract";
+import type { Capability } from "../permissions/rules";
 
 export function renderSessionSnapshotPanel(
   theme: TUITheme,
@@ -108,4 +110,39 @@ export function renderAuditPanel(theme: TUITheme, entries: AuditEvent[]): string
   });
 
   return formatPanel(theme, `Audit Log (${entries.length})`, rows, "dim");
+}
+
+/**
+ * Renders `buildToolContractSnapshot`'s projection. `evaluate` stays a
+ * caller-supplied callback rather than an import of `PermissionManager`:
+ * policy disposition (allow/ask/deny) is a live decision `GovernanceRuntime`
+ * owns, not part of the read-only contract — this presenter only displays it.
+ */
+export function renderToolContractPanel(
+  theme: TUITheme,
+  snapshot: ToolContractSnapshot,
+  evaluate: (capability: Capability, toolName: string) => string,
+): string {
+  if (snapshot.entries.length === 0) {
+    return formatPanel(theme, "Tool Registry", ["No tools registered yet."], "dim");
+  }
+
+  const lines = snapshot.entries.map((entry) => {
+    const decision = evaluate(entry.capability, entry.name);
+    const activeLabel = entry.active ? "" : theme.fg("dim", " (inactive)");
+    const nameFormatted = entry.active
+      ? theme.fg("accent", entry.name.padEnd(16, " "))
+      : theme.fg("dim", entry.name.padEnd(16, " "));
+    const decisionFormatted = decision === "allow"
+      ? theme.fg("success", decision)
+      : decision === "deny"
+        ? theme.fg("error", decision)
+        : theme.fg("warning", decision);
+    const unrecognizedLabel = entry.recognized ? "" : theme.fg("warning", " (unrecognized)");
+    return `  ${formatBadge(theme, decision)} ${nameFormatted} ${theme.fg("dim", "[")}${decisionFormatted}${theme.fg("dim", "]")}${activeLabel}${unrecognizedLabel}`;
+  });
+
+  const summary = snapshot.summary;
+  const header = `${theme.bold("Tools")}  ${theme.fg("dim", `(${summary.active} active, ${summary.recognized} recognized, ${summary.unknown} unknown)`)}`;
+  return formatPanel(theme, "Tool Registry", [header, ...lines], "dim");
 }

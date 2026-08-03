@@ -38,6 +38,7 @@ const TOOL_CAPABILITY: Record<string, Capability> = {
   report_finding: "interaction",
   goal_complete: "interaction",
   subagent: "task",
+  workflow_yield: "task",
 };
 
 export function capabilityForTool(toolName: string): Capability {

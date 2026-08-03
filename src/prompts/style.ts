@@ -9,14 +9,6 @@ export function renderBoundedExample(label: string, value: string, maxChars = 12
   return `${label}: ${trimmed}`;
 }
 
-export function renderContextEnvelope(input: { origin: string; trusted: boolean; content: string }): string {
-  return JSON.stringify({
-    origin: input.origin,
-    trusted: input.trusted,
-    content: input.content,
-  });
-}
-
 export function renderCompletionCriteria(criteria: string[]): string {
   if (criteria.length === 0) return "Completion criteria: none provided.";
   return [`Completion criteria:`, ...criteria.map((criterion) => `- ${criterion}`)].join("\n");

@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { renderAuditPanel, renderPolicyPanel, renderSessionSnapshotPanel, renderSpecVerificationPanel } from "../../src/commands/presenters";
+import {
+  renderAuditPanel, renderPolicyPanel, renderSessionSnapshotPanel,
+  renderSpecVerificationPanel, renderToolContractPanel,
+} from "../../src/commands/presenters";
 import { noopTheme } from "../../src/ui-utils";
 import type { FormalSpec } from "../../src/spec/types";
 import type { HarnessPolicy } from "../../src/policy/types";
+import { buildToolContractSnapshot } from "../../src/governance/tool-contract";
 
 const policy = {
   version: 1,
@@ -91,5 +95,30 @@ describe("command presenters", () => {
 
     expect(panel).toContain("Audit Log (1)");
     expect(panel).toContain("src/index.ts");
+  });
+
+  it("renders the tool contract panel with policy disposition from the caller-supplied evaluator", () => {
+    const snapshot = buildToolContractSnapshot({
+      tools: [
+        { name: "read", description: "Read a file", parameters: {} },
+        { name: "bash", description: "Run a shell command", parameters: {} },
+      ],
+      activeToolNames: ["read"],
+    });
+
+    const panel = renderToolContractPanel(noopTheme, snapshot, (capability) =>
+      capability === "exec" ? "ask" : "allow");
+
+    expect(panel).toContain("Tool Registry");
+    expect(panel).toContain("read");
+    expect(panel).toContain("bash");
+    expect(panel).toContain("(inactive)"); // bash was not in activeToolNames
+    expect(panel).toContain("1 active");
+  });
+
+  it("reports no tools registered rather than an empty panel", () => {
+    const snapshot = buildToolContractSnapshot({ tools: [], activeToolNames: [] });
+    const panel = renderToolContractPanel(noopTheme, snapshot, () => "allow");
+    expect(panel).toContain("No tools registered yet.");
   });
 });

@@ -16,15 +16,41 @@ The ledger is for summaries and evidence references only. Do not log full
 prompts, secrets, raw tool output, credentials, or large transcripts. Prefer
 criteria names, artifact paths, command names, and short outcomes.
 
-Initial event types:
+Every `HarnessEventType` (`src/observability/harness-ledger.ts`) is declared in
+one TypeScript union, but a declared type is not evidence that anything writes
+it. This table is the producer truth — checked against actual `appendHarnessEvent`
+call sites, not against the type declaration:
 
-- `gate_failure`
-- `gate_pass`
-- `review_disagreement`
-- `wave_handoff_rejected`
-- `delivery_gate_failed`
-- `manual_override`
-- `harness_change`
+| Event type | Status | Producer |
+|---|---|---|
+| `gate_failure` | **live** | `src/runtime/governance-hooks.ts` — completion verification gate reinjection (see ADR 0006) |
+| `spec_extraction` | **live** | `src/spec/extraction-log.ts` — every semantic-extraction attempt (see the 2026-08-02 decision-gate closure amendment, ADR 0006) |
+| `goal_set` | **live** | `src/runtime/register-harness.ts` — `/goal` lifecycle |
+| `goal_achieved` | **live** | `src/runtime/register-harness.ts` — `/goal` lifecycle |
+| `goal_paused` | **live** | `src/runtime/register-harness.ts` — `/goal` lifecycle |
+| `waves_lifecycle` | **live** | `src/runtime/register-harness.ts` — Waves phase transitions |
+| `gate_pass` | planned | declared, never produced |
+| `review_disagreement` | planned | declared, never produced |
+| `wave_handoff_rejected` | planned | declared, never produced |
+| `delivery_gate_failed` | planned | declared, never produced |
+| `manual_override` | planned | declared, never produced |
+| `harness_change` | planned | declared, never produced |
+
+"Planned" means exactly that and no more: the type is reserved so a future
+producer doesn't collide with an existing name, but nothing in this repo emits
+it today. Do not read a `HarnessEventType` member as proof an event is live —
+run `grep -rn 'type: "eventName"' src/` (excluding the type declaration itself)
+to check for an actual call site, or read `HARNESS_TOOL_NAMES`-style canonical
+sources rather than trusting a type union to be current.
+
+Every row may optionally carry `schemaVersion`, `repository`, and `timeoutMs`
+(`HarnessEvent` in `src/observability/harness-ledger.ts`) — `repository` because
+the ledger is per-repo (`<cwd>/.harness/evolution/events.jsonl`, one file per
+project the harness has run in, not one shared ledger), `timeoutMs` where an
+effective budget is relevant (e.g. the extractor), and `schemaVersion` so a
+reader can reject a row shape it predates. `spec_extraction` rows populate all
+three as of 2026-08-03; older event types remain optional-only, since nothing
+currently makes a keep/delete decision from them.
 
 ## Change Manifest Rule
 

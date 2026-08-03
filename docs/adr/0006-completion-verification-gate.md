@@ -56,7 +56,28 @@ producing real criteria. At the time of writing it had produced **zero** in 48
 attempts, for three independent reasons since repaired (the extractor prompt
 instructed omission of fields the schema treated as mandatory; the target
 whitelist rejected most of this repository; the prompt offered an explicit
-bail-out). Whether the semantic path earns its per-turn model call is a live
-question with a pinned threshold and a scheduled decision — see
-`docs/plans/2026-07-27-harness-simplification-plan.md`, Phase 3. **If that gate
+bail-out). Whether the semantic path earns its per-turn model call was a live
+question with a pinned threshold and a scheduled decision. **If that gate
 decides against `src/spec/`, this ADR is superseded rather than amended again.**
+
+## Amendment (2026-08-03) — the decision gate closed inconclusive, not superseded
+
+The scheduled decision above ran. `src/spec/extractor-decision.ts` implements
+it as a reproducible, pure function (`decideExtractorFate`) with the threshold
+pinned in the amendment above plus one addition: a **minimum sample of 30
+answer-qualified outcomes**, so a 4/7 or 1/1 run — both observed in the field
+— cannot decide this. Read against the live ledger on 2026-08-02: **3**
+`spec_extraction` rows total, all `timeout`, **0** qualifying. Below the
+minimum, the verdict is `inconclusive`, not `keep` or `delete`.
+
+This ADR is therefore **not superseded** — the prior amendment's condition
+("if that gate decides against `src/spec/`") was never met, because the gate
+did not decide either way. `src/spec/` and the completion verification gate
+remain exactly as amended above. The open question is unresolved, not closed:
+re-run `decideExtractorFate` against a fresh `readExtractionLedgerRows` window
+once 30 qualifying outcomes exist, and amend this ADR again with whatever that
+run decides. The full recorded observation (window, revision, counts,
+rejection reasons) is filed under Phase 0 of
+`docs/plans/2026-08-02-reasonix-informed-harness-architecture-plan.md` while
+that plan is still live; once it completes and is deleted per the plan-document
+lifecycle rule, this ADR — not that plan's git history — is the durable record.

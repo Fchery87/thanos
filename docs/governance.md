@@ -6,14 +6,13 @@ ceiling in subagents.
 
 ## Permission gate
 
-Every tool call is classified by risk tier and a capability:
-
-| Tool | Risk | Capability |
-|------|------|-----------|
-| `read`, `ls`, `find`, `grep` | low | `read` |
-| `write`, `edit` | high | `edit` |
-| `bash` | critical | `exec` |
-| `ask`, `todo`, `report_finding` | medium | `interaction` |
+Every tool call is classified by a risk tier (`low`/`medium`/`high`/`critical`) and a
+capability (`read`/`edit`/`exec`/`interaction`/`task`), computed by
+`src/permissions/risk.ts` and `src/governance/tool-call.ts` — the same functions
+`src/governance/tool-contract.ts` projects into a read-only snapshot for `/tools`,
+`/doctor`, and tests. Run `/tools` for the live, current classification of every
+registered tool rather than reading it off a hand-maintained table here, which
+would drift the first time a tool's tier changed or a new one was added.
 
 Each call is evaluated against the active policy ceiling (preset + any delivery overlay). The order of checks is: **immutable delivery denies (local-only egress/push) → policy deny → explicit-spec scope → yolo (if on) → autonomy → interactive prompt.** Deny always wins — yolo short-circuits the *remaining* prompts but never crosses an explicit deny, a delivery guard, an explicit-spec scope, or a permission-manager deny (and a critical op still takes its rollback snapshot); autonomy can only auto-approve what the ceiling already allows.
 

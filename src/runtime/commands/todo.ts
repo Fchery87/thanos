@@ -66,12 +66,14 @@ export function registerTodoCommand(pi: ExtensionAPI, runtime: TodoRuntime): voi
   });
 }
 
+export const TODO_DESCRIPTION = "Track phased tasks with a single in-progress item and explicit export/import.";
+
 /** `todo` tool — the only mutator of todoState (op-based: add/update/remove/export). */
 export function registerTodoTool(pi: ExtensionAPI, runtime: TodoRuntime): void {
   pi.registerTool({
     name: "todo",
     label: "Manage todo state",
-    description: "Track phased tasks with a single in-progress item and explicit export/import.",
+    description: TODO_DESCRIPTION,
     parameters: TodoParamsSchema,
     async execute(_toolCallId, params: TodoOperation) {
       try {

@@ -10,6 +10,18 @@ export interface GoalCompleteToolDeps {
   goalController: GoalController;
 }
 
+// Exported so src/governance/tool-contract.ts can project the same
+// description/schema this tool actually registers, rather than maintaining a
+// second hand-copied description that could drift from the model-facing one.
+export const GOAL_COMPLETE_DESCRIPTION =
+  "Claim that the active /goal is complete. SpecEngine verifies repository and workflow evidence at agent_end; this tool cannot close the goal.";
+export const GoalCompleteParamsSchema = Type.Object({
+  summary: Type.String({
+    description:
+      "What you finished and the concrete evidence that verifies it (test output, exit codes, counts, git status).",
+  }),
+});
+
 /**
  * goal_complete records an untrusted Completion Claim. SpecEngine decides it
  * at agent_end after repository and workflow evidence has settled.
@@ -20,15 +32,9 @@ export function registerGoalCompleteTool(pi: ExtensionAPI, deps: GoalCompleteToo
   pi.registerTool({
     name: "goal_complete",
     label: "Goal Complete",
-    description:
-      "Claim that the active /goal is complete. SpecEngine verifies repository and workflow evidence at agent_end; this tool cannot close the goal.",
+    description: GOAL_COMPLETE_DESCRIPTION,
     promptSnippet: "Claim goal completion once every requirement is finished and verified",
-    parameters: Type.Object({
-      summary: Type.String({
-        description:
-          "What you finished and the concrete evidence that verifies it (test output, exit codes, counts, git status).",
-      }),
-    }),
+    parameters: GoalCompleteParamsSchema,
     async execute(_toolCallId, params: { summary: string }, _signal, _onUpdate, toolCtx: ExtensionContext) {
       const snap = goalController.snapshot();
       if (!snap || snap.status !== "active") {
@@ -48,6 +54,9 @@ export function registerGoalCompleteTool(pi: ExtensionAPI, deps: GoalCompleteToo
   });
 }
 
+export const ASK_DESCRIPTION =
+  "Ask the user one option-based question and return a governed decision record. Always set `recommended` to your strongest option (shown to the user, marked '(Recommended)' and listed first) and give each option a `description` explaining its trade-off. The user can type a free-text answer unless `allowOther` is false.";
+
 /**
  * ask tool: ask the user one option-based question and return a governed
  * decision record. Parent sessions only.
@@ -56,7 +65,7 @@ export function registerAskTool(pi: ExtensionAPI, policyStatePromise: Promise<Po
   pi.registerTool({
     name: "ask",
     label: "Ask structured question",
-    description: "Ask the user one option-based question and return a governed decision record. Always set `recommended` to your strongest option (shown to the user, marked '(Recommended)' and listed first) and give each option a `description` explaining its trade-off. The user can type a free-text answer unless `allowOther` is false.",
+    description: ASK_DESCRIPTION,
     parameters: AskParamsSchema,
     async execute(_toolCallId, params: AskQuestion, _signal, _onUpdate, toolCtx) {
       try {
@@ -137,11 +146,13 @@ export interface ReportFindingToolDeps {
  * registration itself to one legacy-only role left every live one calling a
  * tool that was never registered in their process. Subagent sessions only.
  */
+export const REPORT_FINDING_DESCRIPTION = "Record a structured review finding and return the aggregate review verdict.";
+
 export function registerReportFindingTool(pi: ExtensionAPI, deps: ReportFindingToolDeps): void {
   pi.registerTool({
     name: "report_finding",
     label: "Report review finding",
-    description: "Record a structured review finding and return the aggregate review verdict.",
+    description: REPORT_FINDING_DESCRIPTION,
     parameters: FindingParamsSchema,
     async execute(_toolCallId, params, _signal, _onUpdate) {
       try {

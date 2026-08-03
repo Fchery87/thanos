@@ -13,9 +13,11 @@ const HIGH_RISK = new Set(["write", "edit"]);
 // and interaction tools; subagent is the live delegation entry point,
 // registered by the pi-subagents package this harness integrates with (its
 // per-call governance already comes from agent frontmatter tool lists and
-// worktree/policy narrowing, not from prompting on every dispatch). These
+// worktree/policy narrowing, not from prompting on every dispatch);
+// workflow_yield is the Waves coordination signal — it asserts a revision is
+// ready for jury review, it does not itself touch the working tree. These
 // keep their historical "medium" tier.
-const KNOWN_MEDIUM_TOOLS = new Set(["ask", "todo", "report_finding", "goal_complete", "subagent"]);
+const KNOWN_MEDIUM_TOOLS = new Set(["ask", "todo", "report_finding", "goal_complete", "subagent", "workflow_yield"]);
 
 // Binaries that only inspect state: they cannot write files or mutate the
 // working tree on their own. Redirections, substitutions, and expansions are

@@ -1,14 +1,15 @@
 # Plan: simplify the harness to a personal daily driver
 
-**Status:** in progress — Phases 0, 1, 2, 4, 5, 6 landed; **Phase 3 open** (needs
-one day of field data) · **Date:** 2026-07-27
+**Status:** in progress — Phases 0, 1, 2, 4, 5, 6 landed; **Phase 3 closed
+inconclusive, 2026-08-02** (0 qualifying outcomes; collection continues) ·
+**Date:** 2026-07-27
 
 | Phase | State | Commit |
 |---|---|---|
 | 0 — Stop the 739 | landed (Task 0.3 awaiting field data) | `6165f08` |
 | 1 — Honest instruments | landed | `01bd26d` |
 | 2 — Repair the extractor | landed (2.4 timeout review deferred by design) | `7948d94` |
-| 3 — Decision gate | **open** — needs one day of normal use | — |
+| 3 — Decision gate | **closed: inconclusive** — 0/0 qualifying, all 3 real rows are `timeout`; see `docs/plans/2026-08-02-reasonix-informed-harness-architecture-plan.md` Phase 0 | — |
 | 4 — Delete unreachable code | landed | `c1a3842` |
 | 5 — Wire the MCP defenses | landed | `d44e9d9` |
 | 6 — Docs truth | landed (Task 6.3's ADR 0006 outcome pends Phase 3) | — |
@@ -293,6 +294,17 @@ This gate is binding. Verifying against git ground truth rather than the model's
 self-report is a genuinely good idea and better than what Claude Code or OpenCode
 do — but a good idea with a 0% production success rate is not worth a model call
 on every prompt.
+
+**Closed 2026-08-02, verdict `inconclusive`.** The manual `rows()`/`count()`
+recipe above is superseded by `decideExtractorFate()` /
+`readExtractionLedgerRows()` in `src/spec/extractor-decision.ts`
+(`docs/plans/2026-08-02-reasonix-informed-harness-architecture-plan.md` Phase
+0), which additionally pins a 30-qualifying-outcome minimum sample so a small
+lucky or unlucky run can't decide this. Read against the live ledger: 3
+`spec_extraction` rows total, all `timeout`, 0 qualifying. Below the minimum,
+the verdict is `inconclusive`, not `keep` or `delete` — `src/spec/` stays as
+it is. Re-run the decision once 30 qualifying outcomes accumulate; see the
+Reasonix plan's Phase 0 for the full recorded observation.
 
 ---
 
