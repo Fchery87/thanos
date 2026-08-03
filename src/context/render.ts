@@ -118,10 +118,21 @@ export function renderContextEnvelopeOrOmit(envelope: ContextEnvelope): string |
  * `maxBytes` characters does not guarantee the escaped, prefixed output fits
  * `maxBytes` bytes. Binary-searches the longest prefix whose escaped form
  * does.
+ *
+ * Never throws, matching this module's fallback-of-last-resort role: a
+ * caller here specifically wants to avoid handling an exception. `content:""`
+ * — the smallest possible non-empty output this function can produce — is
+ * still `prefix.length + 2` bytes; a `maxBytes` too small even for that gets
+ * the empty string instead, which is the only value that respects the byte
+ * budget for every `maxBytes` down to (and including) 0 or negative.
  */
 export function renderBoundedFallbackContent(content: string, maxBytes: number): string {
   const prefix = "content:";
-  const budget = Math.max(0, maxBytes - Buffer.byteLength(prefix, "utf8"));
+  const prefixBytes = Buffer.byteLength(prefix, "utf8");
+  const minimumOutputBytes = prefixBytes + Buffer.byteLength('""', "utf8");
+  if (!Number.isFinite(maxBytes) || maxBytes < minimumOutputBytes) return "";
+
+  const budget = maxBytes - prefixBytes;
   let lo = 0;
   let hi = content.length;
   while (lo < hi) {

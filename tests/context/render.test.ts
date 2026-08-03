@@ -159,11 +159,28 @@ describe("renderBoundedFallbackContent", () => {
     expect(result.length).toBeGreaterThan(80);
   });
 
-  it("degrades to an empty content field for a budget too small for any real content", () => {
-    // "content:" + `""` is 10 bytes — the floor for this function's output
-    // shape. A budget below that cannot be satisfied by construction, not by
-    // a search-algorithm failure; 10 is the smallest realistic budget to test.
+  it("produces an empty content field at exactly the 10-byte floor for this output shape", () => {
+    // "content:" + `""` is 10 bytes — the smallest maxBytes this function can
+    // honor while still returning the `content:"..."` shape.
     const result = renderBoundedFallbackContent("anything", 10);
     expect(result).toBe('content:""');
+  });
+
+  it("returns an empty string, never a budget-violating output, below the 10-byte floor", () => {
+    // Regression: the previous version returned `content:""` (10 bytes)
+    // regardless of maxBytes, so maxBytes: 9 silently exceeded its own
+    // budget by one byte. Returning "" is the only value that respects an
+    // impossible budget without throwing (this function is a
+    // fallback-of-last-resort; its callers rely on it never throwing).
+    for (const tooSmall of [9, 5, 1, 0, -1, Number.NEGATIVE_INFINITY]) {
+      const result = renderBoundedFallbackContent("anything", tooSmall);
+      expect(result, `maxBytes: ${tooSmall}`).toBe("");
+      expect(Buffer.byteLength(result, "utf8"), `maxBytes: ${tooSmall}`).toBeLessThanOrEqual(Math.max(0, tooSmall));
+    }
+  });
+
+  it("returns an empty string for a non-finite maxBytes rather than an unbounded result", () => {
+    expect(renderBoundedFallbackContent("anything", Number.NaN)).toBe("");
+    expect(renderBoundedFallbackContent("x".repeat(1000), Number.POSITIVE_INFINITY)).toBe("");
   });
 });
