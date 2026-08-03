@@ -3,6 +3,7 @@ import type { MCPManager } from "../../mcp/manager";
 import type { PolicyLoadState } from "../../policy/state";
 import { checkPatchDrift, formatPatchDriftWarning } from "../../welcome/patch-drift";
 import { formatPanel } from "../../ui-utils";
+import { buildToolContractSnapshot } from "../../governance/tool-contract";
 import type { DeliveryRuntime } from "./delivery";
 
 export interface DoctorCommandDeps {
@@ -99,6 +100,21 @@ export function registerDoctorCommand(pi: ExtensionAPI, deps: DoctorCommandDeps)
               : `${DeliveryRuntimeLabel(delivery)} — repo not registered, using the safe default (/delivery to register)`,
           }
         : { name: "delivery", level: "warn", detail: "no delivery state resolved" });
+
+      // ── Tool contract ───────────────────────────────────────────────────
+      // Same projection /tools and docs/reference.md use — a mismatch here
+      // would mean runtime classification and the diagnostic view disagree.
+      // pi.getAllTools()/getActiveTools() are live registry reads, not a
+      // probe: no server start, network call, model call, or mutation.
+      const toolSnapshot = buildToolContractSnapshot({
+        tools: pi.getAllTools(),
+        activeToolNames: pi.getActiveTools(),
+      });
+      checks.push({
+        name: "tools",
+        level: toolSnapshot.summary.unknown > 0 ? "warn" : "ok",
+        detail: `${toolSnapshot.summary.active} active, ${toolSnapshot.summary.recognized} recognized, ${toolSnapshot.summary.unknown} unknown (rev ${toolSnapshot.revision.slice(0, 15)})`,
+      });
 
       // ── pi-subagents patch drift ────────────────────────────────────────
       // A package update silently reverts the Thanos source patches, and the

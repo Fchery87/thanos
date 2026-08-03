@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { modelForRef, type ModelCatalog } from "./model-catalog-helpers";
 import { validateManifest } from "../../src/agents/manifest";
+import { HARNESS_TOOL_NAMES } from "../../src/governance/tool-contract";
 
 const AGENTS_DIR = join("agent", "agents");
 
@@ -105,6 +106,22 @@ describe("live agent roster contract", () => {
     expect(VALID_LIVE_CHILD_TOOLS.has("totally-unregistered-tool")).toBe(false);
     expect(VALID_LIVE_CHILD_TOOLS.has("ask")).toBe(false); // parent-only, not valid for a child
     expect(VALID_LIVE_CHILD_TOOLS.has("report_finding")).toBe(true); // the fixed case
+  });
+
+  it("agrees with src/governance/tool-contract.ts's harness-tool split: only report_finding is a valid live-child tool", () => {
+    // HARNESS_TOOL_NAMES is the canonical set of tools this harness itself
+    // registers (src/governance/tool-contract.ts). Of those, only
+    // report_finding is registered for a subagent process (register-harness.ts:
+    // `if (isSubagent) registerReportFindingTool(...)`); ask/todo/goal_complete/
+    // workflow_yield are registered only `if (!isSubagent)`. If a name moved
+    // between those two registration branches without this set being updated,
+    // this test — not a live agent silently calling an unregistered tool —
+    // is what should catch it.
+    const parentOnlyHarnessTools = [...HARNESS_TOOL_NAMES].filter((name) => name !== "report_finding");
+    for (const name of parentOnlyHarnessTools) {
+      expect(VALID_LIVE_CHILD_TOOLS.has(name), `${name} is parent-only but listed as valid for a child`).toBe(false);
+    }
+    expect(VALID_LIVE_CHILD_TOOLS.has("report_finding")).toBe(true);
   });
 
   it("every tool every live agent definition lists is something a child process would register", async () => {

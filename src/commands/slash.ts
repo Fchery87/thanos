@@ -3,14 +3,17 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { AuditEvent } from "../audit/types";
 import type { PermissionManager } from "../permissions/manager";
-import { capabilityForTool } from "../governance/tool-call";
+import { buildToolContractSnapshot } from "../governance/tool-contract";
 import type { PolicyLoadState } from "../policy/state";
 import type { SpecEngine } from "../spec/engine";
 import type { GoalSnapshot } from "../goal/types";
 import { buildContinueDirective as buildGoalContinueDirective } from "../goal/prompts";
 import { handleSubagentModelsCommand } from "../agents/model-routing";
-import { formatBadge, formatLabel, formatValue, formatPanel, makeTerminalSafeOptions, noopTheme } from "../ui-utils";
-import { renderAuditPanel, renderPolicyPanel, renderSessionSnapshotPanel, renderSpecVerificationPanel } from "../commands/presenters";
+import { formatLabel, formatValue, formatPanel, makeTerminalSafeOptions, noopTheme } from "../ui-utils";
+import {
+  renderAuditPanel, renderPolicyPanel, renderSessionSnapshotPanel,
+  renderSpecVerificationPanel, renderToolContractPanel,
+} from "../commands/presenters";
 import {
   buildIntegrationDirective,
   createWorkflowRunner,
@@ -149,30 +152,27 @@ export function registerSlashCommands(
   });
 
   // ── /tools ────────────────────────────────────────────────────────────────
-  // What the agent sees — and what the policy says about each one.
+  // What the agent sees — and what the policy says about each one. The tool
+  // surface/classification comes from buildToolContractSnapshot (the same
+  // projection /doctor and docs/reference.md use); only the live policy
+  // disposition is evaluated here, since that decision stays owned by
+  // PermissionManager, not by the read-only contract.
   pi.registerCommand("tools", {
     description: "List active tools with their policy disposition: allow, ask, or deny.",
     handler: async (_args, ctx) => {
-      const activeNames = new Set(pi.getActiveTools());
-      const allTools = pi.getAllTools();
       const theme = ctx.ui.theme;
+      const snapshot = buildToolContractSnapshot({
+        tools: pi.getAllTools(),
+        activeToolNames: pi.getActiveTools(),
+      });
 
-      if (allTools.length === 0) {
+      if (snapshot.entries.length === 0) {
         ctx.ui.notify("No tools registered yet.", "warning");
         return;
       }
 
-      const lines = allTools.map(tool => {
-        const cap = capabilityForTool(tool.name);
-        const decision = permissions.evaluate(cap, tool.name);
-        const activeLabel = activeNames.has(tool.name) ? "" : theme.fg("dim", " (inactive)");
-        const toolNameFormatted = activeNames.has(tool.name) ? theme.fg("accent", tool.name.padEnd(12, " ")) : theme.fg("dim", tool.name.padEnd(12, " "));
-        const decisionFormatted = decision === "allow" ? theme.fg("success", decision) : decision === "deny" ? theme.fg("error", decision) : theme.fg("warning", decision);
-        return `  ${formatBadge(theme, decision)} ${toolNameFormatted} ${theme.fg("dim", "[")}${decisionFormatted}${theme.fg("dim", "]")}${activeLabel}`;
-      });
-
-      const header = `${theme.bold("Tools")}  ${theme.fg("dim", "(")}${theme.fg("success", "✓")} allow  ${theme.fg("warning", "?")} ask  ${theme.fg("error", "✗")} deny${theme.fg("dim", ")")}:`;
-      const panel = formatPanel(theme, "Tool Registry", [header, ...lines], "dim");
+      const panel = renderToolContractPanel(theme, snapshot, (capability, toolName) =>
+        permissions.evaluate(capability, toolName));
       ctx.ui.notify(panel, "info");
     },
   });

@@ -8,6 +8,10 @@ export interface WorkflowYieldToolDeps {
   captureRevision?: (cwd: string) => Promise<RepositoryRevisionIdentity | undefined>;
 }
 
+export const WORKFLOW_YIELD_DESCRIPTION =
+  "Assert that the current parent-owned Waves repository revision is ready for evidence settlement and jury review. This is not a completion claim.";
+export const WorkflowYieldParamsSchema = Type.Object({});
+
 export function registerWorkflowYieldTool(
   pi: Pick<ExtensionAPI, "registerTool">,
   deps: WorkflowYieldToolDeps,
@@ -16,10 +20,9 @@ export function registerWorkflowYieldTool(
   pi.registerTool({
     name: "workflow_yield",
     label: "Yield Waves revision",
-    description:
-      "Assert that the current parent-owned Waves repository revision is ready for evidence settlement and jury review. This is not a completion claim.",
+    description: WORKFLOW_YIELD_DESCRIPTION,
     promptSnippet: "Yield the exact Waves revision for jury review when integration is ready",
-    parameters: Type.Object({}),
+    parameters: WorkflowYieldParamsSchema,
     async execute(_toolCallId, _params, _signal, _onUpdate, toolCtx) {
       if (deps.runtime.current?.phase !== "integrating") {
         return {
