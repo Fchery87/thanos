@@ -1,6 +1,10 @@
 # Plan: Reasonix-informed harness architecture
 
-**Status:** in progress — Phases 0–4 landed (Phase 0 closed `inconclusive`) · **Date:** 2026-08-02 · **Owner:** parent integration session
+**Status:** complete — Phases 0–4 landed, Phase 5 killed (no field evidence) ·
+durable decisions recorded in ADR 0006 (amended), ADR 0021, ADR 0022 · this
+plan document is a candidate for deletion per `AGENTS.md`'s completed-plan
+rule, kept live for now at the user's request · **Date:** 2026-08-02 ·
+**Owner:** parent integration session
 
 ## Goal
 
