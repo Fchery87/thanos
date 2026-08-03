@@ -66,9 +66,28 @@ describe("instruction surface", () => {
         .replace(/\/\*[\s\S]*?\*\//g, "")
         .replace(/\/\/.*$/gm, ""));
 
+    // A HarnessEvent object literal always carries `outcome` near `type` —
+    // an unrelated object literal that happens to contain `type: "eventName"`
+    // (not a comment, since those are stripped above, but e.g. a different
+    // domain object with its own unrelated "type" field) won't also have an
+    // `outcome` field nearby. Not full AST matching, but a real structural
+    // signal beyond plain substring search. `outcome`, not `taskId`/
+    // `createdAt`: some producers (goal_set/achieved/paused) go through a
+    // shared recordGoalEvent() helper that injects taskId/createdAt via
+    // object spread at a different call site than the type/outcome literal,
+    // so those two are not reliably co-located with `type`.
     function hasLiveProducer(eventType: HarnessEventType): boolean {
       const needle = `type: "${eventType}"`;
-      return sources.some((source) => source.includes(needle));
+      return sources.some((source) => {
+        let from = 0;
+        for (;;) {
+          const index = source.indexOf(needle, from);
+          if (index === -1) return false;
+          const window = source.slice(index, index + 400);
+          if (window.includes("outcome")) return true;
+          from = index + needle.length;
+        }
+      });
     }
 
     // Every HarnessEventType member must appear here as exactly one of

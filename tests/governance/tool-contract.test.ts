@@ -140,10 +140,22 @@ describe("buildToolContractSnapshot", () => {
     expect(a.revision).not.toBe(c.revision);
   });
 
-  it("is read-only: building a snapshot performs no model, network, or filesystem call", () => {
-    // Nothing to await, nothing to mock out — buildToolContractSnapshot is a
-    // synchronous pure function. This test's only job is to fail loudly if
-    // that ever stops being true (e.g. someone makes it async).
+  it("is read-only: the module imports no fs/network/model boundary a snapshot build could reach", async () => {
+    // vi.spyOn can't intercept Node's built-in ESM modules (their namespace
+    // is non-configurable), so runtime spying can't prove this. A static
+    // check of the module's own imports proves something stronger anyway:
+    // no code path in this file — not just this one call — can reach
+    // fs/network/child_process, because it never imports them.
+    const { readFile } = await import("node:fs/promises");
+    const source = await readFile(new URL("../../src/governance/tool-contract.ts", import.meta.url), "utf-8");
+    const importLines = source.match(/^import .*$/gm) ?? [];
+    const forbidden = ["node:fs", "node:http", "node:https", "node:net", "node:child_process", "node:dgram"];
+    for (const line of importLines) {
+      for (const module_ of forbidden) {
+        expect(line, `tool-contract.ts imports "${module_}" — it must stay read-only over already-collected data`).not.toContain(`"${module_}"`);
+      }
+    }
+
     const result = buildToolContractSnapshot({ tools: [tool("read")], activeToolNames: ["read"] });
     expect(result).not.toBeInstanceOf(Promise);
   });
