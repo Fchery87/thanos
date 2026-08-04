@@ -29,6 +29,7 @@ call sites, not against the type declaration:
 | `goal_achieved` | **live** | `src/runtime/register-harness.ts` — `/goal` lifecycle |
 | `goal_paused` | **live** | `src/runtime/register-harness.ts` — `/goal` lifecycle |
 | `waves_lifecycle` | **live** | `src/runtime/register-harness.ts` — Waves phase transitions |
+| `snapshot_outcome` | **live** | `src/runtime/governance-hooks.ts` — pre-critical recovery-point outcome |
 | `gate_pass` | planned | declared, never produced |
 | `review_disagreement` | planned | declared, never produced |
 | `wave_handoff_rejected` | planned | declared, never produced |

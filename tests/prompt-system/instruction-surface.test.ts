@@ -101,6 +101,7 @@ describe("instruction surface", () => {
       goal_achieved: "live",
       goal_paused: "live",
       waves_lifecycle: "live",
+      snapshot_outcome: "live",
       gate_pass: "planned",
       review_disagreement: "planned",
       wave_handoff_rejected: "planned",
