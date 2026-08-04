@@ -298,12 +298,16 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
     // evidence. Whether an aborted turn may continue is the gate's decision, and
     // shouldReinject takes `aborted` directly.
     const results = spec.verify();
+    const activeWorkflow = workflowRuntime.current?.phase === "paused"
+      ? workflowRuntime.current.resume
+      : workflowRuntime.current;
     recordRunFact?.({
-        kind: "acceptance_verdict",
-        verdict: results.length > 0 && results.every((result) => result.passed)
-          ? "accepted"
-          : results.length === 0 ? "incomplete" : "rejected",
-        reasons: results.filter((result) => !result.passed).map((result) => result.criterion.statement),
+      kind: "acceptance_verdict",
+      verdict: results.length > 0 && results.every((result) => result.passed)
+        ? "accepted"
+        : results.length === 0 ? "incomplete" : "rejected",
+      reasons: results.filter((result) => !result.passed).map((result) => result.criterion.statement),
+      ...(activeWorkflow ? { workflowId: activeWorkflow.workflowId } : {}),
     });
     if (results.length > 0) {
       const theme = ctx.ui.theme ?? noopTheme;

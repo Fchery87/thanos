@@ -479,8 +479,15 @@ export function buildIntegrationDirective(
   const boundedEvidence = evidence.length > 32_000
     ? `${evidence.slice(0, 32_000)}\n\n[Evidence text truncated; verified artifact digests are retained as metadata only.]`
     : evidence;
-  const preservedArtifacts = acceptedReferences.flatMap((reference) =>
-    reference.artifacts.map((artifact) => `${reference.nodeId}: sha256:${artifact.sha256}`));
+  const currentArtifactDigests = result.results.flatMap(({ node, outcome }) =>
+    outcome.state === "accepted"
+      ? outcome.envelope.artifacts.map((artifact) => `${node.id}: sha256:${artifact.sha256}`)
+      : []);
+  const preservedArtifacts = [...new Set([
+    ...currentArtifactDigests,
+    ...acceptedReferences.flatMap((reference) =>
+      reference.artifacts.map((artifact) => `${reference.nodeId}: sha256:${artifact.sha256}`)),
+  ])];
   return [
     "[harness:waves-integrate] You are the Integration Owner for the approved Waves Work Contract.",
     `Goal: ${plan.goal}`,

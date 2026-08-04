@@ -295,6 +295,7 @@ export function registerSlashCommands(
       current.acceptedEvidence,
       (node, outcome) => {
         const attempt = (current.nodeAttempts[node.id] ?? 0) + 1;
+        const workflowId = current.workflowId;
         if (outcome.state === "accepted") {
           recordFact({
             kind: "delegation_settled",
@@ -302,6 +303,7 @@ export function registerSlashCommands(
             attempt,
             state: "accepted",
             requestId: outcome.envelope.requestId,
+            workflowId,
           });
         } else if (outcome.state === "awaiting_evidence") {
           recordFact({
@@ -310,9 +312,17 @@ export function registerSlashCommands(
             attempt,
             state: "awaiting_evidence",
             reason: outcome.reasons.join("; "),
+            workflowId,
           });
         } else {
-          recordFact({ kind: "delegation_settled", nodeId: node.id, attempt, state: "failed", reason: outcome.reason });
+          recordFact({
+            kind: "delegation_settled",
+            nodeId: node.id,
+            attempt,
+            state: "failed",
+            reason: outcome.reason,
+            workflowId,
+          });
         }
       },
     )).run(plan, { completedNodeIds });

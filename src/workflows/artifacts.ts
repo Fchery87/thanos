@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { lstat, readFile, realpath } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { WorkflowEvidenceRef } from "./state";
 
@@ -32,18 +33,29 @@ export async function verifyArtifact(
   if (!canonical || !contained(repo, canonical) || canonical !== candidate) {
     return { state: "invalid", path: artifact.path, reason: "artifact is missing or escapes repository through a symlink" };
   }
-  const stats = await lstat(canonical).catch(() => undefined);
-  if (!stats?.isFile()) return { state: "invalid", path: artifact.path, reason: "artifact is not a regular file" };
-  if (stats.size > MAX_ARTIFACT_BYTES) {
-    return { state: "invalid", path: artifact.path, reason: `artifact exceeds ${MAX_ARTIFACT_BYTES} byte limit` };
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await open(canonical, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const opened = await handle.stat();
+    if (!opened.isFile()) return { state: "invalid", path: artifact.path, reason: "artifact is not a regular file" };
+    if (opened.size > MAX_ARTIFACT_BYTES) {
+      return { state: "invalid", path: artifact.path, reason: `artifact exceeds ${MAX_ARTIFACT_BYTES} byte limit` };
+    }
+    const contents = Buffer.alloc(opened.size);
+    const { bytesRead } = await handle.read(contents, 0, contents.length, 0);
+    if (bytesRead !== contents.length) {
+      return { state: "invalid", path: artifact.path, reason: "artifact could not be read completely" };
+    }
+    const sha256 = createHash("sha256").update(contents).digest("hex");
+    if (sha256.toLowerCase() !== artifact.sha256.toLowerCase()) {
+      return { state: "invalid", path: artifact.path, reason: "artifact SHA-256 does not match its receipt" };
+    }
+    return { state: "verified", path: artifact.path, sha256, bytes: contents.byteLength };
+  } catch {
+    return { state: "invalid", path: artifact.path, reason: "artifact is unreadable" };
+  } finally {
+    await handle?.close().catch(() => {});
   }
-  const contents = await readFile(canonical).catch(() => undefined);
-  if (!contents) return { state: "invalid", path: artifact.path, reason: "artifact is unreadable" };
-  const sha256 = createHash("sha256").update(contents).digest("hex");
-  if (sha256.toLowerCase() !== artifact.sha256.toLowerCase()) {
-    return { state: "invalid", path: artifact.path, reason: "artifact SHA-256 does not match its receipt" };
-  }
-  return { state: "verified", path: artifact.path, sha256, bytes: contents.byteLength };
 }
 
 export async function verifyEvidenceArtifacts(

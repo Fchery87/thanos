@@ -15,6 +15,7 @@ export type RunFact =
       state: "accepted" | "awaiting_evidence" | "failed";
       reason?: string;
       requestId?: string;
+      workflowId?: string;
     }
   | {
       version: typeof RUN_FACT_VERSION;
@@ -40,6 +41,7 @@ export type RunFact =
       sequence: number;
       verdict: "accepted" | "rejected" | "incomplete";
       reasons: string[];
+      workflowId?: string;
     };
 
 export interface EvidenceReceiptV1 {
@@ -63,7 +65,7 @@ export function delegationFact(
   sequence: number,
   nodeId: string,
   attempt: number,
-  outcome: Pick<Extract<RunFact, { kind: "delegation_settled" }>, "state" | "reason"> & { requestId?: string },
+  outcome: Pick<Extract<RunFact, { kind: "delegation_settled" }>, "state" | "reason" | "workflowId"> & { requestId?: string },
 ): RunFact {
   return {
     version: RUN_FACT_VERSION,

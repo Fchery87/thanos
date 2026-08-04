@@ -84,6 +84,18 @@ describe("WorkflowRunner", () => {
     });
   });
 
+  it("preserves a successful outcome when the observer throws", async () => {
+    const onSettled = vi.fn(() => { throw new Error("observer unavailable"); });
+    const result = await new WorkflowRunner(async () => accepted, { onSettled }).run({
+      id: "single",
+      goal: "review",
+      maxConcurrency: 1,
+      nodes: [{ id: "critic", agent: "reviewer", task: "critic", dependsOn: [], required: true }],
+    });
+    expect(result.state).toBe("completed");
+    expect(result.results[0].outcome.state).toBe("accepted");
+    expect(onSettled).toHaveBeenCalledTimes(1);
+  });
   it("does not run dependents after a required delegate rejects", async () => {
     const delegate = vi.fn(async (node: { id: string }) => {
       if (node.id === "security") throw new Error("security worker crashed");

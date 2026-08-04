@@ -43,15 +43,18 @@ export class WorkflowRunner {
       const batch = ready.slice(0, plan.maxConcurrency);
       batch.forEach((node) => started.add(node.id));
       const settled = await Promise.all(batch.map(async (node) => {
+        let outcome: DelegationOutcome;
         try {
-          const outcome = await this.delegate(node, results);
-          this.options.onSettled?.(node, outcome);
-          return { node, outcome };
+          outcome = await this.delegate(node, results);
         } catch (error) {
-          const outcome = normalizeDelegationFailure(error);
-          this.options.onSettled?.(node, outcome);
-          return { node, outcome };
+          outcome = normalizeDelegationFailure(error);
         }
+        try {
+          this.options.onSettled?.(node, outcome);
+        } catch {
+          // Observation must not reinterpret a settled delegation outcome.
+        }
+        return { node, outcome };
       }));
       for (const result of settled) {
         results.set(result.node.id, result);

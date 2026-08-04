@@ -1,6 +1,6 @@
 import type { GoalSnapshot } from "../goal/types";
-import type { RunFact } from "./types";
 import type { WorkflowSnapshot } from "../workflows/state";
+import type { RunFact } from "./types";
 
 export interface RunProjection {
   runId: string;
@@ -24,22 +24,74 @@ export interface RunProjection {
     state: "accepted" | "awaiting_evidence" | "failed";
     reason?: string;
   }>;
-  recovery: Array<Extract<RunFact, { kind: "recovery_outcome" }>["outcome"]>;
+  recovery: Array<Extract<RunFact, { kind: "recovery_outcome" }> ["outcome"]>;
   acceptance?: Extract<RunFact, { kind: "acceptance_verdict" }>;
   warnings: string[];
 }
 
-function isRunFact(value: unknown): value is RunFact {
-  return value !== null
-    && typeof value === "object"
-    && !Array.isArray(value)
-    && (value as { version?: unknown }).version === 1
-    && typeof (value as { kind?: unknown }).kind === "string"
-    && typeof (value as { runId?: unknown }).runId === "string"
-    && typeof (value as { sequence?: unknown }).sequence === "number";
+type RecordValue = Record<string, unknown>;
+
+function record(value: unknown): RecordValue | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as RecordValue
+    : undefined;
 }
 
-export function reduceRunFacts(facts: readonly unknown[]): RunProjection | undefined {
+function nonEmpty(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function stringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function snapshotOutcome(value: unknown): boolean {
+  const outcome = record(value);
+  if (!outcome || !["succeeded", "skipped", "failed"].includes(String(outcome.state))) return false;
+  if (!stringArray(outcome.limitations)) return false;
+  return outcome.state === "succeeded"
+    ? nonEmpty(outcome.reference)
+    : nonEmpty(outcome.reason);
+}
+
+function isRunFact(value: unknown): value is RunFact {
+  const fact = record(value);
+  if (!fact
+    || fact.version !== 1
+    || !nonEmpty(fact.runId)
+    || !Number.isInteger(fact.sequence)
+    || Number(fact.sequence) <= 0
+  ) return false;
+
+  switch (fact.kind) {
+    case "delegation_settled":
+      return nonEmpty(fact.nodeId)
+        && Number.isInteger(fact.attempt)
+        && Number(fact.attempt) > 0
+        && ["accepted", "awaiting_evidence", "failed"].includes(String(fact.state))
+        && (fact.reason === undefined || typeof fact.reason === "string")
+        && (fact.requestId === undefined || nonEmpty(fact.requestId))
+        && (fact.workflowId === undefined || nonEmpty(fact.workflowId));
+    case "workflow_transition":
+      return nonEmpty(fact.workflowId)
+        && typeof fact.to === "string"
+        && (fact.from === undefined || typeof fact.from === "string")
+        && (fact.reason === undefined || typeof fact.reason === "string");
+    case "recovery_outcome":
+      return snapshotOutcome(fact.outcome);
+    case "acceptance_verdict":
+      return ["accepted", "rejected", "incomplete"].includes(String(fact.verdict))
+        && stringArray(fact.reasons)
+        && (fact.workflowId === undefined || nonEmpty(fact.workflowId));
+    default:
+      return false;
+  }
+}
+
+export function reduceRunFacts(
+  facts: readonly unknown[],
+  options: { workflowId?: string } = {},
+): RunProjection | undefined {
   const valid = facts.filter(isRunFact).sort((a, b) => a.sequence - b.sequence);
   if (valid.length === 0) return undefined;
   const runId = valid[0].runId;
@@ -52,6 +104,8 @@ export function reduceRunFacts(facts: readonly unknown[]): RunProjection | undef
       warnings.push("run projection ignored a fact from another run");
       continue;
     }
+    if ((fact.kind === "delegation_settled" || fact.kind === "acceptance_verdict")
+      && fact.workflowId !== options.workflowId) continue;
     switch (fact.kind) {
       case "delegation_settled":
         delegations.set(fact.nodeId, {
@@ -69,10 +123,6 @@ export function reduceRunFacts(facts: readonly unknown[]): RunProjection | undef
         break;
       case "workflow_transition":
         break;
-      default: {
-        const exhaustive: never = fact;
-        return exhaustive;
-      }
     }
   }
   const failed = [...delegations.values()].some((entry) => entry.state === "failed" || entry.state === "awaiting_evidence");
@@ -91,7 +141,10 @@ export function buildCurrentRunProjection(input: {
   goal?: GoalSnapshot;
   workflow?: WorkflowSnapshot;
 }): RunProjection | undefined {
-  const projection = reduceRunFacts(input.facts);
+  const active = input.workflow?.phase === "paused" ? input.workflow.resume : input.workflow;
+  const projection = reduceRunFacts(input.facts, {
+    ...(active && "workflowId" in active ? { workflowId: active.workflowId } : {}),
+  });
   if (!projection) return undefined;
   return {
     ...projection,
