@@ -1,3 +1,4 @@
+import { normalizeDelegationFailure } from "../execution/failure";
 import type { DelegationOutcome } from "../delegation/runtime";
 import { readyNodes, validateWorkflowPlan } from "./plan";
 import type { WorkflowNode, WorkflowNodeResult, WorkflowPlan, WorkflowRunResult } from "./types";
@@ -7,8 +8,15 @@ export type DelegateWorkflowNode = (
   prior: ReadonlyMap<string, WorkflowNodeResult>,
 ) => Promise<DelegationOutcome>;
 
+export interface WorkflowRunnerOptions {
+  onSettled?: (node: WorkflowNode, outcome: DelegationOutcome) => void;
+}
+
 export class WorkflowRunner {
-  constructor(private readonly delegate: DelegateWorkflowNode) {}
+  constructor(
+    private readonly delegate: DelegateWorkflowNode,
+    private readonly options: WorkflowRunnerOptions = {},
+  ) {}
 
   async run(
     plan: WorkflowPlan,
@@ -34,10 +42,20 @@ export class WorkflowRunner {
 
       const batch = ready.slice(0, plan.maxConcurrency);
       batch.forEach((node) => started.add(node.id));
-      const settled = await Promise.all(batch.map(async (node) => ({
-        node,
-        outcome: await this.delegate(node, results),
-      })));
+      const settled = await Promise.all(batch.map(async (node) => {
+        let outcome: DelegationOutcome;
+        try {
+          outcome = await this.delegate(node, results);
+        } catch (error) {
+          outcome = normalizeDelegationFailure(error);
+        }
+        try {
+          this.options.onSettled?.(node, outcome);
+        } catch {
+          // Observation must not reinterpret a settled delegation outcome.
+        }
+        return { node, outcome };
+      }));
       for (const result of settled) {
         results.set(result.node.id, result);
         completed.add(result.node.id);

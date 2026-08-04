@@ -17,7 +17,8 @@ import { makeAfterToolHandler } from "../hooks/after-tool";
 import type { LensLite } from "../lens/lite";
 import { appendHarnessEvent } from "../observability/harness-ledger";
 import { GovernanceRuntime } from "./governance-runtime";
-import { createSnapshot } from "../security/snapshot";
+import { createSnapshotOutcome } from "../security/snapshot";
+import type { RunFactInput } from "../execution/facts";
 import { issueContinuation } from "./continuation-auth";
 import { formatPanel, noopTheme, renderCriteriaLines } from "../ui-utils";
 import type { DeliveryRuntime } from "./commands/delivery";
@@ -76,6 +77,7 @@ export interface GovernanceHooksDeps {
   goalController: GoalController;
   recordGoalEvent: (event: GoalEventRecord) => Promise<void>;
   workflowRuntime: WorkflowRuntime;
+  recordRunFact?: (fact: RunFactInput) => void;
 }
 
 function workflowOwnsContinuation(snapshot: WorkflowSnapshot | undefined): boolean {
@@ -96,7 +98,7 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
   const {
     policyStatePromise, deliveryRuntime, childRole, spec, permissions,
     sessionId, agentType, lens, isSubagent, goalController, recordGoalEvent,
-    workflowRuntime,
+    workflowRuntime, recordRunFact,
   } = deps;
 
   pi.on("tool_call", async (event, ctx: ExtensionContext) => {
@@ -178,7 +180,21 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
     // when yolo is on, preserving the pre-critical rollback point when prompts
     // are bypassed.
     if (decision.snapshotNeeded) {
-      await createSnapshot(process.cwd());
+      const snapshotOutcome = await createSnapshotOutcome(process.cwd());
+      recordRunFact?.({ kind: "recovery_outcome", outcome: snapshotOutcome });
+      const summary = snapshotOutcome.state === "succeeded"
+        ? "pre-critical snapshot recorded"
+        : `pre-critical snapshot ${snapshotOutcome.state}: ${snapshotOutcome.reason}`;
+      await appendHarnessEvent({
+        type: "snapshot_outcome",
+        taskId: sessionId,
+        summary,
+        outcome: snapshotOutcome.state,
+        evidence: snapshotOutcome.limitations,
+        createdAt: new Date().toISOString(),
+      }).catch((error) => {
+        console.error("[harness][snapshot]", error instanceof Error ? error.message : String(error));
+      });
     }
   });
 
@@ -282,6 +298,17 @@ export function registerGovernanceHooks(pi: ExtensionAPI, deps: GovernanceHooksD
     // evidence. Whether an aborted turn may continue is the gate's decision, and
     // shouldReinject takes `aborted` directly.
     const results = spec.verify();
+    const activeWorkflow = workflowRuntime.current?.phase === "paused"
+      ? workflowRuntime.current.resume
+      : workflowRuntime.current;
+    recordRunFact?.({
+      kind: "acceptance_verdict",
+      verdict: results.length > 0 && results.every((result) => result.passed)
+        ? "accepted"
+        : results.length === 0 ? "incomplete" : "rejected",
+      reasons: results.filter((result) => !result.passed).map((result) => result.criterion.statement),
+      ...(activeWorkflow ? { workflowId: activeWorkflow.workflowId } : {}),
+    });
     if (results.length > 0) {
       const theme = ctx.ui.theme ?? noopTheme;
       const passed = results.filter((r) => r.passed).length;

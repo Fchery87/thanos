@@ -4,6 +4,7 @@ import { DelegationRuntime, type DelegationOutcome } from "../delegation/runtime
 import type { DelegationEvidenceEnvelope } from "../delegation/evidence";
 import { WorkflowRunner } from "./runner";
 import { validateWorkflowPlan } from "./plan";
+import { verifyEvidenceArtifacts } from "./artifacts";
 import type {
   IntegrationContract,
   IntegrationCriterion,
@@ -39,32 +40,53 @@ function priorEvidence(prior: ReadonlyMap<string, { outcome: DelegationOutcome }
 
 function restoredEvidence(references: WorkflowEvidenceRef[]): string {
   const artifacts = references.flatMap((reference) =>
-    reference.artifacts.map((artifact) =>
-      `${reference.nodeId}: ${artifact.path} (${artifact.sha256})`));
+    reference.artifacts.map((artifact) => `${reference.nodeId}: sha256:${artifact.sha256}`));
   return artifacts.length > 0
-    ? `\n\nPreviously accepted sibling artifact references:\n${artifacts.join("\n")}`
+    ? `\n\nPreviously verified sibling artifact digests (paths are deliberately withheld):\n${artifacts.join("\n")}`
     : "";
 }
 
-export function createWorkflowRunner(
+export async function createWorkflowRunner(
   pi: Pick<ExtensionAPI, "events">,
   ctx: ExtensionContext,
   signal?: AbortSignal,
   acceptedReferences: WorkflowEvidenceRef[] = [],
-): WorkflowRunner {
+  onSettled?: (node: WorkflowNode, outcome: DelegationOutcome) => void,
+): Promise<WorkflowRunner> {
   const delegation = new DelegationRuntime(pi.events, ownerRunId(ctx));
-  return new WorkflowRunner((node, prior) => delegation.delegate({
-    nodeId: node.id,
-    agent: node.agent,
-    task: `${node.task}${priorEvidence(prior)}${restoredEvidence(acceptedReferences)}`,
-    context: "fresh",
-    cwd: ctx.cwd,
-    acceptance: "verified",
-    artifacts: true,
-    result: node.result ?? { kind: "text" },
-    timeoutMs: 120_000,
-    turnBudget: { maxTurns: 12, graceTurns: 1 },
-  }, signal));
+  const verification = await verifyEvidenceArtifacts(ctx.cwd, acceptedReferences);
+  return new WorkflowRunner(async (node, prior) => {
+    if (!verification.valid) {
+      return Promise.resolve({
+        state: "failed",
+        reason: `restored evidence invalid: ${verification.reasons.join("; ")}`,
+      });
+    }
+    const outcome = await delegation.delegate({
+      nodeId: node.id,
+      agent: node.agent,
+      task: `${node.task}${priorEvidence(prior)}${restoredEvidence(acceptedReferences)}`,
+      context: "fresh",
+      cwd: ctx.cwd,
+      acceptance: "verified",
+      artifacts: true,
+      result: node.result ?? { kind: "text" },
+      timeoutMs: 120_000,
+      turnBudget: { maxTurns: 12, graceTurns: 1 },
+    }, signal);
+    if (outcome.state !== "accepted" || outcome.envelope.artifacts.length === 0) return outcome;
+    const artifacts = await verifyEvidenceArtifacts(ctx.cwd, [{
+      nodeId: outcome.envelope.nodeId,
+      requestId: outcome.envelope.requestId,
+      ownerRunId: outcome.envelope.ownerRunId,
+      runId: outcome.envelope.runId,
+      launchContractDigest: outcome.envelope.launchContractDigest,
+      artifacts: outcome.envelope.artifacts.map(({ path, sha256 }) => ({ path, sha256 })),
+    }]);
+    return artifacts.valid
+      ? outcome
+      : { state: "awaiting_evidence", reasons: artifacts.reasons };
+  }, { onSettled });
 }
 
 export function buildJuryPlan(): WorkflowPlan {
@@ -178,7 +200,8 @@ export async function runJuryWorkflow(
   ctx: ExtensionContext,
   signal?: AbortSignal,
 ): Promise<WorkflowRunResult> {
-  return createWorkflowRunner(pi, ctx, signal).run(buildJuryPlan());
+  const runner = await createWorkflowRunner(pi, ctx, signal);
+  return runner.run(buildJuryPlan());
 }
 
 export const WAVE_PLAN_SCHEMA = {
@@ -445,7 +468,7 @@ export function buildIntegrationDirective(
     if (outcome.state !== "accepted") return [];
     const text = resultText(outcome.envelope).trim();
     const artifacts = outcome.envelope.artifacts
-      .map(({ path, sha256 }) => `${path} (${sha256})`)
+      .map(({ sha256 }) => `sha256:${sha256}`)
       .join(", ");
     return [
       `## ${node.id} (${node.agent})`,
@@ -454,11 +477,17 @@ export function buildIntegrationDirective(
     ].join("\n");
   }).join("\n\n");
   const boundedEvidence = evidence.length > 32_000
-    ? `${evidence.slice(0, 32_000)}\n\n[Evidence text truncated; artifact references remain authoritative.]`
+    ? `${evidence.slice(0, 32_000)}\n\n[Evidence text truncated; verified artifact digests are retained as metadata only.]`
     : evidence;
-  const preservedArtifacts = acceptedReferences.flatMap((reference) =>
-    reference.artifacts.map((artifact) =>
-      `${reference.nodeId}: ${artifact.path} (${artifact.sha256})`));
+  const currentArtifactDigests = result.results.flatMap(({ node, outcome }) =>
+    outcome.state === "accepted"
+      ? outcome.envelope.artifacts.map((artifact) => `${node.id}: sha256:${artifact.sha256}`)
+      : []);
+  const preservedArtifacts = [...new Set([
+    ...currentArtifactDigests,
+    ...acceptedReferences.flatMap((reference) =>
+      reference.artifacts.map((artifact) => `${reference.nodeId}: sha256:${artifact.sha256}`)),
+  ])];
   return [
     "[harness:waves-integrate] You are the Integration Owner for the approved Waves Work Contract.",
     `Goal: ${plan.goal}`,
@@ -469,7 +498,7 @@ export function buildIntegrationDirective(
     "",
     boundedEvidence,
     ...(preservedArtifacts.length > 0
-      ? ["", "Authoritative accepted artifact references:", ...preservedArtifacts]
+      ? ["", "Verified artifact digests (source paths withheld):", ...preservedArtifacts]
       : []),
   ].join("\n");
 }

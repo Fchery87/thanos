@@ -8,6 +8,9 @@ import type { PolicyLoadState } from "../policy/state";
 import type { SpecEngine } from "../spec/engine";
 import type { GoalSnapshot } from "../goal/types";
 import { buildContinueDirective as buildGoalContinueDirective } from "../goal/prompts";
+import { RunFactRecorder, type RunFactInput } from "../execution/facts";
+import type { RunFact } from "../execution/types";
+import { currentRunProjection, formatRunProjection } from "./run";
 import { handleSubagentModelsCommand } from "../agents/model-routing";
 import { formatLabel, formatValue, formatPanel, makeTerminalSafeOptions, noopTheme } from "../ui-utils";
 import {
@@ -83,14 +86,40 @@ export function registerSlashCommands(
      * exact window in which they are not.
      */
     isGoalActive: () => boolean;
+    getRunFacts?: () => readonly RunFact[];
+    recordRunFact?: (fact: RunFactInput) => void;
   },
 ): void {
   const {
     permissions, spec, policyPromise, isGoalActive, isSubagent,
-    sessionId, workflowRuntime, getGoal,
+    sessionId, workflowRuntime, getGoal, recordRunFact,
   } = opts;
+  const factRecorder = new RunFactRecorder(sessionId);
+  const runFacts = (): readonly RunFact[] => opts.getRunFacts?.() ?? factRecorder.snapshot();
+  const recordFact = (fact: RunFactInput): void => {
+    if (recordRunFact) recordRunFact(fact);
+    else factRecorder.record(fact);
+  };
 
-  // ── /skills ───────────────────────────────────────────────────────────────
+  pi.registerCommand("run", {
+    description: "Show the observed execution projection for this session.",
+    handler: async (args, ctx) => {
+      if (isSubagent) {
+        ctx.ui.notify("Run status is only available in the main session.", "warning");
+        return;
+      }
+      if (args.trim() !== "" && args.trim() !== "status") {
+        ctx.ui.notify("Usage: /run [status]", "warning");
+        return;
+      }
+      ctx.ui.notify(formatRunProjection(currentRunProjection({
+        facts: runFacts(),
+        goal: getGoal(),
+        workflow: workflowRuntime.current,
+      })), "info");
+    },
+  });
+
   // Browse all loaded skills in one place.
   pi.registerCommand("skills", {
     description: "List all loaded skills with their descriptions.",
@@ -259,8 +288,45 @@ export function registerSlashCommands(
       return { state: "invalid_plan", results: [], reasons: ["Waves is not investigating"] };
     }
     const completedNodeIds = new Set(current.acceptedEvidence.map((reference) => reference.nodeId));
-    const result = await createWorkflowRunner(pi, ctx, ctx.signal, current.acceptedEvidence)
-      .run(plan, { completedNodeIds });
+    const result = await (await createWorkflowRunner(
+      pi,
+      ctx,
+      ctx.signal,
+      current.acceptedEvidence,
+      (node, outcome) => {
+        const attempt = (current.nodeAttempts[node.id] ?? 0) + 1;
+        const workflowId = current.workflowId;
+        if (outcome.state === "accepted") {
+          recordFact({
+            kind: "delegation_settled",
+            nodeId: node.id,
+            attempt,
+            state: "accepted",
+            requestId: outcome.envelope.requestId,
+            workflowId,
+          });
+        } else if (outcome.state === "awaiting_evidence") {
+          recordFact({
+            kind: "delegation_settled",
+            nodeId: node.id,
+            attempt,
+            state: "awaiting_evidence",
+            reason: outcome.reasons.join("; "),
+            workflowId,
+          });
+        } else {
+          recordFact({
+            kind: "delegation_settled",
+            nodeId: node.id,
+            attempt,
+            state: "failed",
+            reason: outcome.reason,
+            workflowId,
+          });
+        }
+      },
+    )).run(plan, { completedNodeIds });
+
     const references = workflowEvidenceRefs(result);
     workflowRuntime.recordInvestigationProgress(
       references,

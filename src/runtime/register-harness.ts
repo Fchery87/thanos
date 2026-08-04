@@ -40,6 +40,7 @@ import { registerGovernanceHooks } from "./governance-hooks";
 import { snapshotWorkingTree } from "../spec/diff-evidence";
 import { issueContinuation } from "./continuation-auth";
 import { WorkflowRuntime, WORKFLOW_JOURNAL_ENTRY } from "../workflows/state";
+import { RunFactRecorder, type RunFactInput } from "../execution/facts";
 import { registerWorkflowYieldTool } from "../workflows/tool";
 import { registerWorkflowSessionGuards } from "../workflows/session-control";
 
@@ -61,10 +62,18 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   const sessionId = crypto.randomUUID();
   const agentType = isSubagent ? "subagent" : "parent" as const;
   const todoRuntime = new TodoRuntime();
+  const runFactRecorder = new RunFactRecorder(sessionId);
   const recordWorkflowLifecycle = createOrderedHarnessRecorder();
   const workflowRuntime = new WorkflowRuntime({
     append: (snapshot) => pi.appendEntry(WORKFLOW_JOURNAL_ENTRY, snapshot),
     recordLifecycle: (event) => {
+      runFactRecorder.record({
+        kind: "workflow_transition",
+        workflowId: event.workflowId,
+        ...(event.from === undefined ? {} : { from: event.from }),
+        to: event.to,
+        ...(event.reason === undefined ? {} : { reason: event.reason }),
+      });
       if (isSubagent) return;
       void recordWorkflowLifecycle({
         type: "waves_lifecycle",
@@ -225,6 +234,8 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     workflowRuntime,
     getGoal: () => goalController.snapshot(),
     isGoalActive: () => goalController.isActive(),
+    getRunFacts: () => runFactRecorder.snapshot(),
+    recordRunFact: (fact: RunFactInput) => runFactRecorder.record(fact),
   });
   registerLensLiteCommand(pi, lens);
 
@@ -260,6 +271,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     goalController,
     recordGoalEvent,
     workflowRuntime,
+    recordRunFact: (fact: RunFactInput) => runFactRecorder.record(fact),
   });
 
   // ── Web search tool ────────────────────────────────────────────────

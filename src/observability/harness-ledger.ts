@@ -15,7 +15,8 @@ export type HarnessEventType =
   | "goal_set"
   | "goal_achieved"
   | "goal_paused"
-  | "waves_lifecycle";
+  | "waves_lifecycle"
+  | "snapshot_outcome";
 
 /**
  * Bumped only if a producer starts writing a row shape an old reader can't
