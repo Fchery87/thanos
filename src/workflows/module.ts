@@ -75,10 +75,15 @@ function unavailable(
 export function createWorkflowModule(dependencies: WorkflowModuleDependencies): WorkflowModule {
   const { runtime, inspectProjection } = dependencies;
   const receipts = new Map<string, Promise<WorkflowReceipt>>();
+  let dispatchTail: Promise<void> = Promise.resolve();
+
+  const enqueue = <T>(operation: () => Promise<T>): Promise<T> => {
+    const result = dispatchTail.then(operation, operation);
+    dispatchTail = result.then(() => undefined, () => undefined);
+    return result;
+  };
 
   const signalReceipt = async (signal: WorkflowSignal, abort?: AbortSignal): Promise<WorkflowReceipt> => {
-    const prior = signal.id === undefined ? undefined : receipts.get(signal.id);
-    if (prior) return copy(await prior);
     const execute = async (): Promise<WorkflowReceipt> => {
       try {
         switch (signal.kind) {
@@ -113,32 +118,59 @@ export function createWorkflowModule(dependencies: WorkflowModuleDependencies): 
         return rejected("signal", error instanceof Error ? error.message : String(error), runtime.current);
       }
     };
-    const pending = execute();
-    if (signal.id) receipts.set(signal.id, pending);
-    return copy(await pending);
+    return execute();
   };
+
+  const dispatchSignal = (signal: WorkflowSignal, abort?: AbortSignal): Promise<WorkflowReceipt> => enqueue(async () => {
+    if (abort?.aborted) return rejected("signal", "workflow_command_aborted", runtime.current);
+    if (signal.id === undefined) return signalReceipt(signal, abort);
+    // Scope after earlier queued lifecycle work settles. This keeps an id
+    // reused by a replacement workflow distinct from its predecessor.
+    const key = `${runtime.current?.workflowId ?? "none"}:${signal.id}`;
+    const prior = receipts.get(key);
+    if (prior) return copy(await prior);
+    const pending = signalReceipt(signal, abort);
+    receipts.set(key, pending);
+    void pending.then((receipt) => {
+      // Only direct state transitions can prove that a rejected receipt had
+      // no side effect: their journal append threw before publication.
+      // Construction adapters may have crossed an authority boundary before
+      // rejecting, so retain their receipt and let that authority own retry.
+      if (
+        receipt.state === "rejected"
+        && (signal.kind === "yield" || signal.kind === "pause" || signal.kind === "cancel")
+        && receipts.get(key) === pending
+      ) {
+        receipts.delete(key);
+      }
+    });
+    return copy(await pending);
+  });
+
 
   return {
     async dispatch(command, abort): Promise<WorkflowReceipt> {
       if (abort?.aborted) return rejected(command.kind, "workflow_command_aborted", runtime.current);
-      try {
-        switch (command.kind) {
-          case "start":
-            return settled(command.kind, runtime.start(command.request));
-          case "restore":
-            return settled(command.kind, runtime.reconstruct(command.entries, {
-              pauseActiveReason: command.pauseActiveReason ?? "restore_requires_approval",
-            }));
-          case "signal":
-            return await signalReceipt(command.signal, abort);
+      if (command.kind === "signal") return dispatchSignal(command.signal, abort);
+      return enqueue(async () => {
+        if (abort?.aborted) return rejected(command.kind, "workflow_command_aborted", runtime.current);
+        try {
+          switch (command.kind) {
+            case "start":
+              return settled(command.kind, runtime.start(command.request));
+            case "restore":
+              return settled(command.kind, runtime.reconstruct(command.entries, {
+                pauseActiveReason: command.pauseActiveReason ?? "restore_requires_approval",
+              }));
+          }
+        } catch (error) {
+          return rejected(
+            command.kind,
+            error instanceof Error ? error.message : String(error),
+            runtime.current,
+          );
         }
-      } catch (error) {
-        return rejected(
-          command.kind,
-          error instanceof Error ? error.message : String(error),
-          runtime.current,
-        );
-      }
+      });
     },
     inspect(): WorkflowView | undefined {
       return view(runtime, inspectProjection);

@@ -76,6 +76,17 @@ describe("WorkflowRuntime journaled state", () => {
     });
   });
 
+  it("does not publish lifecycle observations after a failed journal append", () => {
+    const lifecycle: unknown[] = [];
+    const runtime = new WorkflowRuntime({
+      append: () => { throw new Error("journal unavailable"); },
+      recordLifecycle: (event) => lifecycle.push(event),
+    });
+    expect(() => runtime.start({ goal: "implement", mode: "standalone" })).toThrow("journal unavailable");
+    expect(runtime.current).toBeUndefined();
+    expect(lifecycle).toEqual([]);
+  });
+
   it("reports bounded lifecycle transitions without treating counter updates as new phases", () => {
     const lifecycle: Array<{ from?: string; to: string; workflowId: string; reason?: string }> = [];
     const runtime = new WorkflowRuntime({
