@@ -134,7 +134,7 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
     // WelcomeHeaderHandle.update). Holding the handle and the TUI here is what
     // lets the MCP counts below reach a header that was already drawn.
     let welcomeHeader: WelcomeHeaderHandle | null = null;
-    let welcomeTui: { requestRender: (force?: boolean) => void } | null = null;
+    let requestWelcomeRender: (() => void) | undefined;
 
     // ── Thanos welcome header — two-column layout, clears on first prompt ─
     if (event.reason === "startup" || event.reason === "new") {
@@ -173,7 +173,8 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
           recentRows,
         });
         welcomeHeader = header;
-        welcomeTui = tui;
+        const render = tui.requestRender;
+        requestWelcomeRender = typeof render === "function" ? () => render.call(tui) : undefined;
         return header;
       });
 
@@ -220,7 +221,7 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
       // has typed and before_agent_start dropped the header: the component is
       // detached by then, so this just updates an object nothing renders.
       welcomeHeader?.update({ mcp: mcpSummary });
-      welcomeTui?.requestRender();
+      requestWelcomeRender?.();
       if (init.kind === "failed") {
         ctx.ui.notify(`MCP init failed: ${init.error}`, "warning");
         return;
@@ -240,7 +241,7 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
       // from "MCP did not start". Say the true one.
       mcpSummary = { ...mcpSummary, initFailed: true };
       welcomeHeader?.update({ mcp: mcpSummary });
-      welcomeTui?.requestRender();
+      requestWelcomeRender?.();
       ctx.ui.notify(`MCP init failed: ${err instanceof Error ? err.message : String(err)}`, "warning");
     });
   });
