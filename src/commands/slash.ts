@@ -25,12 +25,8 @@ import {
   workflowEvidenceRefs,
 } from "../workflows/runtime";
 import { parseWavesCommand } from "../workflows/command";
-import {
-  WORKFLOW_JOURNAL_ENTRY,
-  type WorkflowRuntime,
-  type WorkflowSnapshot,
-} from "../workflows/state";
-import type { WavePlan, WorkflowRunResult } from "../workflows/types";
+import { WORKFLOW_JOURNAL_ENTRY, type WorkflowRuntime, type WorkflowSnapshot } from "../workflows/state";
+import type { WavePlan, WorkflowModule, WorkflowRunResult } from "../workflows/types";
 import { approvePendingWorkContract } from "../runtime/work-contract-approval";
 import { snapshotWorkingTree } from "../spec/diff-evidence";
 import { issueContinuation } from "../runtime/continuation-auth";
@@ -77,6 +73,7 @@ export function registerSlashCommands(
     isSubagent: boolean;
     sessionId: string;
     workflowRuntime: WorkflowRuntime;
+    workflowModule?: WorkflowModule;
     getGoal: () => GoalSnapshot | undefined;
     /**
      * Whether a /goal is running. `/spec` needs it for the same reason
@@ -92,7 +89,7 @@ export function registerSlashCommands(
 ): void {
   const {
     permissions, spec, policyPromise, isGoalActive, isSubagent,
-    sessionId, workflowRuntime, getGoal, recordRunFact,
+    sessionId, workflowRuntime, workflowModule, getGoal, recordRunFact,
   } = opts;
   const factRecorder = new RunFactRecorder(sessionId);
   const runFacts = (): readonly RunFact[] => opts.getRunFacts?.() ?? factRecorder.snapshot();
@@ -395,7 +392,7 @@ export function registerSlashCommands(
         return;
       }
       if (command.kind === "status") {
-        ctx.ui.notify(formatWavesStatus(workflowRuntime.current), "info");
+        ctx.ui.notify(formatWavesStatus(workflowModule?.inspect()?.snapshot ?? workflowRuntime.current), "info");
         return;
       }
       if (command.kind === "pause") {

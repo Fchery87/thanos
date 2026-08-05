@@ -251,6 +251,38 @@ describe("/waves command", () => {
     );
   });
 
+  it("pauses active workflow state when switching session branches", async () => {
+    const plan: WavePlan = {
+      id: "wave",
+      goal: "resume safely",
+      maxConcurrency: 1,
+      integration: {
+        targetRoots: ["src"],
+        capabilities: ["read"],
+        criteria: [{ id: "done", statement: "Done", evidenceRequired: ["command"] }],
+        limits: { maxIntegrationTurns: 3, maxJuryRounds: 2 },
+      },
+      nodes: [{ id: "inspect", agent: "explore", task: "inspect", dependsOn: [], required: true }],
+    };
+    const journal = new WorkflowRuntime({ createId: () => "workflow-1", now: () => 42 });
+    journal.start({ goal: "resume safely", mode: "standalone" });
+    journal.bindPlan(plan);
+    journal.approve();
+    const { api, eventHandlers } = createFakePi();
+    register(api);
+    const ui = { notify: vi.fn(), setStatus: vi.fn(), theme: { fg: (_kind: string, text: string) => text } };
+    await eventHandlers.get("session_tree")?.({}, {
+      sessionManager: {
+        getBranch: () => [{ type: "custom", customType: WORKFLOW_JOURNAL_ENTRY, data: journal.current }],
+      },
+      ui,
+    });
+    expect((api.appendEntry as ReturnType<typeof vi.fn>)).toHaveBeenLastCalledWith(
+      WORKFLOW_JOURNAL_ENTRY,
+      expect.objectContaining({ phase: "paused", reason: "branch_switch_requires_approval" }),
+    );
+  });
+
   it("returns continuation ownership and a fresh contract to an attached Goal on cancel", async () => {
     const sendUserMessage = vi.fn(async () => undefined);
     const { api, handlers } = createFakePi({ sendUserMessage } as Partial<RegisterApi>);

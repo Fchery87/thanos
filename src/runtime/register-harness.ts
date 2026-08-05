@@ -14,6 +14,7 @@ import { serializeGoal } from "../goal/persist";
 import { clearGoalState, saveGoalState } from "../goal/store";
 import { loadPolicyState } from "../policy/state";
 import { registerSlashCommands } from "../commands/slash";
+import { currentRunProjection } from "../commands/run";
 import { MCPManager } from "../mcp/manager";
 // Model router removed — use /models command or pi-subagents for model selection
 // registerSearchTool removed — superseded by npm:pi-web-access
@@ -40,6 +41,7 @@ import { registerGovernanceHooks } from "./governance-hooks";
 import { snapshotWorkingTree } from "../spec/diff-evidence";
 import { issueContinuation } from "./continuation-auth";
 import { WorkflowRuntime, WORKFLOW_JOURNAL_ENTRY } from "../workflows/state";
+import { createWorkflowModule } from "../workflows/module";
 import { RunFactRecorder, type RunFactInput } from "../execution/facts";
 import { registerWorkflowYieldTool } from "../workflows/tool";
 import { registerWorkflowSessionGuards } from "../workflows/session-control";
@@ -225,6 +227,17 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   }
 
   // ── Slash commands ─────────────────────────────────────────────────
+  // Phase 4 composition root. Existing mutating callers retain compatibility
+  // access to WorkflowRuntime until Phase 5 migrates every lifecycle seam.
+  const workflowModule = createWorkflowModule({
+    runtime: workflowRuntime,
+    inspectProjection: () => currentRunProjection({
+      facts: runFactRecorder.snapshot(),
+      goal: goalController.snapshot(),
+      workflow: workflowRuntime.current,
+    }),
+  });
+
   registerSlashCommands(pi, {
     permissions,
     spec,
@@ -232,6 +245,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     isSubagent,
     sessionId,
     workflowRuntime,
+    workflowModule,
     getGoal: () => goalController.snapshot(),
     isGoalActive: () => goalController.isActive(),
     getRunFacts: () => runFactRecorder.snapshot(),

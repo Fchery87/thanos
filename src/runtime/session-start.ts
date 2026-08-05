@@ -225,7 +225,9 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
   pi.on("session_tree", async (_event, ctx) => {
     todoRuntime.reconstructFrom(ctx.sessionManager.getBranch());
     ctx.ui.setStatus("harness-todo", todoRuntime.statusSegment(ctx));
-    workflowRuntime.reconstruct(ctx.sessionManager.getBranch());
+    workflowRuntime.reconstruct(ctx.sessionManager.getBranch(), {
+      pauseActiveReason: "branch_switch_requires_approval",
+    });
     ctx.ui.setStatus("harness-waves", workflowStatusSegment(workflowRuntime.current));
   });
 

@@ -115,7 +115,7 @@ export interface WorkflowRuntimeOptions {
   }) => void;
 }
 
-interface SessionEntryLike {
+export interface SessionEntryLike {
   type?: unknown;
   customType?: unknown;
   data?: unknown;
@@ -365,12 +365,20 @@ export class WorkflowRuntime {
     }
     this.snapshot = latest;
     if (latest && isActive(latest) && options.pauseActiveReason) {
-      return this.commit({
-        ...latest,
-        phase: "paused",
-        reason: options.pauseActiveReason,
-        resume: latest,
-      });
+      // Do not publish reconstructed active work if we cannot first journal the
+      // authority-reacquisition pause. Restore must fail closed.
+      this.snapshot = undefined;
+      try {
+        return this.commit({
+          ...latest,
+          phase: "paused",
+          reason: options.pauseActiveReason,
+          resume: latest,
+        });
+      } catch (error) {
+        this.snapshot = undefined;
+        throw error;
+      }
     }
     return latest;
   }
@@ -379,10 +387,12 @@ export class WorkflowRuntime {
     if (this.snapshot && this.snapshot.phase !== "completed" && this.snapshot.phase !== "cancelled" && this.snapshot.phase !== "handed_off") {
       throw new Error("A nonterminal Waves workflow already exists");
     }
+    const goal = input.goal.trim();
+    if (!goal) throw new Error("A Waves workflow requires a nonempty goal");
     const next: PlanningWorkflow = {
       phase: "planning",
       workflowId: this.createId(),
-      goal: input.goal.trim(),
+      goal,
       mode: input.mode,
       createdAt: this.now(),
       ...(input.lineageParentId ? { lineageParentId: input.lineageParentId } : {}),
@@ -712,8 +722,11 @@ export class WorkflowRuntime {
 
   private commit<T extends WorkflowSnapshot>(snapshot: T): T {
     const previousPhase = this.snapshot?.phase;
-    this.snapshot = snapshot;
+    // Pi exposes a synchronous append call, not a durable-acknowledgement API.
+    // The strongest observable ordering is therefore prepare → append → publish:
+    // an append throw leaves the prior in-memory snapshot and lifecycle facts intact.
     this.append(snapshot);
+    this.snapshot = snapshot;
     if (previousPhase !== snapshot.phase) {
       this.recordLifecycle({
         workflowId: snapshot.workflowId,

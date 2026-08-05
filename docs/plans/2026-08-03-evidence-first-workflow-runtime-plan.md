@@ -1,6 +1,6 @@
 # Architectural implementation plan: evidence-first workflow runtime
 
-**Status:** in progress — Phases 1–3 implementation is complete; Phase 4+ has not started <br>
+**Status:** in progress — Phases 1–3 are complete; Phase 4 implementation is in progress; Phases 5+ have not started <br>
 **Date:** 2026-08-03 <br>
 **Predecessor:** `docs/research/2026-08-03-pi-thanos-vs-fusion-harness-sssf.md`
 
