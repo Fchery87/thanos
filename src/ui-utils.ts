@@ -49,6 +49,12 @@ export function makeTerminalSafeOptions(options: string[], width = DEFAULT_PICKE
   });
 }
 
+export function sanitizeTerminalText(value: string): string {
+  return value
+    .replace(/\u001B(?:\][\s\S]*?(?:\u0007|\u001B\\)|P[\s\S]*?\u001B\\|\[[0-?]*[ -/]*[@-~])/g, "")
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, "");
+}
+
 export function formatBadge(theme: TUITheme, decision: string): string {
   if (decision === "allow") {
     return theme.fg("success", "✓");

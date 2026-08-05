@@ -12,7 +12,7 @@ import { RunFactRecorder, type RunFactInput } from "../execution/facts";
 import type { RunFact } from "../execution/types";
 import { currentRunProjection, formatRunProjection } from "./run";
 import { handleSubagentModelsCommand } from "../agents/model-routing";
-import { formatLabel, formatValue, formatPanel, makeTerminalSafeOptions, noopTheme } from "../ui-utils";
+import { formatLabel, formatValue, formatPanel, makeTerminalSafeOptions, noopTheme, sanitizeTerminalText } from "../ui-utils";
 import {
   renderAuditPanel, renderPolicyPanel, renderSessionSnapshotPanel,
   renderSpecVerificationPanel, renderToolContractPanel,
@@ -73,7 +73,7 @@ export function registerSlashCommands(
     isSubagent: boolean;
     sessionId: string;
     workflowRuntime: WorkflowRuntime;
-    workflowModule?: WorkflowModule;
+    workflowModule: WorkflowModule;
     getGoal: () => GoalSnapshot | undefined;
     /**
      * Whether a /goal is running. `/spec` needs it for the same reason
@@ -392,7 +392,7 @@ export function registerSlashCommands(
         return;
       }
       if (command.kind === "status") {
-        ctx.ui.notify(formatWavesStatus(workflowModule?.inspect()?.snapshot ?? workflowRuntime.current), "info");
+        ctx.ui.notify(formatWavesStatus(workflowModule.inspect()?.snapshot), "info");
         return;
       }
       if (command.kind === "pause") {
@@ -654,7 +654,7 @@ export function registerSlashCommands(
         return;
       }
       await pi.setSessionName(name);
-      ctx.ui.notify(formatPanel(theme, "Session", `Renamed to: ${theme.fg("accent", name)}`, "dim"), "info");
+      ctx.ui.notify(formatPanel(theme, "Session", `Renamed to: ${theme.fg("accent", sanitizeTerminalText(name))}`, "dim"), "info");
     },
   });
 

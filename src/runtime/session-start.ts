@@ -11,7 +11,7 @@ import type { GoalSettings } from "../goal/types";
 import { loadGoalState } from "../goal/store";
 import { restoreController } from "../goal/persist";
 import { renderGoalStatusSegment } from "../goal/command";
-import { renderWelcomeHeader, formatTimeAgo, type WelcomeMcpSummary, type WelcomePolicySummary } from "../welcome/header";
+import { renderWelcomeHeader, formatTimeAgo, type WelcomeHeaderHandle, type WelcomeMcpSummary, type WelcomePolicySummary } from "../welcome/header";
 import { checkForUpdate } from "../welcome/update-check";
 import { formatReapplyNotice, reapplyPatchesIfVersionMatches } from "../welcome/patch-drift";
 import { formatPanel } from "../ui-utils";
@@ -130,6 +130,12 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
 
     let mcpSummary: WelcomeMcpSummary = { configured: 0, connected: 0, failed: 0, initFailed: false };
 
+    // The welcome header is built once and then owns its own state (see
+    // WelcomeHeaderHandle.update). Holding the handle and the TUI here is what
+    // lets the MCP counts below reach a header that was already drawn.
+    let welcomeHeader: WelcomeHeaderHandle | null = null;
+    let welcomeTui: { requestRender: (force?: boolean) => void } | null = null;
+
     // ── Thanos welcome header — two-column layout, clears on first prompt ─
     if (event.reason === "startup" || event.reason === "new") {
       const model = ctx.model;
@@ -158,13 +164,18 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
           }));
       } catch { /* session dir may not exist yet */ }
 
-      ctx.ui.setHeader((_tui, theme) => renderWelcomeHeader(theme, {
-        modelStr,
-        thinkingStr,
-        mcp: mcpSummary,
-        policy,
-        recentRows,
-      }));
+      ctx.ui.setHeader((tui, theme) => {
+        const header = renderWelcomeHeader(theme, {
+          modelStr,
+          thinkingStr,
+          mcp: mcpSummary,
+          policy,
+          recentRows,
+        });
+        welcomeHeader = header;
+        welcomeTui = tui;
+        return header;
+      });
 
       // Non-blocking release check (cached 24h). Failure is silent — an
       // offline session should never see noise from this.
@@ -204,6 +215,12 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
         failed: init.statuses.filter((s) => s.error).length,
         initFailed: init.kind === "failed",
       };
+      // MCP always resolves after setHeader() above, so the header's `mcp` row
+      // is showing the pre-init zero state until this lands. Safe once the user
+      // has typed and before_agent_start dropped the header: the component is
+      // detached by then, so this just updates an object nothing renders.
+      welcomeHeader?.update({ mcp: mcpSummary });
+      welcomeTui?.requestRender();
       if (init.kind === "failed") {
         ctx.ui.notify(`MCP init failed: ${init.error}`, "warning");
         return;
@@ -218,6 +235,12 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
         ctx.ui.notify(formatPanel(theme, "MCP Failed", summary, "error"), "warning");
       }
     }).catch((err) => {
+      // A rejection never reaches the block above, so the header would sit on
+      // the zero state and read "No MCP servers" — which is a different claim
+      // from "MCP did not start". Say the true one.
+      mcpSummary = { ...mcpSummary, initFailed: true };
+      welcomeHeader?.update({ mcp: mcpSummary });
+      welcomeTui?.requestRender();
       ctx.ui.notify(`MCP init failed: ${err instanceof Error ? err.message : String(err)}`, "warning");
     });
   });

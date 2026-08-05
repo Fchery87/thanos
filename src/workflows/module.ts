@@ -9,8 +9,8 @@ import type {
 } from "./types";
 
 /**
- * Construction-only dependencies. Authority-sensitive lifecycle signals are
- * delegated to the existing owners until their callers migrate in Phase 5.
+ * Construction-only dependencies. Authority-sensitive lifecycle signals stay
+ * with their existing authority owners and fail closed without an adapter.
  */
 export interface WorkflowModuleDependencies {
   runtime: WorkflowRuntime;
@@ -67,10 +67,10 @@ function unavailable(
 }
 
 /**
- * Deep compatibility facade for parent-owned Waves state. It deliberately
- * exposes one command entry point and one read entry point. Until Phase 5,
- * state-changing signals whose authority lives outside WorkflowRuntime are
- * delegated to explicit construction-only adapters and otherwise fail closed.
+ * Deep coordination seam for parent-owned Waves state. It deliberately
+ * exposes one command entry point and one read entry point. Runtime-owned
+ * transitions are serialized here; authority-sensitive signals remain explicit
+ * construction-only adapters and otherwise fail closed.
  */
 export function createWorkflowModule(dependencies: WorkflowModuleDependencies): WorkflowModule {
   const { runtime, inspectProjection } = dependencies;

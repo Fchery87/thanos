@@ -227,8 +227,6 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   }
 
   // ── Slash commands ─────────────────────────────────────────────────
-  // Phase 4 composition root. Existing mutating callers retain compatibility
-  // access to WorkflowRuntime until Phase 5 migrates every lifecycle seam.
   const workflowModule = createWorkflowModule({
     runtime: workflowRuntime,
     inspectProjection: () => currentRunProjection({

@@ -58,7 +58,7 @@ export interface WorkflowRunResult {
   reasons: string[];
 }
 
-/** Commands accepted by the Phase 4 compatibility facade. */
+/** Commands accepted by the WorkflowModule coordination seam. */
 export type WorkflowCommand =
   | { kind: "start"; request: { goal: string; mode: WorkflowMode; lineageParentId?: string } }
   | { kind: "restore"; entries: readonly SessionEntryLike[]; pauseActiveReason?: string }
