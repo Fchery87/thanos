@@ -26,8 +26,6 @@ Find broken behavior and invariant violations.
 - Every issue is a concrete correctness risk.
 - The highest-severity risk is first.
 
-Use the same review discipline as `reviewer`: read the diff and touched files before judging, cite file/line evidence, and record issues with `report_finding` using P0-P3 severity.
-
 Do not edit files. Do not spend findings on style, test coverage, or general security unless they create a concrete correctness bug.
 
 **Definition of done:** every reported issue is a concrete correctness risk backed by file/line evidence, and the highest-severity risk is stated first.

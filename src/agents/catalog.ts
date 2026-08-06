@@ -1,5 +1,5 @@
 export type SpecialistId =
-  | "explore" | "plan" | "build" | "reviewer" | "designer"
+  | "explore" | "plan" | "build" | "designer"
   | "oracle" | "researcher" | "evaluator" | "scout" | "worker"
   | "reviewer-correctness" | "reviewer-security" | "reviewer-tests";
 
@@ -83,23 +83,6 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       requiredTools: ["read", "write", "edit", "bash", "subagent"],
       outputContractVersion: 1,
       promptTemplateId: "build",
-      runtimeEngine: "live",
-      manifest: {},
-    },
-  ],
-  [
-    "reviewer", {
-      id: "reviewer",
-      writes: false,
-      executes: false,
-      contextModes: READ_ONLY,
-      mayDelegate: EXPLORE_DELEGATION,
-      maxSubagentDepth: 1,
-      modelRoutable: true,
-      toolCeiling: ["read", "ls", "find", "grep", "report_finding", "subagent"],
-      requiredTools: ["read", "ls", "find", "grep", "report_finding", "subagent"],
-      outputContractVersion: 1,
-      promptTemplateId: "reviewer",
       runtimeEngine: "live",
       manifest: {},
     },

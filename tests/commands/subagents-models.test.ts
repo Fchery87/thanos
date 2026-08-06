@@ -56,17 +56,17 @@ describe("/subagents-models command", () => {
     const { api, handlers } = createFakePi();
     register(api);
 
-    await handlers.get("subagents-models")?.("set reviewer theclawbay/gpt-5.5:high", {
+    await handlers.get("subagents-models")?.("set researcher theclawbay/gpt-5.5:high", {
       hasUI: true,
       ui: { notify, setStatus: vi.fn(), theme: { fg: (_kind: string, text: string) => text } },
     });
 
-    expect(notify).toHaveBeenCalledWith(expect.stringContaining("Updated reviewer"), "info");
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining("Updated researcher"), "info");
     expect(JSON.parse(await readFile(join(agentDir, "settings.json"), "utf-8"))).toMatchObject({
       subagents: {
         disableBuiltins: true,
         agentOverrides: {
-          reviewer: { model: "theclawbay/gpt-5.5:high" },
+          researcher: { model: "theclawbay/gpt-5.5:high" },
         },
       },
     });
@@ -96,20 +96,20 @@ describe("/subagents-models command", () => {
     const { api, handlers } = createFakePi();
     register(api);
 
-    await handlers.get("subagents-models")?.("set reviewer", {
+    await handlers.get("subagents-models")?.("set researcher", {
       hasUI: true,
       ui: { notify, select, setStatus: vi.fn(), theme: { fg: (_kind: string, text: string) => text } },
     });
 
-    expect(select).toHaveBeenCalledWith("Choose model for reviewer", [
+    expect(select).toHaveBeenCalledWith("Choose model for researcher", [
       "theclawbay/gpt-5.5",
       "theclawbay/gemini-2.5-pro",
     ]);
-    expect(notify).toHaveBeenCalledWith(expect.stringContaining("Updated reviewer"), "info");
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining("Updated researcher"), "info");
     expect(JSON.parse(await readFile(join(agentDir, "settings.json"), "utf-8"))).toMatchObject({
       subagents: {
         agentOverrides: {
-          reviewer: { model: "theclawbay/gemini-2.5-pro" },
+          researcher: { model: "theclawbay/gemini-2.5-pro" },
         },
       },
     });
@@ -145,7 +145,7 @@ describe("/subagents-models command", () => {
     const { api, handlers } = createFakePi();
     register(api);
 
-    await handlers.get("subagents-models")?.("set reviewer", {
+    await handlers.get("subagents-models")?.("set researcher", {
       hasUI: true,
       ui: { notify, select, setStatus: vi.fn(), theme: { fg: (_kind: string, text: string) => text } },
     });
@@ -154,7 +154,7 @@ describe("/subagents-models command", () => {
     expect(JSON.parse(await readFile(join(agentDir, "settings.json"), "utf-8"))).toMatchObject({
       subagents: {
         agentOverrides: {
-          reviewer: { model: selectedRef },
+          researcher: { model: selectedRef },
         },
       },
     });
@@ -181,7 +181,7 @@ describe("/subagents-models command", () => {
     const notify = vi.fn();
     const select = vi
       .fn()
-      .mockResolvedValueOnce("reviewer")
+      .mockResolvedValueOnce("researcher")
       .mockResolvedValueOnce("theclawbay/gpt-5.5");
     const { api, handlers } = createFakePi();
     register(api);
@@ -191,13 +191,13 @@ describe("/subagents-models command", () => {
       ui: { notify, select, setStatus: vi.fn(), theme: { fg: (_kind: string, text: string) => text } },
     });
 
-    expect(select).toHaveBeenNthCalledWith(1, "Choose subagent role", expect.arrayContaining(["reviewer"]));
-    expect(select).toHaveBeenNthCalledWith(2, "Choose model for reviewer", ["theclawbay/gpt-5.5"]);
-    expect(notify).toHaveBeenCalledWith(expect.stringContaining("Updated reviewer"), "info");
+    expect(select).toHaveBeenNthCalledWith(1, "Choose subagent role", expect.arrayContaining(["researcher"]));
+    expect(select).toHaveBeenNthCalledWith(2, "Choose model for researcher", ["theclawbay/gpt-5.5"]);
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining("Updated researcher"), "info");
     expect(JSON.parse(await readFile(join(agentDir, "settings.json"), "utf-8"))).toMatchObject({
       subagents: {
         agentOverrides: {
-          reviewer: { model: "theclawbay/gpt-5.5" },
+          researcher: { model: "theclawbay/gpt-5.5" },
         },
       },
     });
@@ -214,7 +214,7 @@ describe("/subagents-models command", () => {
     await writeFile(join(agentDir, "settings.json"), JSON.stringify({
       subagents: {
         agentOverrides: {
-          reviewer: { model: "theclawbay/gpt-5.5" },
+          researcher: { model: "theclawbay/gpt-5.5" },
         },
       },
     }, null, 2));
@@ -242,7 +242,7 @@ describe("/subagents-models command", () => {
     const settings = JSON.parse(await readFile(join(agentDir, "settings.json"), "utf-8"));
     expect(settings.subagents.modelOverridesEnabled).toBe(false);
     expect(settings.subagents.agentOverrides).toBeUndefined();
-    expect(settings.subagents.savedAgentOverrides.reviewer).toEqual({ model: "theclawbay/gpt-5.5" });
+    expect(settings.subagents.savedAgentOverrides.researcher).toEqual({ model: "theclawbay/gpt-5.5" });
   });
 
   // The removed wrapper opened an on/off picker when called bare. The base
@@ -257,7 +257,7 @@ describe("/subagents-models command", () => {
       subagents: {
         modelOverridesEnabled: false,
         savedAgentOverrides: {
-          reviewer: { model: "theclawbay/gpt-5.5" },
+          researcher: { model: "theclawbay/gpt-5.5" },
         },
       },
     }, null, 2));
@@ -287,7 +287,7 @@ describe("/subagents-models command", () => {
       subagents: {
         modelOverridesEnabled: true,
         agentOverrides: {
-          reviewer: { model: "theclawbay/gpt-5.5" },
+          researcher: { model: "theclawbay/gpt-5.5" },
         },
       },
     });

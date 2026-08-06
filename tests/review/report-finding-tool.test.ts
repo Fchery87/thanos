@@ -50,11 +50,11 @@ describe("report_finding tool", () => {
   });
 
   it("returns aggregate verdict after a finding is reported", async () => {
-    const reviewerTools = new Map<string, any>();
-    withSubagentEnv({ PI_SUBAGENT_CHILD: "1", PI_SUBAGENT_CHILD_AGENT: "reviewer" }, () => {
-      register(fakePi(reviewerTools));
+    const researcherTools = new Map<string, any>();
+    withSubagentEnv({ PI_SUBAGENT_CHILD: "1", PI_SUBAGENT_CHILD_AGENT: "researcher" }, () => {
+      register(fakePi(researcherTools));
     });
-    const result = await reviewerTools.get("report_finding").execute("rf-1", {
+    const result = await researcherTools.get("report_finding").execute("rf-1", {
       priority: "P1",
       summary: "Policy bypass",
       rationale: "The tool skips governance checks.",

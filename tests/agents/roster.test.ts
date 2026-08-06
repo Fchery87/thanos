@@ -40,10 +40,10 @@ describe("loadRoster", () => {
   });
 
   it("skips agents marked disabled: true", async () => {
-    await writeAgent(userDir, "reviewer.md", "name: reviewer\ndescription: Reviews code");
+    await writeAgent(userDir, "researcher.md", "name: researcher\ndescription: Investigates code");
     await writeAgent(userDir, "retired.md", "name: retired\ndescription: Old agent\ndisabled: true");
     const roster = await loadRoster({ userDir, projectDir });
-    expect(roster.map((e) => e.name)).toEqual(["reviewer"]);
+    expect(roster.map((e) => e.name)).toEqual(["researcher"]);
   });
 
   it("skips files without valid frontmatter instead of failing the roster", async () => {
@@ -54,11 +54,11 @@ describe("loadRoster", () => {
   });
 
   it("lets project scope win on name collisions, mirroring pi-subagents discovery", async () => {
-    await writeAgent(userDir, "reviewer.md", "name: reviewer\ndescription: User-scope reviewer");
-    await writeAgent(projectDir, "reviewer.md", "name: reviewer\ndescription: Project-scope reviewer");
+    await writeAgent(userDir, "researcher.md", "name: researcher\ndescription: User-scope researcher");
+    await writeAgent(projectDir, "researcher.md", "name: researcher\ndescription: Project-scope researcher");
     const roster = await loadRoster({ userDir, projectDir });
     expect(roster).toEqual([
-      { name: "reviewer", description: "Project-scope reviewer", scope: "project", defaultContext: undefined },
+      { name: "researcher", description: "Project-scope researcher", scope: "project", defaultContext: undefined },
     ]);
   });
 

@@ -497,7 +497,7 @@ describe("register", () => {
     const originalChild = process.env.PI_SUBAGENT_CHILD;
     const originalChildAgent = process.env.PI_SUBAGENT_CHILD_AGENT;
     process.env.PI_SUBAGENT_CHILD = "1";
-    process.env.PI_SUBAGENT_CHILD_AGENT = "reviewer";
+    process.env.PI_SUBAGENT_CHILD_AGENT = "researcher";
     const sendUserMessage = vi.fn(async () => undefined);
     const notify = vi.fn();
     const { api } = createFakePi({ sendUserMessage } as Partial<RegisterApi>);
@@ -568,7 +568,7 @@ describe("register", () => {
     const originalChild = process.env.PI_SUBAGENT_CHILD;
     const originalChildAgent = process.env.PI_SUBAGENT_CHILD_AGENT;
     process.env.PI_SUBAGENT_CHILD = "1";
-    process.env.PI_SUBAGENT_CHILD_AGENT = "reviewer";
+    process.env.PI_SUBAGENT_CHILD_AGENT = "researcher";
     const { api, handlers } = createFakePi();
     register(api);
     if (originalChild === undefined) {

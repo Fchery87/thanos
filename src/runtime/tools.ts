@@ -139,7 +139,7 @@ export interface ReportFindingToolDeps {
 /**
  * report_finding tool: record a structured review finding and return the
  * aggregate review verdict. Registered for every subagent process, not just
- * reviewer roles: several live roster agents (reviewer, reviewer-correctness,
+ * review-critic roles: several live roster agents (reviewer-correctness,
  * reviewer-security, reviewer-tests, evaluator) list report_finding in their
  * frontmatter tool set, and per-agent exposure is already governed by that
  * list (pi-subagents filters registered tools down to it) — narrowing the

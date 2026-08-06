@@ -24,7 +24,7 @@ const accepted = {
 function jury(): WorkflowPlan {
   const node = (id: string, dependsOn: string[] = []) => ({
     id,
-    agent: "reviewer",
+    agent: "reviewer-correctness",
     task: id,
     dependsOn,
     required: true,
@@ -65,8 +65,8 @@ describe("WorkflowRunner", () => {
       goal: "review",
       maxConcurrency: 2,
       nodes: [
-        { id: "accepted", agent: "reviewer", task: "accepted", dependsOn: [], required: true },
-        { id: "rejected", agent: "reviewer", task: "rejected", dependsOn: [], required: false },
+        { id: "accepted", agent: "reviewer-correctness", task: "accepted", dependsOn: [], required: true },
+        { id: "rejected", agent: "reviewer-correctness", task: "rejected", dependsOn: [], required: false },
       ],
     };
     const result = await new WorkflowRunner(async (node) => {
@@ -89,7 +89,7 @@ describe("WorkflowRunner", () => {
       id: "single",
       goal: "review",
       maxConcurrency: 1,
-      nodes: [{ id: "critic", agent: "reviewer", task: "critic", dependsOn: [], required: true }],
+      nodes: [{ id: "critic", agent: "reviewer-correctness", task: "critic", dependsOn: [], required: true }],
     });
     expect(result.state).toBe("completed");
     expect(result.results[0].outcome.state).toBe("accepted");

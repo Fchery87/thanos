@@ -37,12 +37,6 @@
           "theclawbay-claude/claude-opus-4-8:xhigh"
         ]
       },
-      "reviewer": {
-        "model": "theclawbay/gpt-5.6-sol:high",
-        "fallbackModels": [
-          "theclawbay-claude/claude-opus-4-8:high"
-        ]
-      },
       "reviewer-correctness": {
         "model": "theclawbay/gpt-5.6-sol:high",
         "fallbackModels": [

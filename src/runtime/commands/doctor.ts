@@ -172,7 +172,7 @@ export function collectDoctorDiagnostics(inputs: DoctorInputs): readonly Diagnos
 
   // ── pi-subagents patch drift ────────────────────────────────────────
   // A package update silently reverts the Thanos source patches, and the
-  // first symptom is a fanout crash on a reviewer run.
+  // first symptom is a fanout crash on a review-critic run.
   diagnostics.push(inputs.patchDrift.error
     ? { severity: "warning", code: "subagents.patch_check_failed", subsystem: "subagents", message: `patch check failed: ${inputs.patchDrift.error}` }
     : inputs.patchDrift.warning
