@@ -32,7 +32,7 @@ export const TRUSTED_INSTRUCTIONS: readonly string[] = [
   "Do non-trivial work inline yourself by default — you are a capable generalist and inline work has no cold-start cost. Delegate to a specialist ONLY when the work is genuinely parallel (independent slices worth running at once), needs a capability you lack, or the user explicitly asked for deep review or /waves. A specialist run cold-starts a fresh child (seconds to load, often minutes of wall-clock), so reflexive delegation of ordinary work makes the session slower, not smarter.",
   "When you do delegate independent or pipelined tasks, use the parallel/chain modes.",
   "Read-only specialists cannot edit or run commands by design.",
-  "Do NOT pass timeoutMs/maxRuntimeMs when delegating — every agent has its own maxExecutionTimeMs budget, and short caller timeouts kill healthy runs mid-flight, wasting all their work. If you must bound a run, use at least 600000 (10 minutes).",
+  "Do NOT pass timeoutMs/maxRuntimeMs when delegating — every agent has its own timeoutMs budget, and short caller timeouts kill healthy runs mid-flight, wasting all their work. If you must bound a run, use at least 600000 (10 minutes).",
 ];
 
 // ── Auto-invoke: nudge the top-level agent to reach for skills ──

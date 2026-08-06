@@ -15,6 +15,18 @@ describe("instruction surface", () => {
     expect(context).not.toContain("## Flagged ambiguities");
   });
 
+  it("does not promise a delegation budget field pi-subagents does not read", () => {
+    // pi-subagents 0.41.0 reads timeoutMs from agent frontmatter, not
+    // maxExecutionTimeMs (see tests/agents/frontmatter-keys.test.ts). This
+    // instruction text told the parent agent the wrong field name.
+    const source = readFileSync(
+      join(process.cwd(), "src", "runtime", "before-agent-start.ts"),
+      "utf-8",
+    );
+    expect(source).not.toContain("maxExecutionTimeMs");
+    expect(source).toContain("timeoutMs budget");
+  });
+
   it("ships a project AGENTS guide for operational rules", () => {
     const path = join(process.cwd(), "AGENTS.md");
     expect(existsSync(path)).toBe(true);
