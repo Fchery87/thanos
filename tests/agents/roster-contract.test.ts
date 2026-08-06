@@ -13,6 +13,8 @@ interface RosterAgentDefinition {
   tools: string[];
   maxTurns?: number;
   maxExecutionTimeMs?: number;
+  timeoutMs?: number;
+  turnBudget?: string;
   maxSubagentDepth?: number;
   systemPromptMode?: string;
   inheritProjectContext?: boolean;
@@ -56,6 +58,8 @@ function parseFrontmatter(file: string, raw: string): RosterAgentDefinition {
     tools: (fields.tools ?? "").split(",").map((t) => t.trim()).filter(Boolean),
     maxTurns: numeric("maxTurns"),
     maxExecutionTimeMs: numeric("maxExecutionTimeMs"),
+    timeoutMs: numeric("timeoutMs"),
+    turnBudget: fields.turnBudget,
     maxSubagentDepth: numeric("maxSubagentDepth"),
     systemPromptMode: fields.systemPromptMode,
     inheritProjectContext: boolean("inheritProjectContext"),
@@ -135,14 +139,46 @@ describe("live agent roster contract", () => {
     }
   });
 
-  it("turn and execution-time budgets are positive integers where present", async () => {
+  it("timeoutMs is a positive integer where present", async () => {
+    // Retired-key coverage (maxTurns/maxExecutionTimeMs must always be
+    // undefined) lives in the "declares budgets under the frontmatter keys
+    // pi-subagents actually parses" test below, alongside turnBudget's JSON
+    // shape check. This test only needs to own timeoutMs's integer shape,
+    // since that field isn't otherwise shape-checked elsewhere.
     const roster = await loadRoster();
     for (const agent of roster) {
-      for (const key of ["maxTurns", "maxExecutionTimeMs"] as const) {
-        const value = agent[key];
-        if (value === undefined) continue;
-        expect(Number.isInteger(value), `${agent.file}: ${key} must be an integer, got ${value}`).toBe(true);
-        expect(value, `${agent.file}: ${key} must be positive, got ${value}`).toBeGreaterThan(0);
+      const value = agent.timeoutMs;
+      if (value === undefined) continue;
+      expect(Number.isInteger(value), `${agent.file}: timeoutMs must be an integer, got ${value}`).toBe(true);
+      expect(value, `${agent.file}: timeoutMs must be positive, got ${value}`).toBeGreaterThan(0);
+    }
+  });
+
+  it("declares budgets under the frontmatter keys pi-subagents actually parses", async () => {
+    // See tests/agents/frontmatter-keys.test.ts for the pinned key set.
+    // Agents declaring the retired keys silently inherit
+    // DEFAULT_FOREGROUND_TIMEOUT_MS (30m) and no turn budget at all.
+    const roster = await loadRoster();
+    expect(roster.length).toBeGreaterThan(0);
+    for (const agent of roster) {
+      expect(
+        agent.maxExecutionTimeMs,
+        `${agent.file}: maxExecutionTimeMs is retired; use timeoutMs`,
+      ).toBeUndefined();
+      expect(
+        agent.maxTurns,
+        `${agent.file}: maxTurns is retired; use turnBudget`,
+      ).toBeUndefined();
+      expect(agent.timeoutMs, `${agent.file} must declare timeoutMs`).toBeGreaterThan(0);
+      // turnBudget is optional — 2 of 13 profiles (scout, worker) never declared
+      // maxTurns and this task must not fabricate one for them (pi-subagents'
+      // own resolveTurnBudgetConfig treats "no turn budget" as valid). Where a
+      // turnBudget IS declared, it must parse as JSON with a positive maxTurns.
+      if (agent.turnBudget !== undefined) {
+        expect(
+          JSON.parse(agent.turnBudget).maxTurns,
+          `${agent.file} turnBudget must be JSON with a positive maxTurns`,
+        ).toBeGreaterThan(0);
       }
     }
   });
