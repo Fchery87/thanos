@@ -145,10 +145,16 @@ it("declares budgets under the frontmatter keys pi-subagents actually parses", a
       `${agent.file}: maxTurns is retired; use turnBudget`,
     ).toBeUndefined();
     expect(agent.timeoutMs, `${agent.file} must declare timeoutMs`).toBeGreaterThan(0);
-    expect(
-      JSON.parse(agent.turnBudget ?? "null")?.maxTurns,
-      `${agent.file} must declare turnBudget as JSON with maxTurns`,
-    ).toBeGreaterThan(0);
+    // turnBudget is optional — 2 of 13 profiles (scout, worker) never declared
+    // maxTurns and this task must not fabricate one for them (pi-subagents'
+    // own resolveTurnBudgetConfig treats "no turn budget" as valid). Where a
+    // turnBudget IS declared, it must parse as JSON with a positive maxTurns.
+    if (agent.turnBudget !== undefined) {
+      expect(
+        JSON.parse(agent.turnBudget).maxTurns,
+        `${agent.file} turnBudget must be JSON with a positive maxTurns`,
+      ).toBeGreaterThan(0);
+    }
   }
 });
 ```
