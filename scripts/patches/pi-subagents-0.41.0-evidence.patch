@@ -218,3 +218,31 @@ index c4741f0..c0b58b0 100644
  	if (Buffer.byteLength(value.task as string, "utf8") > MAX_TASK_BYTES) {
  		return { ok: false, ...identity, error: "Delegation task exceeds 1 MiB when UTF-8 encoded." };
  	}
+diff --git a/src/runs/shared/model-fallback.ts b/src/runs/shared/model-fallback.ts
+index e883953..a6674ed 100644
+--- a/src/runs/shared/model-fallback.ts
++++ b/src/runs/shared/model-fallback.ts
+@@ -322,9 +322,23 @@ const RETRYABLE_MODEL_FAILURE_PATTERNS = [
+  */
+ const TOOL_FAILURE_PREFIX = /^[\w.:@/-]+ failed (?:(?:\(exit \d+\):)|(?:with exit code \d+))(?:\s|$)/i;
+ 
++/**
++ * thanos-patch: subagent wall-clock timeout is not a model failure (remove
++ * after upstream support)
++ *
++ * `formatTimeoutMessage` (runs/foreground/execution.ts) emits "Subagent
++ * timed out after Nms.", which matches both /timed? out/i and /timeout/i
++ * above. Classifying it as retryable makes execution.ts's model-attempts
++ * loop advance the fallback ladder and re-run the entire task on the next
++ * candidate model. The child exhausted its own declared timeoutMs budget;
++ * no other model fixes that.
++ */
++const SUBAGENT_TIMEOUT_PREFIX = /^subagent timed out after \d+ms\.?/i;
++
+ export function isRetryableModelFailure(error: string | undefined): boolean {
+ 	if (!error) return false;
+ 	if (TOOL_FAILURE_PREFIX.test(error.trim())) return false;
++	if (SUBAGENT_TIMEOUT_PREFIX.test(error.trim())) return false;
+ 	return RETRYABLE_MODEL_FAILURE_PATTERNS.some((pattern) => pattern.test(error));
+ }
+ 
