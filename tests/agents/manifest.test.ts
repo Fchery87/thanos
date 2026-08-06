@@ -23,12 +23,38 @@ describe("validateManifest", () => {
   it("accepts the catalog-backed worker manifest shape", () => {
     expect(() => validateManifest("worker", {
       tools: ["read", "grep", "find", "ls", "bash", "edit", "write"],
-      maxExecutionTimeMs: 1200000,
+      timeoutMs: 1200000,
       systemPromptMode: "replace",
       inheritProjectContext: true,
       defaultContext: "fork",
       defaultReads: ["context.md", "plan.md"],
       defaultProgress: true,
     })).not.toThrow();
+  });
+
+  it("rejects the retired maxExecutionTimeMs key outright", () => {
+    expect(() =>
+      validateManifest("explore", { maxExecutionTimeMs: 600000 }),
+    ).toThrow(/maxExecutionTimeMs is retired; use timeoutMs/);
+  });
+
+  it("rejects the retired maxTurns key outright", () => {
+    expect(() =>
+      validateManifest("explore", { maxTurns: 20 }),
+    ).toThrow(/maxTurns is retired; use turnBudget/);
+  });
+
+  it("requires timeoutMs to be positive when present", () => {
+    expect(() => validateManifest("explore", { timeoutMs: 0 })).toThrow(
+      /must declare a positive timeoutMs/,
+    );
+    expect(() => validateManifest("explore", { timeoutMs: 600000 })).not.toThrow();
+  });
+
+  it("requires turnBudget.maxTurns to be positive when present", () => {
+    expect(() => validateManifest("explore", { turnBudget: { maxTurns: 0 } })).toThrow(
+      /must declare a positive turnBudget.maxTurns/,
+    );
+    expect(() => validateManifest("explore", { turnBudget: { maxTurns: 20 } })).not.toThrow();
   });
 });

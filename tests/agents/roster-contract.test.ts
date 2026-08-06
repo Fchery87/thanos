@@ -211,8 +211,8 @@ describe("live agent roster contract", () => {
     for (const agent of roster) {
       expect(() => validateManifest(agent.name, {
         tools: agent.tools,
-        maxTurns: agent.maxTurns,
-        maxExecutionTimeMs: agent.maxExecutionTimeMs,
+        timeoutMs: agent.timeoutMs,
+        turnBudget: agent.turnBudget !== undefined ? JSON.parse(agent.turnBudget) : undefined,
         maxSubagentDepth: agent.maxSubagentDepth,
         systemPromptMode: agent.systemPromptMode,
         inheritProjectContext: agent.inheritProjectContext,

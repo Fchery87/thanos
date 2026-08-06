@@ -7,8 +7,12 @@ export interface AgentDefinition {
   body: string;
   tools?: string[];
   model?: string;
+  /** @deprecated Retired — parsed only so validateManifest can reject it loudly. Use turnBudget. */
   maxTurns?: number;
+  /** @deprecated Retired — parsed only so validateManifest can reject it loudly. Use timeoutMs. */
   maxExecutionTimeMs?: number;
+  timeoutMs?: number;
+  turnBudget?: { maxTurns: number; graceTurns?: number };
   context?: "fresh" | "forked";
 }
 
@@ -117,6 +121,32 @@ function parseFrontmatter(raw: string): Partial<AgentDefinition> & { body: strin
 
     if (key === "maxExecutionTimeMs") {
       parsed.maxExecutionTimeMs = parsePositiveInteger(rawValue, key);
+      continue;
+    }
+
+    if (key === "timeoutMs") {
+      parsed.timeoutMs = parsePositiveInteger(rawValue, key);
+      continue;
+    }
+
+    if (key === "turnBudget") {
+      const trimmed = rawValue.trim();
+      if (!trimmed) continue;
+      let value: unknown;
+      try {
+        value = JSON.parse(trimmed);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Invalid agent frontmatter value for turnBudget: not valid JSON (${message})`);
+      }
+      if (
+        typeof value !== "object" ||
+        value === null ||
+        typeof (value as { maxTurns?: unknown }).maxTurns !== "number"
+      ) {
+        throw new Error(`Invalid agent frontmatter value for turnBudget: expected an object with a numeric maxTurns`);
+      }
+      parsed.turnBudget = value as { maxTurns: number; graceTurns?: number };
       continue;
     }
   }
