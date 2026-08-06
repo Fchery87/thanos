@@ -39,7 +39,7 @@ function input() {
 }
 
 describe("DelegationRuntime", () => {
-  it("emits V2 requests with the live owner identity and requested acceptance", () => {
+  it("emits requests with the live owner identity, requested acceptance, and no protocol version", () => {
     const bus = new Bus();
     void new DelegationRuntime(bus, "session-1").delegate(input());
     expect(bus.emitted[0]).toEqual({
@@ -51,6 +51,9 @@ describe("DelegationRuntime", () => {
         acceptance: "checked",
       }),
     });
+    // objectContaining is partial: pin the absence of the protocol version,
+    // which 0.41.0 rejects as an unsupported delegation field.
+    expect(bus.emitted[0].value).not.toHaveProperty("version");
   });
 
   it("returns awaiting_evidence for the current incomplete upstream response", async () => {
@@ -76,6 +79,7 @@ describe("DelegationRuntime", () => {
     expect(await pending).toEqual({ state: "failed", reason: "delegation timed out after 50ms" });
     expect(bus.emitted).toContainEqual({
       event: SUBAGENT_DELEGATION_CANCEL_EVENT,
+      // Exact match, so this also pins that no `version` rides along on cancels.
       value: { requestId: "request-1", ownerRunId: "session-1", nodeId: "node-1" },
     });
     vi.useRealTimers();
