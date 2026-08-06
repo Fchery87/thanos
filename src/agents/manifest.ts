@@ -58,8 +58,11 @@ export function validateManifest(role: string, manifest: AgentManifest): void {
     throw new Error(`${role} must declare a positive timeoutMs`);
   }
 
-  if (manifest.turnBudget !== undefined && manifest.turnBudget.maxTurns <= 0) {
-    throw new Error(`${role} must declare a positive turnBudget.maxTurns`);
+  if (manifest.turnBudget !== undefined) {
+    const { maxTurns } = manifest.turnBudget;
+    if (!Number.isInteger(maxTurns) || maxTurns <= 0) {
+      throw new Error(`${role} must declare turnBudget.maxTurns as a positive integer, got ${maxTurns}`);
+    }
   }
 
   if (manifest.systemPromptMode !== undefined && manifest.systemPromptMode !== profile.manifest.systemPromptMode) {

@@ -209,10 +209,19 @@ describe("live agent roster contract", () => {
     expect(roster.length).toBeGreaterThan(0);
 
     for (const agent of roster) {
+      let turnBudget: { maxTurns: number; graceTurns?: number } | undefined;
+      if (agent.turnBudget !== undefined) {
+        try {
+          turnBudget = JSON.parse(agent.turnBudget);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new Error(`${agent.file}: turnBudget is not valid JSON (${message})`);
+        }
+      }
       expect(() => validateManifest(agent.name, {
         tools: agent.tools,
         timeoutMs: agent.timeoutMs,
-        turnBudget: agent.turnBudget !== undefined ? JSON.parse(agent.turnBudget) : undefined,
+        turnBudget,
         maxSubagentDepth: agent.maxSubagentDepth,
         systemPromptMode: agent.systemPromptMode,
         inheritProjectContext: agent.inheritProjectContext,

@@ -51,9 +51,12 @@ describe("validateManifest", () => {
     expect(() => validateManifest("explore", { timeoutMs: 600000 })).not.toThrow();
   });
 
-  it("requires turnBudget.maxTurns to be positive when present", () => {
+  it("requires turnBudget.maxTurns to be a positive integer when present", () => {
     expect(() => validateManifest("explore", { turnBudget: { maxTurns: 0 } })).toThrow(
-      /must declare a positive turnBudget.maxTurns/,
+      /must declare turnBudget\.maxTurns as a positive integer/,
+    );
+    expect(() => validateManifest("explore", { turnBudget: { maxTurns: 4.5 } })).toThrow(
+      /must declare turnBudget\.maxTurns as a positive integer/,
     );
     expect(() => validateManifest("explore", { turnBudget: { maxTurns: 20 } })).not.toThrow();
   });
