@@ -55,6 +55,18 @@
           "theclawbay-claude/claude-sonnet-4-6:high"
         ]
       },
+      "reviewer-patterns": {
+        "model": "theclawbay/gpt-5.6-terra:high",
+        "fallbackModels": [
+          "theclawbay-claude/claude-sonnet-4-6:high"
+        ]
+      },
+      "reviewer-decisions": {
+        "model": "theclawbay/gpt-5.6-terra:high",
+        "fallbackModels": [
+          "theclawbay-claude/claude-sonnet-4-6:high"
+        ]
+      },
       "designer": {
         "model": "theclawbay/gpt-5.6-sol",
         "fallbackModels": [

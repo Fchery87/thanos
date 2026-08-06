@@ -3,7 +3,7 @@ import type { PolicyRule } from "../policy/types";
 // Read-only live-roster roles: search/plan/audit specialists that must never
 // mutate the repo or execute commands, even if a tool leaks through their
 // frontmatter tool list or a prompt injection steers them there. Covers the
-// three angle-specific review critics (there is no shared "reviewer" base —
+// five angle-specific review critics (there is no shared "reviewer" base —
 // see ADR 0023) alongside explore/plan/oracle/researcher.
 // Exported so tests can assert this set stays a subset of the live catalog
 // (src/agents/catalog.ts) — the invariant that broke silently when
@@ -11,6 +11,7 @@ import type { PolicyRule } from "../policy/types";
 export const READ_ONLY_ROLES: ReadonlySet<string> = new Set([
   "explore", "plan", "oracle", "researcher",
   "reviewer-correctness", "reviewer-security", "reviewer-tests",
+  "reviewer-patterns", "reviewer-decisions",
 ]);
 
 /**

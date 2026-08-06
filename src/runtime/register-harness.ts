@@ -285,11 +285,12 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
 
   // Registered for every subagent process, not just review-critic roles:
   // several live roster agents (reviewer-correctness, reviewer-security,
-  // reviewer-tests, evaluator) list report_finding in their frontmatter tool
-  // set, and per-agent exposure is already governed by that list (pi-subagents
-  // filters registered tools down to it) — narrowing the registration itself
-  // to one legacy-only role left every live one calling a tool that was never
-  // registered in their process.
+  // reviewer-tests, reviewer-patterns, reviewer-decisions, evaluator) list
+  // report_finding in their frontmatter tool set, and per-agent exposure is
+  // already governed by that list (pi-subagents filters registered tools
+  // down to it) — narrowing the registration itself to one legacy-only role
+  // left every live one calling a tool that was never registered in their
+  // process.
   if (isSubagent) {
     registerReportFindingTool(pi, {
       getReviewFindings: () => reviewFindings,

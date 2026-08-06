@@ -1,7 +1,8 @@
 export type SpecialistId =
   | "explore" | "plan" | "build" | "designer"
   | "oracle" | "researcher" | "evaluator" | "scout" | "worker"
-  | "reviewer-correctness" | "reviewer-security" | "reviewer-tests";
+  | "reviewer-correctness" | "reviewer-security" | "reviewer-tests"
+  | "reviewer-patterns" | "reviewer-decisions";
 
 export type ContextMode = "fresh" | "forked";
 
@@ -248,6 +249,40 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       requiredTools: ["read", "ls", "find", "grep", "report_finding", "subagent"],
       outputContractVersion: 1,
       promptTemplateId: "reviewer-tests",
+      runtimeEngine: "live",
+      manifest: {},
+    },
+  ],
+  [
+    "reviewer-patterns", {
+      id: "reviewer-patterns",
+      writes: false,
+      executes: false,
+      contextModes: READ_ONLY,
+      mayDelegate: EXPLORE_DELEGATION,
+      maxSubagentDepth: 1,
+      modelRoutable: true,
+      toolCeiling: ["read", "ls", "find", "grep", "report_finding", "subagent"],
+      requiredTools: ["read", "ls", "find", "grep", "report_finding", "subagent"],
+      outputContractVersion: 1,
+      promptTemplateId: "reviewer-patterns",
+      runtimeEngine: "live",
+      manifest: {},
+    },
+  ],
+  [
+    "reviewer-decisions", {
+      id: "reviewer-decisions",
+      writes: false,
+      executes: false,
+      contextModes: READ_ONLY,
+      mayDelegate: EXPLORE_DELEGATION,
+      maxSubagentDepth: 1,
+      modelRoutable: true,
+      toolCeiling: ["read", "ls", "find", "grep", "report_finding", "subagent"],
+      requiredTools: ["read", "ls", "find", "grep", "report_finding", "subagent"],
+      outputContractVersion: 1,
+      promptTemplateId: "reviewer-decisions",
       runtimeEngine: "live",
       manifest: {},
     },

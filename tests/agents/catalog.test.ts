@@ -11,8 +11,8 @@ import {
 } from "../../src/agents/catalog";
 
 describe("specialist catalog", () => {
-  it("contains all 12 specialists", () => {
-    expect(allSpecialists()).toHaveLength(12);
+  it("contains all 14 specialists", () => {
+    expect(allSpecialists()).toHaveLength(14);
   });
 
   it("every specialist has a unique id", () => {

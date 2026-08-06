@@ -58,7 +58,11 @@ describe("roleNarrowingOverlay", () => {
   });
 
   it("every returned rule has a unique id", () => {
-    const allRoles = ["explore", "plan", "oracle", "researcher", "reviewer-correctness", "reviewer-security", "reviewer-tests", "evaluator", "designer"];
+    // Derived from READ_ONLY_ROLES plus the two roles with their own narrowing
+    // branches (evaluator, designer) rather than a fourth hand-typed copy of
+    // the role list — the exact drift class ADR 0023 hit repeatedly in this
+    // file already.
+    const allRoles = [...READ_ONLY_ROLES, "evaluator", "designer"];
     for (const role of allRoles) {
       const rules = roleNarrowingOverlay(role);
       const ids = rules.map((r) => r.id);
