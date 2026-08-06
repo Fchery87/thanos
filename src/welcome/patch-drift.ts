@@ -23,9 +23,9 @@ const execFileAsync = promisify(execFile);
 // no longer describe the code — that stays a human decision and only warns.
 export const PATCH_TARGETS = [
   { file: join("extension", "fanout-child.ts"), marker: "thanos-patch: process-global fanout tool guard" },
-  { file: join("api", "delegation.ts"), marker: "thanos-patch: V2 evidence envelope types" },
-  { file: join("slash", "delegation-request.ts"), marker: "thanos-patch: V2 acceptance request validation" },
-  { file: join("slash", "delegation-adapters.ts"), marker: "thanos-patch: V2 evidence envelope projection" },
+  { file: join("api", "delegation.ts"), marker: "thanos-patch: delegation evidence envelope types" },
+  { file: join("slash", "delegation-request.ts"), marker: "thanos-patch: acceptance request validation" },
+  { file: join("slash", "delegation-adapters.ts"), marker: "thanos-patch: evidence envelope projection" },
 ] as const;
 
 export function defaultPiSubagentsSrcRoot(): string {

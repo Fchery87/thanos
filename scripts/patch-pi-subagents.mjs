@@ -1,6 +1,26 @@
 #!/usr/bin/env node
 // Thanos patches for pi-subagents. Idempotent; safe to run repeatedly.
 //
+// Rewritten for 0.41.0 (2026-08-05). 0.41.0 collapsed the parallel V1/V2
+// delegation protocols into one unnumbered protocol: the `SubagentDelegationV2*`
+// type family is gone, `version` is rejected as an unsupported request field, and
+// `toSubagentDelegationV2Response` no longer exists. The 0.37.2 patch could not be
+// forward-ported — it targeted code that upstream deleted — so it was re-derived
+// against the new single adapter. The new target is smaller: one
+// `toSubagentDelegationResponse` instead of a V1/V2 pair.
+//
+// 0.41.0 also made the evidence types public for the first time, via a new
+// `pi-subagents/shared-types` export (AcceptanceLedger, ExecutionProjection,
+// ReviewProjection, ...). That is exactly what ADR 0019 refused to reach into as
+// "private runtime modules", so the patch now names supported types instead of
+// re-declaring its own. What upstream still does NOT do is project them into the
+// terminal response — that omission is the whole reason this patch still exists.
+//
+// An upstream PR covering the projection and the acceptance request is drafted;
+// if it lands, only the artifact-digest, warnings, and residualRisks hunks remain.
+// The fanout guard is now a hunk in the same artifact rather than a separate
+// string-replace patch (see PATCH_MARKERS below).
+//
 // (Retired) Patch 1 (agents.ts): formerly stopped agent discovery from scanning
 //   any directory named `skills`, because pi-subagents walked its agent roots
 //   recursively with no exclusions and mis-registered skill managers'
@@ -53,57 +73,41 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(homedir(), ".pi", "agent", "npm", "node_modules", "pi-subagents", "src");
 const THANOS_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const PACKAGE_RELATIVE = join("agent", "npm", "node_modules", "pi-subagents");
-const V2_PATCH = join(THANOS_ROOT, "scripts", "patches", "pi-subagents-0.37.2-v2-evidence.patch");
-const V2_MARKERS = [
-  ["api", "delegation.ts", "thanos-patch: V2 evidence envelope types"],
-  ["slash", "delegation-request.ts", "thanos-patch: V2 acceptance request validation"],
-  ["slash", "delegation-adapters.ts", "thanos-patch: V2 evidence envelope projection"],
-];
-
-const patches = [
-  {
-    file: join(ROOT, "extension", "fanout-child.ts"),
-    marker: "thanos-patch: process-global fanout tool guard",
-    needle:
-      "\tif (registeredApis.has(pi)) return;\n" +
-      "\tregisteredApis.add(pi);",
-    replacement:
-      "\tif (registeredApis.has(pi)) return;\n" +
-      "\tregisteredApis.add(pi);\n" +
-      "\t// thanos-patch: process-global fanout tool guard — the upstream WeakSet only\n" +
-      "\t// dedupes per ExtensionAPI instance, but pi loads this file twice in fanout\n" +
-      "\t// children (explicit --extension fanout-child.ts AND the settings package's\n" +
-      "\t// index.ts dispatch), each with its own API object. Both then register the\n" +
-      '\t// "subagent" tool and the second load crashes with a tool-name conflict,\n' +
-      "\t// killing every reviewer→explore nested run with exit 1.\n" +
-      '\tconst __thanosToolKey = "__piSubagentFanoutChildToolRegistered";\n' +
-      "\tif (globalStore[__thanosToolKey] === true) return;\n" +
-      "\tglobalStore[__thanosToolKey] = true;",
-  },
+const PINNED_VERSION = "0.41.0";
+const EVIDENCE_PATCH = join(THANOS_ROOT, "scripts", "patches", `pi-subagents-${PINNED_VERSION}-evidence.patch`);
+// The fanout guard used to be a separate string-replace patch. It is now a hunk
+// in the same artifact: one `git apply`, one reverse-check, one failure mode.
+// String-anchored replacement is what snapped when 0.36.0 refactored the shape
+// it keyed on; a diff with context lets git tell us honestly whether it still fits.
+const PATCH_MARKERS = [
+  ["api", "delegation.ts", "thanos-patch: delegation evidence envelope types"],
+  ["slash", "delegation-request.ts", "thanos-patch: acceptance request validation"],
+  ["slash", "delegation-adapters.ts", "thanos-patch: evidence envelope projection"],
+  ["extension", "fanout-child.ts", "thanos-patch: process-global fanout tool guard"],
 ];
 
 let applied = 0, already = 0, failed = 0;
 
-function applyV2EvidencePatch() {
-  const targets = V2_MARKERS.map(([dir, file, marker]) => ({
+function applyEvidencePatch() {
+  const targets = PATCH_MARKERS.map(([dir, file, marker]) => ({
     file: join(ROOT, dir, file),
     marker,
   }));
   if (targets.some((target) => !existsSync(target.file))) {
-    console.log("[thanos-patch] V2 evidence targets missing (skipped)");
+    console.log("[thanos-patch] evidence patch targets missing (skipped)");
     return;
   }
   if (targets.every((target) => readFileSync(target.file, "utf-8").includes(target.marker))) {
-    console.log("[thanos-patch] already applied: V2 delegation evidence envelope");
+    console.log("[thanos-patch] already applied: delegation evidence envelope + fanout guard");
     already++;
     return;
   }
-  if (!existsSync(V2_PATCH)) {
-    console.error(`[thanos-patch] V2 patch artifact missing: ${V2_PATCH}`);
+  if (!existsSync(EVIDENCE_PATCH)) {
+    console.error(`[thanos-patch] patch artifact missing: ${EVIDENCE_PATCH}`);
     failed++;
     return;
   }
-  const applyArgs = [`--directory=${PACKAGE_RELATIVE}`, "--whitespace=nowarn", V2_PATCH];
+  const applyArgs = [`--directory=${PACKAGE_RELATIVE}`, "--whitespace=nowarn", EVIDENCE_PATCH];
   const check = spawnSync("git", ["apply", "--check", ...applyArgs], {
     cwd: THANOS_ROOT,
     encoding: "utf-8",
@@ -114,11 +118,11 @@ function applyV2EvidencePatch() {
       encoding: "utf-8",
     });
     if (reverse.status === 0) {
-      console.log("[thanos-patch] V2 evidence patch is already present");
+      console.log("[thanos-patch] evidence patch is already present");
       already++;
       return;
     }
-    console.error(`[thanos-patch] V2 evidence patch does not match pinned pi-subagents 0.37.2: ${(check.stderr ?? "").trim()}`);
+    console.error(`[thanos-patch] evidence patch does not match pinned pi-subagents ${PINNED_VERSION}: ${(check.stderr ?? "").trim()}`);
     failed++;
     return;
   }
@@ -127,41 +131,19 @@ function applyV2EvidencePatch() {
     encoding: "utf-8",
   });
   if (apply.status !== 0) {
-    console.error(`[thanos-patch] V2 evidence patch failed: ${(apply.stderr ?? "").trim()}`);
+    console.error(`[thanos-patch] evidence patch failed: ${(apply.stderr ?? "").trim()}`);
     failed++;
     return;
   }
-  console.log("[thanos-patch] applied: V2 delegation evidence envelope");
+  console.log("[thanos-patch] applied: delegation evidence envelope + fanout guard");
   applied++;
 }
 
-applyV2EvidencePatch();
+applyEvidencePatch();
 
-for (const p of patches) {
-  if (!existsSync(p.file)) {
-    console.log(`[thanos-patch] target missing (skipped): ${p.file}`);
-    continue;
-  }
-  let src = readFileSync(p.file, "utf-8");
-  if (src.includes(p.marker)) {
-    console.log(`[thanos-patch] already applied: ${p.marker}`);
-    already++;
-    continue;
-  }
-  if (!src.includes(p.needle)) {
-    // Neutral wording on purpose: a vanished anchor is not yet a verdict. The
-    // behavioural probe below decides whether this is a regression or a patch
-    // upstream has made redundant, and announcing "FAILED" here would contradict
-    // the good-news case.
-    console.log(`[thanos-patch] anchor not found for "${p.marker}" in ${p.file}`);
-    console.log(`[thanos-patch] pi-subagents changed shape — verifying whether the patch is still needed...`);
-    failed++;
-    continue;
-  }
-  writeFileSync(p.file, src.replace(p.needle, p.replacement), "utf-8");
-  console.log(`[thanos-patch] applied: ${p.marker}`);
-  applied++;
-}
+// Every patch now lives in the single artifact applied above. The behavioural
+// probes below remain the gate: they answer "does pi-subagents behave correctly",
+// which is a different question from "is our patch text present".
 
 // --- Behavioural verification -------------------------------------------
 //
@@ -236,10 +218,13 @@ function verifyV2EvidenceEnvelope() {
     writeFileSync(
       probe,
       `const mod = await import(${JSON.stringify(target)});\n` +
-        `const request = { version: 2, requestId: "request-1", ownerRunId: "owner-1", nodeId: "node-1", agent: "reviewer", task: "review", context: "fresh", cwd: ".", acceptance: "verified", artifacts: true, result: { kind: "text" } };\n` +
+        // 0.41.0 collapsed V1/V2 into one protocol: no `version` field (it is now
+        // rejected as unsupported) and `acceptance` takes an AcceptanceInput level,
+        // which excludes "verified" — that is a computed output level, not a request.
+        `const request = { requestId: "request-1", ownerRunId: "owner-1", nodeId: "node-1", agent: "reviewer", task: "review", context: "fresh", cwd: ".", acceptance: "checked", artifacts: true, result: { kind: "text" } };\n` +
         `const acceptance = { status: "accepted", evidenceStatus: "verified", explicit: true, childReport: { residualRisks: ["risk"] } };\n` +
         `const result = { content: [{ type: "text", text: "ok" }], isError: false, details: { runId: "run-1", results: [{ status: "completed", finalOutput: "ok", launchContractDigest: "${"a".repeat(64)}", execution: { status: "completed", success: true, exitCode: 0 }, acceptance, review: { status: "reviewed", findings: [] }, effects: { fileMutation: { status: "not-applicable", expected: false, attempted: false } } }] } };\n` +
-        `const response = mod.toSubagentDelegationV2Response(request, result, false);\n` +
+        `const response = mod.toSubagentDelegationResponse(request, result, false);\n` +
         `const ok = response.execution?.success === true && response.acceptance?.status === "accepted" && response.review?.status === "reviewed" && response.effects?.fileMutation?.status === "not-applicable" && Array.isArray(response.artifacts) && Array.isArray(response.warnings) && response.residualRisks?.[0] === "risk";\n` +
         `console.log("THANOS_V2_PROBE:" + (ok ? "ok" : JSON.stringify(response)));\n`,
       "utf-8",

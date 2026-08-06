@@ -445,7 +445,6 @@ describe("register", () => {
         requests.push(request);
         queueMicrotask(() => {
           const response = {
-            version: 2,
             requestId: request.requestId,
             ownerRunId: request.ownerRunId,
             nodeId: request.nodeId,
