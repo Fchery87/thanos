@@ -31,7 +31,7 @@ function input() {
     task: "inspect",
     context: "fresh" as const,
     cwd: "/repo",
-    acceptance: "verified" as const,
+    acceptance: "checked" as const,
     artifacts: true,
     result: { kind: "text" as const },
     timeoutMs: 50,
@@ -45,11 +45,10 @@ describe("DelegationRuntime", () => {
     expect(bus.emitted[0]).toEqual({
       event: SUBAGENT_DELEGATION_REQUEST_EVENT,
       value: expect.objectContaining({
-        version: 2,
         requestId: "request-1",
         ownerRunId: "session-1",
         nodeId: "node-1",
-        acceptance: "verified",
+        acceptance: "checked",
       }),
     });
   });
@@ -58,7 +57,6 @@ describe("DelegationRuntime", () => {
     const bus = new Bus();
     const pending = new DelegationRuntime(bus, "session-1").delegate(input());
     bus.emit(SUBAGENT_DELEGATION_RESPONSE_EVENT, {
-      version: 2,
       requestId: "request-1",
       ownerRunId: "session-1",
       nodeId: "node-1",
@@ -78,7 +76,7 @@ describe("DelegationRuntime", () => {
     expect(await pending).toEqual({ state: "failed", reason: "delegation timed out after 50ms" });
     expect(bus.emitted).toContainEqual({
       event: SUBAGENT_DELEGATION_CANCEL_EVENT,
-      value: { version: 2, requestId: "request-1", ownerRunId: "session-1", nodeId: "node-1" },
+      value: { requestId: "request-1", ownerRunId: "session-1", nodeId: "node-1" },
     });
     vi.useRealTimers();
   });

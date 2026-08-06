@@ -35,7 +35,6 @@ function semanticResult(overrides: Partial<VerificationResult> = {}): Verificati
 
 function envelope(nodeId: string): DelegationEvidenceEnvelope {
   return {
-    version: 2,
     requestId: `request-${nodeId}`,
     ownerRunId: "owner-1",
     nodeId,
@@ -112,7 +111,6 @@ describe("ScenarioLab system trajectories", () => {
       name: "incomplete V2 response remains awaiting evidence",
       execute: ({ emit }) => {
         emit("delegation_checked", validateDelegationEvidence({
-          version: 2,
           requestId: "r",
           ownerRunId: "o",
           nodeId: "n",

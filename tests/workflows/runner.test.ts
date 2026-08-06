@@ -5,7 +5,6 @@ import type { WorkflowPlan } from "../../src/workflows/types";
 const accepted = {
   state: "accepted" as const,
   envelope: {
-    version: 2 as const,
     requestId: "request",
     ownerRunId: "owner",
     nodeId: "node",

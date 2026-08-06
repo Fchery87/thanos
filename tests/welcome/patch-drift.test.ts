@@ -290,10 +290,17 @@ describe("automatic re-apply after a reinstall", () => {
   it("reads the real pin as an exact version so the equality check is meaningful", async () => {
     const pinned = await readPinnedPiSubagentsVersion();
     expect(pinned).toMatch(/^\d+\.\d+\.\d+$/);
-    // The V2 patch artifact is cut against one specific release; if the pin moves
+    // The patch artifact is cut against one specific release; if the pin moves
     // without a new artifact, auto-reapply would run a patch built for old code.
-    const patches = await readFile(join(import.meta.dirname, "..", "..", "scripts", "patch-pi-subagents.mjs"), "utf-8");
-    expect(patches).toContain(`pi-subagents-${pinned}-v2-evidence.patch`);
+    // The applier derives the artifact filename from its own PINNED_VERSION, so
+    // the guard checks both ends: that constant must track the dependency pin,
+    // and the artifact it names must actually exist.
+    const script = await readFile(join(import.meta.dirname, "..", "..", "scripts", "patch-pi-subagents.mjs"), "utf-8");
+    expect(script).toContain(`const PINNED_VERSION = "${pinned}";`);
+    await expect(readFile(
+      join(import.meta.dirname, "..", "..", "scripts", "patches", `pi-subagents-${pinned}-evidence.patch`),
+      "utf-8",
+    )).resolves.toContain("thanos-patch:");
   });
 
   it("reads a version back out of an installed package layout", async () => {

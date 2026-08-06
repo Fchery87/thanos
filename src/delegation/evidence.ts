@@ -1,12 +1,38 @@
+// pi-subagents 0.41.0 collapsed the V1/V2 delegation protocols into one
+// unnumbered protocol and, for the first time, exported the evidence types
+// publicly via `pi-subagents/shared-types`. These are the same shapes the old
+// `SubagentDelegation*Result` family described, now named at their source
+// instead of re-declared — which is what ADR 0019 asked for and could not have.
 import type {
-  SubagentDelegationAcceptance,
-  SubagentDelegationAcceptanceResult,
-  SubagentDelegationEffectsResult,
-  SubagentDelegationExecutionResult,
-  SubagentDelegationReviewResult,
-  SubagentDelegationV2Usage,
-  SubagentDelegationV2Value,
+  SubagentDelegationUsage,
+  SubagentDelegationValue,
 } from "pi-subagents/delegation";
+import type {
+  AcceptanceInput,
+  AcceptanceLedger,
+  ExecutionProjection,
+  ReviewProjection,
+  SingleResult,
+} from "pi-subagents/shared-types";
+
+// `EffectsProjection` is the one evidence type 0.41.0 does not re-export from
+// ./shared-types, so it can only be reached structurally through SingleResult.
+// Filed as part of the upstream PR; swap to a direct import once it lands.
+type EffectsProjection = NonNullable<SingleResult["effects"]>;
+
+/**
+ * What the harness actually guarantees about an acceptance ledger it received.
+ *
+ * Upstream sends the full `AcceptanceLedger`, but this envelope is a payload
+ * validated structurally at runtime, not a compile-time contract — and the only
+ * field the gate inspects is `status` (residual risks are flattened to the
+ * envelope's own top-level `residualRisks`). Requiring the whole ledger would
+ * oblige every fixture to fabricate `effectiveAcceptance`, `criteria`,
+ * `runtimeChecks` and `verifyRuns` to assert nothing. The richer fields stay
+ * available and typed for anything that later wants them.
+ */
+export type DelegationAcceptanceEvidence =
+  Pick<AcceptanceLedger, "status" | "evidenceStatus" | "explicit"> & Partial<AcceptanceLedger>;
 
 export interface DelegationArtifactEvidence {
   kind: string;
@@ -16,20 +42,19 @@ export interface DelegationArtifactEvidence {
 }
 
 export interface DelegationEvidenceEnvelope {
-  version: 2;
   requestId: string;
   ownerRunId: string;
   nodeId: string;
   runId: string;
   status: string;
   launchContractDigest: string;
-  execution: SubagentDelegationExecutionResult;
-  acceptance: SubagentDelegationAcceptanceResult;
-  review: SubagentDelegationReviewResult;
-  effects: SubagentDelegationEffectsResult;
+  execution: ExecutionProjection;
+  acceptance: DelegationAcceptanceEvidence;
+  review: ReviewProjection;
+  effects: EffectsProjection;
   artifacts: DelegationArtifactEvidence[];
-  result?: SubagentDelegationV2Value;
-  usage?: SubagentDelegationV2Usage;
+  result?: SubagentDelegationValue;
+  usage?: SubagentDelegationUsage;
   warnings: string[];
   residualRisks: string[];
 }
@@ -44,13 +69,16 @@ export type DelegationEvidenceVerdict =
   | { state: "accepted"; envelope: DelegationEvidenceEnvelope }
   | { state: "awaiting_evidence"; reasons: string[] };
 
-export interface DelegationV2Request extends DelegationEvidenceIdentity {
-  version: 2;
+/**
+ * Named without a protocol version because 0.41.0 has none: `version` is now
+ * rejected as an unsupported delegation field, so sending it fails the request.
+ */
+export interface DelegationRequest extends DelegationEvidenceIdentity {
   agent: string;
   task: string;
   context: "fresh" | "fork";
   cwd: string;
-  acceptance: SubagentDelegationAcceptance;
+  acceptance: AcceptanceInput;
   artifacts: boolean;
   result: { kind: "text" } | { kind: "structured"; schema: Record<string, unknown> };
   timeoutMs?: number;
@@ -94,7 +122,6 @@ export function validateDelegationEvidence(
   if (!response) return { state: "awaiting_evidence", reasons: ["response is not an object"] };
 
   const reasons: string[] = [];
-  if (response.version !== 2) reasons.push("protocol version is not 2");
   for (const field of ["requestId", "ownerRunId", "nodeId"] as const) {
     if (response[field] !== expected[field]) reasons.push(`${field} does not match the workflow node`);
   }
@@ -113,7 +140,23 @@ export function validateDelegationEvidence(
   const acceptance = record(response.acceptance);
   if (response.status !== "completed") reasons.push(`delegation status is ${String(response.status)}`);
   if (record(response.execution)?.success !== true) reasons.push("execution did not succeed");
-  if (!acceptance || !["accepted", "verified", "reviewed"].includes(String(acceptance.status))) {
+  // "checked" is an accepted state, "attested" is not, and that line is deliberate.
+  //
+  // Delegated waves nodes return evidence only — the main session owns all
+  // mutation — so every child here is read-only. "checked" means the runtime
+  // independently ran the criteria and structural checks over the child's
+  // acceptance report and none failed. "attested" means the child merely claimed
+  // it, with no check executed, so it stays refused.
+  //
+  // "verified" additionally requires the parent to execute a verify command.
+  // That is real evidence for a writer, and no evidence at all for a node that
+  // changed nothing: the command can only measure repo state the child never
+  // touched. Requesting bare "verified" was in fact structurally unreachable —
+  // it is rejected outright when no verify command is configured — so this gate
+  // never admitted anything until now. Reaching "verified" via a nominal
+  // always-passing command would write a stronger word into the ledger than the
+  // evidence supports, which is the failure mode this gate exists to prevent.
+  if (!acceptance || !["accepted", "verified", "reviewed", "checked"].includes(String(acceptance.status))) {
     reasons.push("acceptance did not reach an accepted evidence state");
   }
   if (record(response.review)?.status === "blockers") reasons.push("review reported blockers");

@@ -8,12 +8,12 @@ import {
 import {
   validateDelegationEvidence,
   type DelegationEvidenceVerdict,
-  type DelegationV2Request,
+  type DelegationRequest,
 } from "./evidence";
 
 type EventBus = ExtensionAPI["events"];
 
-export interface DelegationInput extends Omit<DelegationV2Request, "version" | "requestId" | "ownerRunId"> {
+export interface DelegationInput extends Omit<DelegationRequest, "requestId" | "ownerRunId"> {
   requestId?: string;
 }
 
@@ -31,9 +31,8 @@ export class DelegationRuntime {
 
   delegate(input: DelegationInput, signal?: AbortSignal): Promise<DelegationOutcome> {
     const requestId = input.requestId ?? randomUUID();
-    const request: DelegationV2Request = {
+    const request: DelegationRequest = {
       ...input,
-      version: 2,
       requestId,
       ownerRunId: this.ownerRunId,
     };
@@ -50,10 +49,9 @@ export class DelegationRuntime {
         signal?.removeEventListener("abort", abort);
         resolve(outcome);
       };
-      const cancel = () => this.events.emit(SUBAGENT_DELEGATION_CANCEL_EVENT, {
-        version: 2,
-        ...identity,
-      });
+      // 0.41.0 correlates a cancel by the identity tuple alone; a `version`
+      // field here is rejected as unsupported and the cancel is dropped.
+      const cancel = () => this.events.emit(SUBAGENT_DELEGATION_CANCEL_EVENT, { ...identity });
       const abort = () => {
         cancel();
         finish({ state: "failed", reason: "delegation cancelled" });

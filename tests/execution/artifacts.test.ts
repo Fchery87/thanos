@@ -38,7 +38,6 @@ describe("workflow artifact verification", () => {
         outcome: {
           state: "accepted",
           envelope: {
-            version: 2,
             requestId: "request",
             ownerRunId: "owner",
             nodeId: "research",

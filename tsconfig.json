@@ -1,6 +1,12 @@
 {
   "compilerOptions": {
     "target": "ES2022",
+    // pi-subagents ships TypeScript source rather than declarations, and its
+    // public ./shared-types entry re-exports across that source graph. Consuming
+    // it means typechecking those files under our config: they import with
+    // explicit .ts extensions and use ES2023 array methods.
+    "lib": ["ES2023"],
+    "allowImportingTsExtensions": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "strict": false,

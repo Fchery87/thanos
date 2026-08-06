@@ -52,7 +52,6 @@ function juryResult(
       outcome: {
         state: "accepted",
         envelope: {
-          version: 2,
           requestId: `request-${verdict}`,
           ownerRunId: "owner",
           nodeId: "oracle",

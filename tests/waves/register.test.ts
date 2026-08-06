@@ -28,7 +28,6 @@ function createFakePi(overrides?: Partial<RegisterApi>) {
         queueMicrotask(() => {
           for (const listener of listeners.get("prompt-template:subagent:response") ?? []) {
             listener({
-              version: 2,
               requestId: request.requestId,
               ownerRunId: request.ownerRunId,
               nodeId: request.nodeId,
@@ -90,7 +89,7 @@ describe("/waves command", () => {
     });
 
     expect(requests).toHaveLength(1);
-    expect(requests[0]).toMatchObject({ version: 2, nodeId: "wave_plan", task: expect.stringContaining("audit this repo") });
+    expect(requests[0]).toMatchObject({ nodeId: "wave_plan", task: expect.stringContaining("audit this repo") });
     expect(sendUserMessage).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledWith(expect.stringContaining("awaiting_evidence"), "warning");
   });

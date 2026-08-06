@@ -1,0 +1,220 @@
+diff --git a/src/api/delegation.ts b/src/api/delegation.ts
+index 824460d..df24db1 100644
+--- a/src/api/delegation.ts
++++ b/src/api/delegation.ts
+@@ -1,3 +1,12 @@
++/** thanos-patch: delegation evidence envelope types (remove after upstream support) */
++import type {
++	AcceptanceInput,
++	AcceptanceLedger,
++	EffectsProjection,
++	ExecutionProjection,
++	ReviewProjection,
++} from "../shared/types.ts";
++
+ // This is the established extension-to-extension transport. The structured
+ // delegation API intentionally reuses it instead of adding a second event
+ // protocol. Unstructured payloads on the same events remain the legacy
+@@ -42,6 +51,8 @@ export interface SubagentDelegationRequest {
+ 	toolBudget?: SubagentDelegationToolBudget;
+ 	skill?: string | string[] | boolean;
+ 	artifacts?: boolean;
++	/** thanos-patch: acceptance request (remove after upstream support) */
++	acceptance?: AcceptanceInput;
+ 	result: SubagentDelegationResultRequest;
+ }
+ 
+@@ -93,6 +104,14 @@ export interface SubagentDelegationUsage {
+ 	durationMs: number;
+ }
+ 
++/** thanos-patch: artifact reference with content digest (remove after upstream support) */
++export interface SubagentDelegationArtifact {
++	kind: string;
++	path: string;
++	sha256: string;
++	bytes: number;
++}
++
+ export interface SubagentDelegationTerminalResponse extends SubagentDelegationStarted {
+ 	status: Exclude<SubagentDelegationStatus, "invalid_request">;
+ 	error?: string;
+@@ -104,6 +123,14 @@ export interface SubagentDelegationTerminalResponse extends SubagentDelegationSt
+ 	launchContractDigest?: string;
+ 	result?: SubagentDelegationValue;
+ 	usage?: SubagentDelegationUsage;
++	/** thanos-patch: evidence envelope projection (remove after upstream support) */
++	execution?: ExecutionProjection;
++	acceptance?: AcceptanceLedger;
++	review?: ReviewProjection;
++	effects?: EffectsProjection;
++	artifacts?: SubagentDelegationArtifact[];
++	warnings?: string[];
++	residualRisks?: string[];
+ }
+ 
+ /** A malformed structured request can only be correlated by the valid identity fields it supplied. */
+diff --git a/src/extension/fanout-child.ts b/src/extension/fanout-child.ts
+index 459868e..243da25 100644
+--- a/src/extension/fanout-child.ts
++++ b/src/extension/fanout-child.ts
+@@ -138,6 +138,15 @@ export default function registerFanoutChildSubagentExtension(pi: ExtensionAPI):
+ 	globalStore[registeredKey] = registeredApis;
+ 	if (registeredApis.has(pi)) return;
+ 	registeredApis.add(pi);
++	// thanos-patch: process-global fanout tool guard — the upstream WeakSet only
++	// dedupes per ExtensionAPI instance, but pi loads this file twice in fanout
++	// children (explicit --extension fanout-child.ts AND the settings package's
++	// index.ts dispatch), each with its own API object. Both then register the
++	// "subagent" tool and the second load crashes with a tool-name conflict,
++	// killing every reviewer→explore nested run with exit 1.
++	const __thanosToolKey = "__piSubagentFanoutChildToolRegistered";
++	if (globalStore[__thanosToolKey] === true) return;
++	globalStore[__thanosToolKey] = true;
+ 
+ 	const config = loadConfig();
+ 	const state = createChildSafeState();
+diff --git a/src/slash/delegation-adapters.ts b/src/slash/delegation-adapters.ts
+index 29d7ab4..092915b 100644
+--- a/src/slash/delegation-adapters.ts
++++ b/src/slash/delegation-adapters.ts
+@@ -1,4 +1,8 @@
++/** thanos-patch: evidence envelope projection (remove after upstream support) */
++import { createHash } from "node:crypto";
++import { readFileSync, statSync } from "node:fs";
+ import {
++	type SubagentDelegationArtifact,
+ 	type SubagentDelegationRequest,
+ 	type SubagentDelegationResponse,
+ 	type SubagentDelegationStatus,
+@@ -6,7 +10,7 @@ import {
+ 	type SubagentDelegationUpdate,
+ 	type SubagentDelegationValue,
+ } from "../api/delegation.ts";
+-import type { AcceptanceInput, AgentContract, EffectsProjection, ExecutionProjection, JsonSchemaObject, ReviewProjection, ToolBudgetConfig, TurnBudgetConfig, Usage } from "../shared/types.ts";
++import type { AcceptanceInput, AcceptanceLedger, AgentContract, ArtifactPaths, EffectsProjection, ExecutionProjection, JsonSchemaObject, ReviewProjection, ToolBudgetConfig, TurnBudgetConfig, Usage } from "../shared/types.ts";
+ import { cloneJsonWithinByteLimit } from "./delegation-json.ts";
+ 
+ export interface PromptTemplateDelegationRequest {
+@@ -55,12 +59,6 @@ export interface PromptTemplateDelegationUpdate {
+ 	taskProgress?: PromptTemplateDelegationTaskProgress[];
+ }
+ 
+-interface DelegationAcceptanceSnapshot {
+-	status: string;
+-	evidenceStatus?: string;
+-	explicit?: boolean;
+-}
+-
+ export interface PromptTemplateBridgeResult {
+ 	isError?: boolean;
+ 	content?: unknown;
+@@ -89,7 +87,8 @@ export interface PromptTemplateBridgeResult {
+ 			sessionFile?: string;
+ 			agentContract?: AgentContract;
+ 			execution?: ExecutionProjection;
+-			acceptance?: DelegationAcceptanceSnapshot;
++			acceptance?: AcceptanceLedger;
++			artifactPaths?: ArtifactPaths;
+ 			review?: ReviewProjection;
+ 			effects?: EffectsProjection;
+ 			usage?: Usage;
+@@ -313,7 +312,8 @@ export function toSubagentDelegationExecutionParams(request: SubagentDelegationR
+ 		skill: request.skill,
+ 		output: false,
+ 		...(request.result.kind === "structured" ? { outputSchema: request.result.schema } : {}),
+-		acceptance: false,
++		// thanos-patch: acceptance request passthrough (remove after upstream support)
++		acceptance: request.acceptance ?? false,
+ 		artifacts: request.artifacts,
+ 		delegatedThinkingOverride: request.thinking,
+ 		delegatedAllowZeroToolBudget: true,
+@@ -365,6 +365,29 @@ function resolveSubagentDelegationStatus(
+ 
+ const MAX_RESULT_BYTES = 1024 * 1024;
+ 
++/** thanos-patch: artifact digests (remove after upstream support) */
++type PromptTemplateBridgeChild = NonNullable<NonNullable<PromptTemplateBridgeResult["details"]>["results"]>[number];
++
++function artifactEvidence(child: PromptTemplateBridgeChild | undefined): SubagentDelegationArtifact[] {
++	const paths = child?.artifactPaths;
++	if (!paths) return [];
++	return Object.entries(paths).flatMap(([kind, path]) => {
++		if (typeof path !== "string") return [];
++		try {
++			const stat = statSync(path);
++			if (!stat.isFile()) return [];
++			return [{
++				kind: kind.replace(/Path$/, ""),
++				path,
++				sha256: createHash("sha256").update(readFileSync(path)).digest("hex"),
++				bytes: stat.size,
++			}];
++		} catch {
++			return [];
++		}
++	});
++}
++
+ export function toSubagentDelegationResponse(
+ 	request: SubagentDelegationRequest,
+ 	result: PromptTemplateBridgeResult,
+@@ -403,6 +426,10 @@ export function toSubagentDelegationResponse(
+ 	}
+ 	const usage = child?.usage;
+ 	const childLaunchContractDigest = (child as { launchContractDigest?: string } | undefined)?.launchContractDigest;
++	// thanos-patch: evidence envelope projection (remove after upstream support)
++	const warnings = [child?.skillsWarning, child?.outputSaveError, child?.transcriptError]
++		.filter((warning): warning is string => typeof warning === "string" && warning.length > 0);
++	const acceptance = child?.acceptance;
+ 	return {
+ 		requestId: request.requestId,
+ 		ownerRunId: request.ownerRunId,
+@@ -415,6 +442,14 @@ export function toSubagentDelegationResponse(
+ 		...(child?.thinking ? { thinking: child.thinking } : {}),
+ 		...(typeof child?.exitCode === "number" ? { exitCode: child.exitCode } : {}),
+ 		...(childLaunchContractDigest ? { launchContractDigest: childLaunchContractDigest } : {}),
++		// thanos-patch: evidence envelope projection (remove after upstream support)
++		...(child?.execution ? { execution: child.execution } : {}),
++		...(acceptance ? { acceptance } : {}),
++		...(child?.review ? { review: child.review } : {}),
++		...(child?.effects ? { effects: child.effects } : {}),
++		artifacts: artifactEvidence(child),
++		warnings,
++		residualRisks: acceptance?.childReport?.residualRisks ?? [],
+ 		...(projectedResult ? { result: projectedResult } : {}),
+ 		...(usage ? {
+ 			usage: {
+diff --git a/src/slash/delegation-request.ts b/src/slash/delegation-request.ts
+index c4741f0..c0b58b0 100644
+--- a/src/slash/delegation-request.ts
++++ b/src/slash/delegation-request.ts
+@@ -1,6 +1,8 @@
+ import {
+ 	type SubagentDelegationRequest,
+ } from "../api/delegation.ts";
++/** thanos-patch: acceptance request validation (remove after upstream support) */
++import { validateAcceptanceInput } from "../runs/shared/acceptance.ts";
+ import { validateToolBudgetConfig } from "../runs/shared/tool-budget.ts";
+ import { resolveTurnBudgetConfig } from "../runs/shared/turn-budget.ts";
+ import { cloneJsonWithinByteLimit } from "./delegation-json.ts";
+@@ -24,6 +26,7 @@ const supportedFields = new Set([
+ 	"toolBudget",
+ 	"skill",
+ 	"artifacts",
++	"acceptance",
+ 	"result",
+ ]);
+ 
+@@ -101,6 +104,11 @@ export function parseSubagentDelegationRequest(data: unknown): SubagentDelegatio
+ 	if (value.artifacts !== undefined && typeof value.artifacts !== "boolean") {
+ 		return { ok: false, ...identity, error: "artifacts must be a boolean." };
+ 	}
++	// thanos-patch: acceptance request validation (remove after upstream support)
++	if (value.acceptance !== undefined) {
++		const acceptanceErrors = validateAcceptanceInput(value.acceptance, "acceptance");
++		if (acceptanceErrors.length > 0) return { ok: false, ...identity, error: acceptanceErrors.join(" ") };
++	}
+ 	if (Buffer.byteLength(value.task as string, "utf8") > MAX_TASK_BYTES) {
+ 		return { ok: false, ...identity, error: "Delegation task exceeds 1 MiB when UTF-8 encoded." };
+ 	}

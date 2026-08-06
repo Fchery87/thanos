@@ -27,7 +27,6 @@ const plan: WavePlan = {
 };
 
 const envelope: DelegationEvidenceEnvelope = {
-  version: 2,
   requestId: "request-1",
   ownerRunId: "owner-1",
   nodeId: "investigate",
