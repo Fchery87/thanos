@@ -59,7 +59,7 @@ export class DelegationRuntime {
       const unsubscribe = this.events.on(SUBAGENT_DELEGATION_RESPONSE_EVENT, (raw) => {
         const response = raw as Partial<DelegationEvidenceEnvelopeLike> | undefined;
         if (!response || response.requestId !== requestId) return;
-        finish(validateDelegationEvidence(raw, identity));
+        finish(validateDelegationEvidence(raw, identity, request.result));
       });
       const timer = setTimeout(() => {
         cancel();

@@ -14,6 +14,8 @@ import type {
   ReviewProjection,
   SingleResult,
 } from "pi-subagents/shared-types";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
 
 // `EffectsProjection` is the one evidence type 0.41.0 does not re-export from
 // ./shared-types, so it can only be reached structurally through SingleResult.
@@ -117,6 +119,7 @@ function validArtifacts(value: unknown): value is DelegationArtifactEvidence[] {
 export function validateDelegationEvidence(
   value: unknown,
   expected: DelegationEvidenceIdentity,
+  declaredResult?: DelegationRequest["result"],
 ): DelegationEvidenceVerdict {
   const response = record(value);
   if (!response) return { state: "awaiting_evidence", reasons: ["response is not an object"] };
@@ -162,6 +165,43 @@ export function validateDelegationEvidence(
   if (record(response.review)?.status === "blockers") reasons.push("review reported blockers");
   if (record(response.effects)?.fileMutation && record(record(response.effects)?.fileMutation)?.status === "missing") {
     reasons.push("required file mutation evidence is missing");
+  }
+
+  // The request can declare `result: { kind: "structured", schema }` (see
+  // JURY_VERDICT_SCHEMA / WAVE_PLAN_SCHEMA in src/workflows/runtime.ts). When it
+  // does, the response's structured payload must actually conform — otherwise a
+  // delegation that promised a shape gets accepted with whatever came back.
+  // Default-fail: any declared-schema mismatch joins the same `reasons` array,
+  // consistent with ADR 0018's task-acceptance authority. Text-kind / unspecified
+  // requests are untouched — no new failure mode for them.
+  //
+  // pi-subagents also validates `outputSchema` child-side, at emit time
+  // (runs/shared/structured-output.ts). This check is parent-side, on receipt —
+  // the same "don't trust the wire" posture the rest of this function already
+  // takes toward status/execution/artifacts. Not accidental duplication: the
+  // two run against different vendored typebox versions (this repo's root
+  // 1.3.3 vs. pi-subagents' own 1.1.38), so they can in principle disagree on
+  // an edge case, and this is the check that actually gates Thanos's own
+  // acceptance decision regardless of what the child-side check already did.
+  if (declaredResult?.kind === "structured") {
+    const result = record(response.result);
+    if (!result || result.kind !== "structured") {
+      reasons.push("declared a structured result schema but response result is missing or not structured");
+    } else {
+      // declaredResult.schema is a raw JSON-Schema object literal (e.g.
+      // JURY_VERDICT_SCHEMA), not built via Type.Object(...), so it doesn't
+      // carry typebox's TSchema brand. Type.Unsafe() only adds that brand for
+      // Value.Check/Errors to accept — no static type is lost, since the field
+      // was already untyped Record<string, unknown>.
+      const schema = Type.Unsafe(declaredResult.schema);
+      if (!Value.Check(schema, result.value)) {
+        const detail = Value.Errors(schema, result.value)
+          .slice(0, 8)
+          .map((error) => `${error.instancePath || "/"}: ${error.message}`)
+          .join("; ");
+        reasons.push(`structured result violates schema: ${detail}`);
+      }
+    }
   }
 
   if (reasons.length > 0) return { state: "awaiting_evidence", reasons };
