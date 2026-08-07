@@ -14,6 +14,7 @@ import type {
   WorkflowRunResult,
 } from "./types";
 import type { WorkflowEvidenceRef } from "./state";
+import { Value } from "typebox/value";
 
 const knownAgents = new Set<string>(getAllIds());
 
@@ -27,6 +28,37 @@ function resultText(envelope: DelegationEvidenceEnvelope): string {
   if (envelope.result?.kind === "text") return envelope.result.text;
   if (envelope.result?.kind === "structured") return JSON.stringify(envelope.result.value);
   return "";
+}
+
+// Renders the one canonical INVESTIGATION_FINDING_SCHEMA shape (see
+// runtime.ts) legibly, instead of as an opaque JSON blob, when a wave node
+// opted into a structured result. Returns undefined for any value that
+// doesn't match that shape, so callers can fall back to resultText() —
+// this keeps text-kind nodes, and any future/other structured schema,
+// on the unchanged prose path.
+function investigationFindingText(value: unknown): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  if (
+    typeof raw.summary !== "string"
+    || !Array.isArray(raw.findings)
+    || !raw.findings.every((item) => typeof item === "string")
+    || typeof raw.confidence !== "string"
+  ) return undefined;
+  return [
+    `Summary: ${raw.summary}`,
+    `Confidence: ${raw.confidence}`,
+    "Findings:",
+    ...(raw.findings.length > 0 ? raw.findings.map((item) => `- ${item}`) : ["(none)"]),
+  ].join("\n");
+}
+
+function evidenceText(envelope: DelegationEvidenceEnvelope): string {
+  if (envelope.result?.kind === "structured") {
+    const legible = investigationFindingText(envelope.result.value);
+    if (legible !== undefined) return legible;
+  }
+  return resultText(envelope).trim();
 }
 
 function priorEvidence(prior: ReadonlyMap<string, { outcome: DelegationOutcome }>): string {
@@ -204,6 +236,17 @@ export async function runJuryWorkflow(
   return runner.run(buildJuryPlan());
 }
 
+export const INVESTIGATION_FINDING_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["summary", "findings", "confidence"],
+  properties: {
+    summary: { type: "string" },
+    findings: { type: "array", items: { type: "string" } },
+    confidence: { type: "string", enum: ["high", "medium", "low"] },
+  },
+} as const;
+
 export const WAVE_PLAN_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -274,6 +317,15 @@ export const WAVE_PLAN_SCHEMA = {
           task: { type: "string" },
           dependsOn: { type: "array", items: { type: "string" } },
           required: { type: "boolean" },
+          result: {
+            type: "object",
+            additionalProperties: false,
+            required: ["kind"],
+            properties: {
+              kind: { type: "string", enum: ["text", "structured"] },
+              schema: { type: "object", additionalProperties: true },
+            },
+          },
         },
       },
     },
@@ -285,6 +337,34 @@ const INTEGRATION_EVIDENCE = new Set(["diff", "test", "command"]);
 
 function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
   return Object.keys(value).every((key) => allowed.has(key));
+}
+
+// A wave node may opt into the one canonical structured shape
+// (INVESTIGATION_FINDING_SCHEMA) but not declare an arbitrary schema of its
+// own — see INVESTIGATION_FINDING_SCHEMA's doc comment for why this pilot is
+// bounded to a single fixed schema. Returns `undefined` for "no result
+// field" (valid, existing behavior) and the sentinel `INVALID` for a
+// malformed or non-canonical result declaration (rejects the whole plan).
+const INVALID = Symbol("invalid-node-result");
+
+function parseNodeResult(value: unknown): WorkflowNode["result"] | undefined | typeof INVALID {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return INVALID;
+  const raw = value as Record<string, unknown>;
+  if (raw.kind === "text") {
+    return hasOnlyKeys(raw, new Set(["kind"])) ? { kind: "text" } : INVALID;
+  }
+  if (raw.kind === "structured") {
+    // Order-insensitive for objects (a planner echoing JSON back may reorder
+    // keys) via typebox's own Value.Equal, already used for schema work in
+    // this subsystem's sibling file (src/delegation/evidence.ts). Confirms a
+    // planner-supplied schema is exactly the one canonical
+    // INVESTIGATION_FINDING_SCHEMA, not merely a structurally-similar lookalike.
+    return hasOnlyKeys(raw, new Set(["kind", "schema"])) && Value.Equal(raw.schema, INVESTIGATION_FINDING_SCHEMA)
+      ? { kind: "structured", schema: INVESTIGATION_FINDING_SCHEMA }
+      : INVALID;
+  }
+  return INVALID;
 }
 
 function parseCriterion(value: unknown): IntegrationCriterion | undefined {
@@ -374,8 +454,9 @@ export function parseWavePlan(value: unknown): WavePlan | undefined {
   for (const entry of raw.nodes) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) return undefined;
     const node = entry as Record<string, unknown>;
+    const nodeResult = parseNodeResult(node.result);
     if (
-      !hasOnlyKeys(node, new Set(["id", "agent", "task", "dependsOn", "required"]))
+      !hasOnlyKeys(node, new Set(["id", "agent", "task", "dependsOn", "required", "result"]))
       || typeof node.id !== "string"
       || typeof node.agent !== "string"
       || !knownAgents.has(node.agent)
@@ -384,6 +465,7 @@ export function parseWavePlan(value: unknown): WavePlan | undefined {
       || !Array.isArray(node.dependsOn)
       || !node.dependsOn.every((item) => typeof item === "string")
       || typeof node.required !== "boolean"
+      || nodeResult === INVALID
     ) return undefined;
     nodes.push({
       id: node.id,
@@ -391,6 +473,7 @@ export function parseWavePlan(value: unknown): WavePlan | undefined {
       task: node.task,
       dependsOn: node.dependsOn as string[],
       required: node.required,
+      ...(nodeResult === undefined ? {} : { result: nodeResult }),
     });
   }
   const plan: WavePlan = {
@@ -421,7 +504,12 @@ export async function planWavesWorkflow(
       `Create a bounded execution DAG for this goal: ${goal}\n` +
       "Use at most eight delegated investigation nodes, all assigned to known read-only specialists. " +
       "Also return one parent integration contract with bounded target roots, capabilities, machine-verifiable criteria, " +
-      "maxIntegrationTurns=12, and maxJuryRounds=3. Delegated nodes return evidence only; the main session owns all mutation.",
+      "maxIntegrationTurns=12, and maxJuryRounds=3. Delegated nodes return evidence only; the main session owns all mutation. " +
+      "A node's task may direct it to return a structured finding instead of free-form prose: set that node's " +
+      "`result` to `{ \"kind\": \"structured\", \"schema\": <schema> }` where <schema> is exactly this object " +
+      `(copy it verbatim, do not alter it): ${JSON.stringify(INVESTIGATION_FINDING_SCHEMA)}. ` +
+      "Only this exact schema is accepted for a structured node; omit `result`, or set it to " +
+      "{ \"kind\": \"text\" }, for nodes that should return free-form prose.",
     context: "fresh",
     cwd: ctx.cwd,
     acceptance: "checked",
@@ -466,7 +554,7 @@ export function buildIntegrationDirective(
 ): string {
   const evidence = result.results.flatMap(({ node, outcome }) => {
     if (outcome.state !== "accepted") return [];
-    const text = resultText(outcome.envelope).trim();
+    const text = evidenceText(outcome.envelope);
     const artifacts = outcome.envelope.artifacts
       .map(({ sha256 }) => `sha256:${sha256}`)
       .join(", ");

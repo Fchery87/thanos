@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildJuryPlan,
+  INVESTIGATION_FINDING_SCHEMA,
   parseJuryVerdict,
   parseWavePlan,
 } from "../../src/workflows/runtime";
@@ -133,5 +134,85 @@ describe("enforced workflow definitions", () => {
     })).toBeUndefined();
     expect(parseWavePlan({ ...base, maxConcurrency: 5 })).toBeUndefined();
     expect(parseWavePlan({ ...base, nodes: [] })).toBeUndefined();
+  });
+
+  it("lets a node opt into the one canonical structured investigation-finding result", () => {
+    const base = {
+      id: "wave",
+      goal: "inspect",
+      maxConcurrency: 1,
+      integration: {
+        targetRoots: ["src"],
+        capabilities: ["read", "edit"],
+        criteria: [{
+          id: "implementation",
+          statement: "The requested behavior is implemented",
+          evidenceRequired: ["diff"],
+        }],
+        limits: { maxIntegrationTurns: 12, maxJuryRounds: 3 },
+      },
+      nodes: [{
+        id: "root",
+        agent: "explore",
+        task: "inspect",
+        dependsOn: [],
+        required: true,
+      }],
+    };
+
+    // No `result` field at all: existing behavior, unaffected.
+    expect(parseWavePlan(base)).toEqual(base);
+
+    // Explicit text-kind: accepted, same as omitting the field.
+    const withText = {
+      ...base,
+      nodes: [{ ...base.nodes[0], result: { kind: "text" } }],
+    };
+    expect(parseWavePlan(withText)).toEqual(withText);
+
+    // The one canonical structured schema: accepted.
+    const withStructured = {
+      ...base,
+      nodes: [{
+        ...base.nodes[0],
+        result: { kind: "structured", schema: INVESTIGATION_FINDING_SCHEMA },
+      }],
+    };
+    expect(parseWavePlan(withStructured)).toEqual(withStructured);
+
+    // A structurally-similar but not-identical schema: rejected. Same field
+    // names and count, but a widened `confidence` enum.
+    const lookalikeSchema = {
+      ...INVESTIGATION_FINDING_SCHEMA,
+      properties: {
+        ...INVESTIGATION_FINDING_SCHEMA.properties,
+        confidence: { type: "string", enum: ["high", "medium", "low", "unknown"] },
+      },
+    };
+    expect(parseWavePlan({
+      ...base,
+      nodes: [{
+        ...base.nodes[0],
+        result: { kind: "structured", schema: lookalikeSchema },
+      }],
+    })).toBeUndefined();
+
+    // An entirely different schema object: rejected.
+    expect(parseWavePlan({
+      ...base,
+      nodes: [{
+        ...base.nodes[0],
+        result: {
+          kind: "structured",
+          schema: { type: "object", additionalProperties: false, required: ["note"], properties: { note: { type: "string" } } },
+        },
+      }],
+    })).toBeUndefined();
+
+    // A malformed result declaration (unknown kind): rejected.
+    expect(parseWavePlan({
+      ...base,
+      nodes: [{ ...base.nodes[0], result: { kind: "binary" } }],
+    })).toBeUndefined();
   });
 });

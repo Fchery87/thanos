@@ -444,6 +444,15 @@ describe("register", () => {
         const request = value as Record<string, unknown>;
         requests.push(request);
         queueMicrotask(() => {
+          // The "oracle" node declares `result: { kind: "structured", schema:
+          // JURY_VERDICT_SCHEMA }` (see buildJuryPlan in src/workflows/runtime.ts).
+          // validateDelegationEvidence now checks a structured response's value
+          // against that declared schema, so the stand-in response has to be
+          // schema-conforming, not a bare text stub.
+          const declaredResult = request.result as { kind?: string } | undefined;
+          const result = declaredResult?.kind === "structured"
+            ? { kind: "structured", value: { verdict: "APPROVE", warnings: [], blockers: [] } }
+            : { kind: "text", text: `${String(request.nodeId)} complete` };
           const response = {
             requestId: request.requestId,
             ownerRunId: request.ownerRunId,
@@ -458,7 +467,7 @@ describe("register", () => {
             artifacts: [],
             warnings: [],
             residualRisks: [],
-            result: { kind: "text", text: `${String(request.nodeId)} complete` },
+            result,
           };
           for (const handler of busHandlers.get("prompt-template:subagent:response") ?? []) handler(response);
         });
@@ -490,7 +499,10 @@ describe("register", () => {
       "reviewer-security",
       "reviewer-tests",
     ]);
-    expect(notify).toHaveBeenLastCalledWith("oracle complete", "info");
+    expect(notify).toHaveBeenLastCalledWith(
+      JSON.stringify({ verdict: "APPROVE", warnings: [], blockers: [] }),
+      "info",
+    );
   });
 
   it("review shortcut is unavailable in subagent sessions", async () => {
