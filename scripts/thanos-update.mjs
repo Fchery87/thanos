@@ -100,14 +100,25 @@ export async function planUpdate(deps) {
 
 async function readInstalledVersion() {
   const manifest = JSON.parse(await readFile(PI_SUBAGENTS_PACKAGE_JSON, "utf-8"));
+  if (typeof manifest.version !== "string") {
+    throw new Error(`${PI_SUBAGENTS_PACKAGE_JSON} has no readable "version" field`);
+  }
   return manifest.version;
 }
 
-/** Spawn a command with output relayed live, resolving with its exit code. */
-function spawnRelay(command, args, options = {}) {
-  return new Promise((resolve, reject) => {
+/**
+ * Spawn a command with output relayed live, resolving with its exit code.
+ * Resolves (never rejects) even when `spawn` itself fails synchronously
+ * (bad command, ENOENT) — planUpdate's contract is that every injected
+ * effect resolves to `{ code }`, so a spawn failure has to look like a
+ * normal non-zero exit to the caller rather than an uncaught rejection that
+ * would skip past the "broken" status's deliberately-detailed recovery
+ * message and land in main()'s generic outer catch instead.
+ */
+export function spawnRelay(command, args, options = {}) {
+  return new Promise((resolve) => {
     const child = spawn(command, args, { stdio: "inherit", cwd: THANOS_ROOT, ...options });
-    child.on("error", reject);
+    child.on("error", () => resolve({ code: 1 }));
     child.on("close", (code) => resolve({ code: code ?? 1 }));
   });
 }
