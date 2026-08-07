@@ -94,7 +94,7 @@ const PARENT_COMMANDS = [
   "skills", "context", "policy", "tools", "spec", "waves",
   "subagents-models",
   "audit", "rename", "status",
-  "lens",
+  "lens", "run",
 ].sort();
 
 const SUBAGENT_COMMANDS = PARENT_COMMANDS.filter((name) => name !== "remember" && name !== "memory");
