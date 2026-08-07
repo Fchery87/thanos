@@ -17,7 +17,7 @@
         "!statusline/*"
       ]
     },
-    "npm:pi-subagents@0.41.0",
+    "npm:pi-subagents@0.42.1",
     "npm:pi-web-access",
     "npm:@npm-ken/pi-bar"
   ],
