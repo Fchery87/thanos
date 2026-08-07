@@ -34,7 +34,7 @@ describe("workflow artifact verification", () => {
       state: "completed",
       reasons: [],
       results: [{
-        node: { id: "research", agent: "reviewer", task: "research", dependsOn: [], required: true },
+        node: { id: "research", agent: "researcher", task: "research", dependsOn: [], required: true },
         outcome: {
           state: "accepted",
           envelope: {

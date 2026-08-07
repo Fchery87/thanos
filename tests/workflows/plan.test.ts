@@ -8,7 +8,7 @@ function plan(nodes: WorkflowPlan["nodes"]): WorkflowPlan {
 
 const readNode = (id: string, dependsOn: string[] = []) => ({
   id,
-  agent: "reviewer",
+  agent: "reviewer-correctness",
   task: "review",
   dependsOn,
   required: true,

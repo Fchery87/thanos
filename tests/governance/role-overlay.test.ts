@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { roleNarrowingOverlay } from "../../src/governance/role-overlay";
+import { roleNarrowingOverlay, READ_ONLY_ROLES } from "../../src/governance/role-overlay";
+import { getAllIds } from "../../src/agents/catalog";
 
 function capabilities(rules: { capability: string }[]): string[] {
   return rules.map((r) => r.capability).sort();
@@ -20,8 +21,19 @@ describe("roleNarrowingOverlay", () => {
     }
   });
 
+  it("READ_ONLY_ROLES stays a subset of the live catalog — a role retired from SpecialistId cannot linger here", () => {
+    // The bug this guards: "reviewer" stayed in this Set after being removed
+    // from the catalog (ADR 0023), which meant narrowPolicyForAgent's
+    // fallthrough would have silently returned the UNNARROWED base policy for
+    // a stray "reviewer" value — a governance bypass, not a crash.
+    const liveIds = new Set<string>(getAllIds());
+    for (const role of READ_ONLY_ROLES) {
+      expect(liveIds.has(role), `${role} is in READ_ONLY_ROLES but not in the live catalog`).toBe(true);
+    }
+  });
+
   describe("read-only roles deny both edit and exec", () => {
-    const readOnlyRoles = ["explore", "plan", "oracle", "researcher", "reviewer", "reviewer-correctness", "reviewer-security", "reviewer-tests"];
+    const readOnlyRoles = [...READ_ONLY_ROLES];
 
     it.each(readOnlyRoles)("denies edit and exec for %s", (role) => {
       const rules = roleNarrowingOverlay(role);
@@ -46,7 +58,11 @@ describe("roleNarrowingOverlay", () => {
   });
 
   it("every returned rule has a unique id", () => {
-    const allRoles = ["explore", "plan", "oracle", "researcher", "reviewer", "reviewer-correctness", "reviewer-security", "reviewer-tests", "evaluator", "designer"];
+    // Derived from READ_ONLY_ROLES plus the two roles with their own narrowing
+    // branches (evaluator, designer) rather than a fourth hand-typed copy of
+    // the role list — the exact drift class ADR 0023 hit repeatedly in this
+    // file already.
+    const allRoles = [...READ_ONLY_ROLES, "evaluator", "designer"];
     for (const role of allRoles) {
       const rules = roleNarrowingOverlay(role);
       const ids = rules.map((r) => r.id);

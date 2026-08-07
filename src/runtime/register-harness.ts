@@ -48,8 +48,9 @@ import { registerWorkflowSessionGuards } from "../workflows/session-control";
 export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean }) {
   // PI_SUBAGENT_CHILD is set by the pi-subagents engine for every child it
   // spawns. Without checking it, children get the parent-only delegation
-  // directive and recursively re-delegate (a reviewer spawning a reviewer)
-  // instead of doing their own work, idling until their budget kills them.
+  // directive and recursively re-delegate (a critic spawning another
+  // instance of itself) instead of doing their own work, idling until their
+  // budget kills them.
   // See src/agents/child-role.ts for the PI_SUBAGENT_CHILD* env contract —
   // the sole subagent-detection signal (no legacy fallback).
   const isSubagent = isSubagentProcess(process.env);
@@ -282,13 +283,14 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     registerAskTool(pi, policyStatePromise);
   }
 
-  // Registered for every subagent process, not just reviewer roles: several
-  // live roster agents (reviewer, reviewer-correctness, reviewer-security,
-  // reviewer-tests, evaluator) list report_finding in their frontmatter tool
-  // set, and per-agent exposure is already governed by that list (pi-subagents
-  // filters registered tools down to it) — narrowing the registration itself
-  // to one legacy-only role left every live one calling a tool that was never
-  // registered in their process.
+  // Registered for every subagent process, not just review-critic roles:
+  // several live roster agents (reviewer-correctness, reviewer-security,
+  // reviewer-tests, reviewer-patterns, reviewer-decisions, evaluator) list
+  // report_finding in their frontmatter tool set, and per-agent exposure is
+  // already governed by that list (pi-subagents filters registered tools
+  // down to it) — narrowing the registration itself to one legacy-only role
+  // left every live one calling a tool that was never registered in their
+  // process.
   if (isSubagent) {
     registerReportFindingTool(pi, {
       getReviewFindings: () => reviewFindings,

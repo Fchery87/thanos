@@ -38,7 +38,7 @@ describe("role-narrowing composition (unattended live subagent)", () => {
   });
 
   it("denies exec for a read-only role's child — deny wins over unattended", async () => {
-    const decision = await authorizeVia(child("reviewer"), "bash", { command: "ls -la" });
+    const decision = await authorizeVia(child("reviewer-correctness"), "bash", { command: "ls -la" });
 
     expect(decision.block).toBe(true);
     expect(decision.reason).toContain("role-deny-exec");

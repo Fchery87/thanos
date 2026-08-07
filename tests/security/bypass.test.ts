@@ -91,7 +91,7 @@ describe("redaction completeness", () => {
 
 describe("cross-agent privilege escalation", () => {
   it("read-only agents cannot write", () => {
-    for (const role of ["explore", "plan", "oracle", "researcher", "reviewer", "evaluator", "scout"]) {
+    for (const role of ["explore", "plan", "oracle", "researcher", "reviewer-correctness", "evaluator", "scout"]) {
       expect(agentWrites(role)).toBe(false);
     }
   });

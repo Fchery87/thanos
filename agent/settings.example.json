@@ -37,12 +37,6 @@
           "theclawbay-claude/claude-opus-4-8:xhigh"
         ]
       },
-      "reviewer": {
-        "model": "theclawbay/gpt-5.6-sol:high",
-        "fallbackModels": [
-          "theclawbay-claude/claude-opus-4-8:high"
-        ]
-      },
       "reviewer-correctness": {
         "model": "theclawbay/gpt-5.6-sol:high",
         "fallbackModels": [
@@ -56,6 +50,18 @@
         ]
       },
       "reviewer-tests": {
+        "model": "theclawbay/gpt-5.6-terra:high",
+        "fallbackModels": [
+          "theclawbay-claude/claude-sonnet-4-6:high"
+        ]
+      },
+      "reviewer-patterns": {
+        "model": "theclawbay/gpt-5.6-terra:high",
+        "fallbackModels": [
+          "theclawbay-claude/claude-sonnet-4-6:high"
+        ]
+      },
+      "reviewer-decisions": {
         "model": "theclawbay/gpt-5.6-terra:high",
         "fallbackModels": [
           "theclawbay-claude/claude-sonnet-4-6:high"

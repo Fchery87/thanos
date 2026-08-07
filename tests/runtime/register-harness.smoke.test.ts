@@ -152,7 +152,7 @@ describe("registerHarness() registration surface (characterization baseline)", (
 
   it("subagent session: narrows commands and tools, but keeps the flag and every hook", () => {
     process.env.PI_SUBAGENT_CHILD = "1";
-    process.env.PI_SUBAGENT_CHILD_AGENT = "reviewer";
+    process.env.PI_SUBAGENT_CHILD_AGENT = "researcher";
 
     const api = createFakePi();
     register(api);

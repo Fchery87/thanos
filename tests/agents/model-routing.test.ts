@@ -41,7 +41,7 @@ describe("subagent model routing", () => {
 
     applySubagentModelOverride(settings, catalog, {
       action: "set",
-      role: "reviewer",
+      role: "researcher",
       model: "theclawbay-claude/claude-opus-4-8:high",
       fallbackModels: ["theclawbay/gpt-5.5"],
     });
@@ -49,13 +49,13 @@ describe("subagent model routing", () => {
     expect(settings).toEqual({
       subagents: {
         agentOverrides: {
-          reviewer: {
+          researcher: {
             model: "theclawbay-claude/claude-opus-4-8:high",
             fallbackModels: ["theclawbay/gpt-5.5"],
           },
         },
         savedAgentOverrides: {
-          reviewer: {
+          researcher: {
             model: "theclawbay-claude/claude-opus-4-8:high",
             fallbackModels: ["theclawbay/gpt-5.5"],
           },
@@ -69,13 +69,13 @@ describe("subagent model routing", () => {
       subagents: {
         disableBuiltins: true,
         agentOverrides: {
-          reviewer: { model: "theclawbay/gpt-5.5" },
+          researcher: { model: "theclawbay/gpt-5.5" },
           scout: { model: "theclawbay-claude/claude-sonnet-4-6" },
         },
       },
     };
 
-    clearSubagentModelOverride(settings, "reviewer");
+    clearSubagentModelOverride(settings, "researcher");
 
     expect(settings.subagents.agentOverrides).toEqual({
       scout: { model: "theclawbay-claude/claude-sonnet-4-6" },
@@ -88,7 +88,7 @@ describe("subagent model routing", () => {
       subagents: {
         disableBuiltins: true,
         agentOverrides: {
-          reviewer: { model: "theclawbay/gpt-5.5" },
+          researcher: { model: "theclawbay/gpt-5.5" },
           worker: { model: "theclawbay-claude/claude-sonnet-4-6" },
         },
       },
@@ -98,7 +98,7 @@ describe("subagent model routing", () => {
 
     expect(settings.subagents.modelOverridesEnabled).toBe(false);
     expect(settings.subagents.savedAgentOverrides).toEqual({
-      reviewer: { model: "theclawbay/gpt-5.5" },
+      researcher: { model: "theclawbay/gpt-5.5" },
       worker: { model: "theclawbay-claude/claude-sonnet-4-6" },
     });
     expect(settings.subagents.agentOverrides).toBeUndefined();
@@ -110,7 +110,7 @@ describe("subagent model routing", () => {
         disableBuiltins: true,
         modelOverridesEnabled: false,
         savedAgentOverrides: {
-          reviewer: { model: "theclawbay/gpt-5.5" },
+          researcher: { model: "theclawbay/gpt-5.5" },
         },
       },
     };
@@ -119,14 +119,14 @@ describe("subagent model routing", () => {
 
     expect(settings.subagents.modelOverridesEnabled).toBe(true);
     expect(settings.subagents.agentOverrides).toEqual({
-      reviewer: { model: "theclawbay/gpt-5.5" },
+      researcher: { model: "theclawbay/gpt-5.5" },
     });
   });
 
   it("rejects unknown catalog references", () => {
     expect(() => applySubagentModelOverride({}, catalog, {
       action: "set",
-      role: "reviewer",
+      role: "researcher",
       model: "missing/not-real",
     })).toThrow(/Unknown model/);
   });
@@ -140,18 +140,18 @@ describe("subagent model routing", () => {
   });
 
   it("parses set commands with fallback assignments", () => {
-    expect(parseSubagentModelsArgs("set reviewer theclawbay/gpt-5.5:high fallback=theclawbay-claude/claude-opus-4-8,zai/glm-5.2")).toEqual({
+    expect(parseSubagentModelsArgs("set researcher theclawbay/gpt-5.5:high fallback=theclawbay-claude/claude-opus-4-8,zai/glm-5.2")).toEqual({
       action: "set",
-      role: "reviewer",
+      role: "researcher",
       model: "theclawbay/gpt-5.5:high",
       fallbackModels: ["theclawbay-claude/claude-opus-4-8", "zai/glm-5.2"],
     });
   });
 
   it("parses set commands without a model as an interactive selection", () => {
-    expect(parseSubagentModelsArgs("set reviewer")).toEqual({
+    expect(parseSubagentModelsArgs("set researcher")).toEqual({
       action: "select",
-      role: "reviewer",
+      role: "researcher",
     });
   });
 
@@ -194,17 +194,17 @@ describe("/subagents-models command handler", () => {
     await writeFile(catalogPath, JSON.stringify(catalog, null, 2));
 
     const result = await handleSubagentModelsCommand(
-      "set reviewer theclawbay/gpt-5.5:high fallback=theclawbay-claude/claude-opus-4-8",
+      "set researcher theclawbay/gpt-5.5:high fallback=theclawbay-claude/claude-opus-4-8",
       { settingsPath, catalogPath },
     );
 
     expect(result.level).toBe("info");
-    expect(result.message).toContain("Updated reviewer");
+    expect(result.message).toContain("Updated researcher");
     expect(JSON.parse(await readFile(settingsPath, "utf-8"))).toMatchObject({
       subagents: {
         disableBuiltins: true,
         agentOverrides: {
-          reviewer: {
+          researcher: {
             model: "theclawbay/gpt-5.5:high",
             fallbackModels: ["theclawbay-claude/claude-opus-4-8"],
           },
@@ -220,7 +220,7 @@ describe("/subagents-models command handler", () => {
     await writeFile(settingsPath, JSON.stringify({
       subagents: {
         agentOverrides: {
-          reviewer: { model: "theclawbay/gpt-5.5" },
+          researcher: { model: "theclawbay/gpt-5.5" },
         },
       },
     }, null, 2));
@@ -229,7 +229,7 @@ describe("/subagents-models command handler", () => {
     const result = await handleSubagentModelsCommand("", { settingsPath, catalogPath });
 
     expect(result.level).toBe("info");
-    expect(result.message).toContain("reviewer");
+    expect(result.message).toContain("researcher");
     expect(result.message).toContain("Usage:");
   });
 
@@ -240,7 +240,7 @@ describe("/subagents-models command handler", () => {
     await writeFile(settingsPath, JSON.stringify({
       subagents: {
         agentOverrides: {
-          reviewer: { model: "theclawbay/gpt-5.5" },
+          researcher: { model: "theclawbay/gpt-5.5" },
         },
       },
     }, null, 2));
@@ -253,7 +253,7 @@ describe("/subagents-models command handler", () => {
       subagents: {
         modelOverridesEnabled: false,
         savedAgentOverrides: {
-          reviewer: { model: "theclawbay/gpt-5.5" },
+          researcher: { model: "theclawbay/gpt-5.5" },
         },
       },
     });
@@ -268,18 +268,18 @@ describe("/subagents-models command handler", () => {
       subagents: {
         modelOverridesEnabled: false,
         savedAgentOverrides: {
-          reviewer: { model: "theclawbay/gpt-5.5" },
+          researcher: { model: "theclawbay/gpt-5.5" },
         },
       },
     }, null, 2));
     await writeFile(catalogPath, JSON.stringify(catalog, null, 2));
 
-    await handleSubagentModelsCommand("set reviewer theclawbay-claude/claude-opus-4-8:high", { settingsPath, catalogPath });
+    await handleSubagentModelsCommand("set researcher theclawbay-claude/claude-opus-4-8:high", { settingsPath, catalogPath });
 
     const settings = JSON.parse(await readFile(settingsPath, "utf-8"));
     expect(settings.subagents.modelOverridesEnabled).toBe(false);
     expect(settings.subagents.agentOverrides).toBeUndefined();
-    expect(settings.subagents.savedAgentOverrides.reviewer).toEqual({
+    expect(settings.subagents.savedAgentOverrides.researcher).toEqual({
       model: "theclawbay-claude/claude-opus-4-8:high",
     });
   });
@@ -292,7 +292,7 @@ describe("/subagents-models command handler", () => {
       subagents: {
         modelOverridesEnabled: false,
         savedAgentOverrides: {
-          reviewer: { model: "theclawbay/gpt-5.5" },
+          researcher: { model: "theclawbay/gpt-5.5" },
         },
       },
     }, null, 2));
@@ -305,7 +305,7 @@ describe("/subagents-models command handler", () => {
       subagents: {
         modelOverridesEnabled: true,
         agentOverrides: {
-          reviewer: { model: "theclawbay/gpt-5.5" },
+          researcher: { model: "theclawbay/gpt-5.5" },
         },
       },
     });
@@ -320,7 +320,7 @@ describe("/subagents-models command handler", () => {
 
     const selectedModels: string[][] = [];
     const result = await handleSubagentModelsCommand(
-      "set reviewer",
+      "set researcher",
       {
         settingsPath,
         catalogPath,
@@ -332,11 +332,11 @@ describe("/subagents-models command handler", () => {
     );
 
     expect(selectedModels[0]).toContain("theclawbay-claude/claude-sonnet-4-6");
-    expect(result.message).toContain("Updated reviewer");
+    expect(result.message).toContain("Updated researcher");
     expect(JSON.parse(await readFile(settingsPath, "utf-8"))).toMatchObject({
       subagents: {
         agentOverrides: {
-          reviewer: { model: "theclawbay-claude/claude-sonnet-4-6" },
+          researcher: { model: "theclawbay-claude/claude-sonnet-4-6" },
         },
       },
     });
@@ -355,22 +355,22 @@ describe("/subagents-models command handler", () => {
         settingsPath,
         catalogPath,
         selectRole: async (roles) => {
-          expect(roles).toContain("reviewer");
-          return "reviewer";
+          expect(roles).toContain("researcher");
+          return "researcher";
         },
         selectModel: async (role, models) => {
-          expect(role).toBe("reviewer");
+          expect(role).toBe("researcher");
           expect(models).toContain("theclawbay/gpt-5.5");
           return "theclawbay/gpt-5.5";
         },
       },
     );
 
-    expect(result.message).toContain("Updated reviewer");
+    expect(result.message).toContain("Updated researcher");
     expect(JSON.parse(await readFile(settingsPath, "utf-8"))).toMatchObject({
       subagents: {
         agentOverrides: {
-          reviewer: { model: "theclawbay/gpt-5.5" },
+          researcher: { model: "theclawbay/gpt-5.5" },
         },
       },
     });

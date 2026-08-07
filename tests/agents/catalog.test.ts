@@ -11,8 +11,8 @@ import {
 } from "../../src/agents/catalog";
 
 describe("specialist catalog", () => {
-  it("contains all 13 specialists", () => {
-    expect(allSpecialists()).toHaveLength(13);
+  it("contains all 14 specialists", () => {
+    expect(allSpecialists()).toHaveLength(14);
   });
 
   it("every specialist has a unique id", () => {
@@ -44,7 +44,6 @@ describe("agentWrites", () => {
   it("returns false for read-only agents", () => {
     expect(agentWrites("explore")).toBe(false);
     expect(agentWrites("plan")).toBe(false);
-    expect(agentWrites("reviewer")).toBe(false);
     expect(agentWrites("oracle")).toBe(false);
     expect(agentWrites("researcher")).toBe(false);
     expect(agentWrites("scout")).toBe(false);
@@ -69,7 +68,6 @@ describe("agentExecutes", () => {
   it("returns false for read-only roles", () => {
     expect(agentExecutes("explore")).toBe(false);
     expect(agentExecutes("plan")).toBe(false);
-    expect(agentExecutes("reviewer")).toBe(false);
     expect(agentExecutes("oracle")).toBe(false);
   });
 });
@@ -84,7 +82,6 @@ describe("allowedContextModes", () => {
   it("only allows fresh context for read-only roles", () => {
     expect(allowedContextModes("explore")).toEqual(["fresh"]);
     expect(allowedContextModes("plan")).toEqual(["fresh"]);
-    expect(allowedContextModes("reviewer")).toEqual(["fresh"]);
     expect(allowedContextModes("oracle")).toEqual(["fresh"]);
     expect(allowedContextModes("researcher")).toEqual(["fresh"]);
     expect(allowedContextModes("evaluator")).toEqual(["fresh"]);
@@ -93,8 +90,7 @@ describe("allowedContextModes", () => {
 });
 
 describe("mayDelegateTo", () => {
-  it("reviewer can delegate to explore", () => {
-    expect(mayDelegateTo("reviewer", "explore")).toBe(true);
+  it("reviewer-correctness can delegate to explore", () => {
     expect(mayDelegateTo("reviewer-correctness", "explore")).toBe(true);
   });
 
@@ -102,7 +98,7 @@ describe("mayDelegateTo", () => {
     expect(mayDelegateTo("build", "explore")).toBe(true);
   });
 
-  it("read-only roles (except reviewer) cannot delegate", () => {
+  it("read-only roles cannot delegate", () => {
     expect(mayDelegateTo("explore", "explore")).toBe(false);
     expect(mayDelegateTo("plan", "explore")).toBe(false);
     expect(mayDelegateTo("oracle", "explore")).toBe(false);

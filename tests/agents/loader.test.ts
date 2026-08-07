@@ -191,7 +191,7 @@ describe("loadAgent", () => {
 
   it("every agent type has a definition file with a tools allowlist", async () => {
     process.env.HOME = await repoHomeWithRealAgents();
-    const types = ["build", "evaluator", "explore", "oracle", "plan", "reviewer", "researcher"] as const;
+    const types = ["build", "evaluator", "explore", "oracle", "plan", "designer", "researcher"] as const;
     for (const type of types) {
       const def = await loadAgent(type);
       expect(def.tools, `${type} should have tools defined`).toBeDefined();

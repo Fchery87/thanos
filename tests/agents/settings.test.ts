@@ -33,7 +33,6 @@ describe("settings.example model routing", () => {
     expect(Object.keys(overrides)).toEqual(expect.arrayContaining([
       "oracle",
       "plan",
-      "reviewer",
       "reviewer-correctness",
       "reviewer-security",
       "reviewer-tests",

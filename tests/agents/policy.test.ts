@@ -28,15 +28,15 @@ describe("narrowPolicyForAgent", () => {
     });
   });
 
-  describe("read-only agents (explore, plan, reviewer)", () => {
-    it.each(["explore", "plan", "reviewer"] as const)("%s cannot exec", (type) => {
+  describe("read-only agents (explore, plan, researcher)", () => {
+    it.each(["explore", "plan", "researcher"] as const)("%s cannot exec", (type) => {
       const narrowed = narrowPolicyForAgent(type, basePolicy);
       const result = evaluatePolicy(narrowed, "exec", "somecommand");
       expect(result).not.toBeNull();
       expect(result?.decision).toBe("deny");
     });
 
-    it.each(["explore", "plan", "reviewer"] as const)("%s cannot edit", (type) => {
+    it.each(["explore", "plan", "researcher"] as const)("%s cannot edit", (type) => {
       const narrowed = narrowPolicyForAgent(type, basePolicy);
       const result = evaluatePolicy(narrowed, "edit", "somefile.ts");
       expect(result).not.toBeNull();

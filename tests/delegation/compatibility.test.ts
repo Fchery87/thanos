@@ -51,7 +51,7 @@ describe(`pi-subagents ${PINNED} compatibility gate`, () => {
       requestId: "request-1",
       ownerRunId: "owner-1",
       nodeId: "node-1",
-      agent: "reviewer",
+      agent: "researcher",
       task: "review",
       context: "fresh",
       cwd: ".",
@@ -127,14 +127,14 @@ describe(`pi-subagents ${PINNED} compatibility gate`, () => {
 
     // Unpatched upstream hardcodes acceptance off, so no ledger is ever produced...
     expect(adapterModule.toSubagentDelegationExecutionParams({
-      agent: "reviewer", task: "review", context: "fresh", cwd: ".", acceptance: "checked",
+      agent: "researcher", task: "review", context: "fresh", cwd: ".", acceptance: "checked",
       result: { kind: "text" },
     })).toMatchObject({ acceptance: false });
 
     // ...and the resulting response is refused rather than mistaken for completion.
     const response = adapterModule.toSubagentDelegationResponse({
       requestId: "request-1", ownerRunId: "owner-1", nodeId: "node-1",
-      agent: "reviewer", task: "review", context: "fresh", cwd: ".", result: { kind: "text" },
+      agent: "researcher", task: "review", context: "fresh", cwd: ".", result: { kind: "text" },
     }, {
       content: [{ type: "text", text: "ok" }],
       isError: false,

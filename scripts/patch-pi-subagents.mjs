@@ -316,6 +316,29 @@ for (const verdict of verdicts) {
   }
 }
 
+// ADR 0024 tripwire: report, don't fail — a tripwire is a prompt to decide
+// whether to reopen the vendor-vs-patch decision, not a broken build.
+//
+// "Hunks" here means PATCH_MARKERS.length — one entry per distinct patched
+// concern/file, matching how ADR 0024 and this file's own history describe
+// the artifact growing ("a new hunk" == one new PATCH_MARKERS entry). A raw
+// count of `^@@ ` lines in the diff counts every non-contiguous change
+// region per file separately and does not track the ADR's actual intent —
+// confirmed by checking it against this file's real patch artifact, which
+// reports in the double digits by that measure despite the artifact
+// covering the same small number of distinct concerns PATCH_MARKERS lists.
+const HUNK_CEILING = 4;
+if (PATCH_MARKERS.length > HUNK_CEILING) {
+  // console.log, not console.error: every console.error in this file
+  // accompanies a failed++/broken verdict/process.exit(1) — this doesn't,
+  // by design (report, don't fail), and using console.error here would
+  // train a reader who's learned that convention to misread this as one.
+  console.log(
+    `[thanos-patch] patch artifact covers ${PATCH_MARKERS.length} concerns (ceiling ${HUNK_CEILING}) — ` +
+      "ADR 0024 tripwire: reopen the vendor-vs-patch decision.",
+  );
+}
+
 console.log(`[thanos-patch] done — ${applied} applied, ${already} already present, ${failed} failed.`);
 
 // Behaviour is the gate. A patch that no longer applies but whose protection is
