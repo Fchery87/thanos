@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
-const PINNED = "0.41.0";
+const PINNED = "0.42.1";
 const created: string[] = [];
 
 afterEach(async () => {
@@ -46,15 +46,25 @@ async function patchedModelFallback(): Promise<string> {
   return join(copy, "src", "runs", "shared", "model-fallback.ts");
 }
 
+// pi-subagents 0.42.1's src/ tree is ~19% larger than 0.41.0's (167 files,
+// durable schedules / worktree isolation / permission-system compat among
+// the additions — none touching the patched anchors themselves, confirmed
+// in research/pi-subagents-0.42.1-port.md). The cp + git apply + dynamic
+// TS import each test performs now lands right at vitest's 5000ms default,
+// verified by running standalone (well under a second outside vitest) vs.
+// inside vitest's transform pipeline (consistently >5000ms). Real, not a
+// logic defect — bumped explicitly rather than raising the global default.
+const HERMETIC_TIMEOUT_MS = 15_000;
+
 describe("timeout classification", () => {
   it("does not treat a subagent wall-clock timeout as a retryable model failure", async () => {
     const { isRetryableModelFailure } = await import(pathToFileURL(await patchedModelFallback()).href);
     expect(isRetryableModelFailure("Subagent timed out after 1800000ms.")).toBe(false);
-  });
+  }, HERMETIC_TIMEOUT_MS);
 
   it("still treats genuine provider timeouts as retryable", async () => {
     const { isRetryableModelFailure } = await import(pathToFileURL(await patchedModelFallback()).href);
     expect(isRetryableModelFailure("upstream request timeout")).toBe(true);
     expect(isRetryableModelFailure("504 Gateway Timeout")).toBe(true);
-  });
+  }, HERMETIC_TIMEOUT_MS);
 });

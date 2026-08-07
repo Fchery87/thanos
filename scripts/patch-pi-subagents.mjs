@@ -73,7 +73,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = join(homedir(), ".pi", "agent", "npm", "node_modules", "pi-subagents", "src");
 const THANOS_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const PACKAGE_RELATIVE = join("agent", "npm", "node_modules", "pi-subagents");
-const PINNED_VERSION = "0.41.0";
+const PINNED_VERSION = "0.42.1";
 const EVIDENCE_PATCH = join(THANOS_ROOT, "scripts", "patches", `pi-subagents-${PINNED_VERSION}-evidence.patch`);
 
 // This module is spawned as a subprocess in every real code path (`node
