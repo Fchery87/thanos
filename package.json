@@ -5,7 +5,8 @@
   "type": "module",
   "bin": {
     "thanos-install": "./scripts/npm-install.mjs",
-    "thanos": "./scripts/thanos-launch.mjs"
+    "thanos": "./scripts/thanos-launch.mjs",
+    "thanos-update": "./scripts/thanos-update.mjs"
   },
   "pi": {
     "extensions": ["./src/index.ts"]
