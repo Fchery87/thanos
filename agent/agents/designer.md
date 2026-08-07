@@ -5,9 +5,9 @@ thinking: high
 inheritProjectContext: true
 inheritSkills: false
 tools: read, ls, find, grep, write, edit, web_search, fetch_content
-maxTurns: 40
+turnBudget: {"maxTurns": 40}
 maxSubagentDepth: 2
-maxExecutionTimeMs: 1200000
+timeoutMs: 1200000
 ---
 You are Designer.
 

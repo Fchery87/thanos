@@ -3,8 +3,12 @@ import { getSpecialist, type SpecialistId } from "./catalog";
 export interface AgentManifest {
   tools?: string[];
   context?: "fresh" | "forked";
+  /** @deprecated Retired — pi-subagents 0.41.0 does not read this key. Kept typed so a manifest that still declares it is rejected loudly instead of silently ignored. Use turnBudget. */
   maxTurns?: number;
+  /** @deprecated Retired — pi-subagents 0.41.0 does not read this key. Kept typed so a manifest that still declares it is rejected loudly instead of silently ignored. Use timeoutMs. */
   maxExecutionTimeMs?: number;
+  timeoutMs?: number;
+  turnBudget?: { maxTurns: number; graceTurns?: number };
   maxSubagentDepth?: number;
   systemPromptMode?: string;
   inheritProjectContext?: boolean;
@@ -40,8 +44,28 @@ export function validateManifest(role: string, manifest: AgentManifest): void {
     throw new Error(`${role} declares unsupported maxSubagentDepth "${manifest.maxSubagentDepth}"`);
   }
 
-  if (manifest.maxExecutionTimeMs !== undefined && manifest.maxExecutionTimeMs <= 0) {
-    throw new Error(`${role} must declare a positive maxExecutionTimeMs`);
+  const RETIRED: ReadonlyArray<[keyof AgentManifest, string]> = [
+    ["maxExecutionTimeMs", "timeoutMs"],
+    ["maxTurns", "turnBudget"],
+  ];
+  for (const [retired, live] of RETIRED) {
+    if (manifest[retired] !== undefined) {
+      throw new Error(`${role}: ${retired} is retired; use ${live} (pi-subagents reads ${live} frontmatter)`);
+    }
+  }
+
+  if (manifest.timeoutMs !== undefined && (!Number.isInteger(manifest.timeoutMs) || manifest.timeoutMs <= 0)) {
+    throw new Error(`${role} must declare timeoutMs as a positive integer, got ${manifest.timeoutMs}`);
+  }
+
+  if (manifest.turnBudget !== undefined) {
+    const { maxTurns, graceTurns } = manifest.turnBudget;
+    if (!Number.isInteger(maxTurns) || maxTurns <= 0) {
+      throw new Error(`${role} must declare turnBudget.maxTurns as a positive integer, got ${maxTurns}`);
+    }
+    if (graceTurns !== undefined && (!Number.isInteger(graceTurns) || graceTurns < 0)) {
+      throw new Error(`${role} must declare turnBudget.graceTurns as a non-negative integer, got ${graceTurns}`);
+    }
   }
 
   if (manifest.systemPromptMode !== undefined && manifest.systemPromptMode !== profile.manifest.systemPromptMode) {

@@ -51,6 +51,13 @@ scratch directory first; see `inScratchRepo` in `tests/index.test.ts`.
 - A completed plan is **deleted on completion**, not archived in place. Git keeps
   it (`git show <commit>:docs/plans/<name>`); anything durable in it belongs in an
   ADR, which is the decision layer that is meant to persist.
+- `docs/specs/` holds dated, pre-implementation design docs for a nontrivial
+  change: context, goals/non-goals, and — unlike an ADR — an explicit
+  deletion inventory of what the change retires. Reach for a spec before
+  starting the change, an ADR to record a decision once it's settled, and a
+  plan doc for the task-by-task breakdown of implementing it. Unlike a plan,
+  a spec is **not deleted on completion** — it stays as the historical
+  record of what was decided and why. See `docs/specs/TEMPLATE.md`.
 
 ## Re-entry
 
