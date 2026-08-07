@@ -68,23 +68,39 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = join(homedir(), ".pi", "agent", "npm", "node_modules", "pi-subagents", "src");
 const THANOS_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const PACKAGE_RELATIVE = join("agent", "npm", "node_modules", "pi-subagents");
 const PINNED_VERSION = "0.41.0";
 const EVIDENCE_PATCH = join(THANOS_ROOT, "scripts", "patches", `pi-subagents-${PINNED_VERSION}-evidence.patch`);
+
+// This module is spawned as a subprocess in every real code path (`node
+// scripts/patch-pi-subagents.mjs` directly, and src/welcome/patch-drift.ts's
+// spawnPatchScript) — never imported. Tests still want direct access to
+// PATCH_MARKERS/HUNK_CEILING/the concern-counting functions without triggering
+// a real patch-and-verify run (which mutates node_modules and calls
+// process.exit). Guarding the side-effecting statements below behind this
+// check keeps `node scripts/patch-pi-subagents.mjs` behaving exactly as
+// before while making the module safely importable.
+const isMainModule = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+
 // The fanout guard used to be a separate string-replace patch. It is now a hunk
 // in the same artifact: one `git apply`, one reverse-check, one failure mode.
 // String-anchored replacement is what snapped when 0.36.0 refactored the shape
 // it keyed on; a diff with context lets git tell us honestly whether it still fits.
-const PATCH_MARKERS = [
-  ["api", "delegation.ts", "thanos-patch: delegation evidence envelope types"],
-  ["slash", "delegation-request.ts", "thanos-patch: acceptance request validation"],
-  ["slash", "delegation-adapters.ts", "thanos-patch: evidence envelope projection"],
-  ["extension", "fanout-child.ts", "thanos-patch: process-global fanout tool guard"],
-  ["runs/shared", "model-fallback.ts", "thanos-patch: subagent wall-clock timeout is not a model failure"],
+//
+// The 4th element of each entry names the underlying *concern* the marker
+// belongs to. Several files can share one concern (the evidence envelope
+// spans three) — see HUNK_CEILING below, which counts distinct concerns, not
+// patched files.
+export const PATCH_MARKERS = [
+  ["api", "delegation.ts", "thanos-patch: delegation evidence envelope types", "evidence-envelope"],
+  ["slash", "delegation-request.ts", "thanos-patch: acceptance request validation", "evidence-envelope"],
+  ["slash", "delegation-adapters.ts", "thanos-patch: evidence envelope projection", "evidence-envelope"],
+  ["extension", "fanout-child.ts", "thanos-patch: process-global fanout tool guard", "fanout-guard"],
+  ["runs/shared", "model-fallback.ts", "thanos-patch: subagent wall-clock timeout is not a model failure", "timeout-classification"],
 ];
 
 let applied = 0, already = 0, failed = 0;
@@ -139,8 +155,6 @@ function applyEvidencePatch() {
   console.log("[thanos-patch] applied: delegation evidence envelope + fanout guard");
   applied++;
 }
-
-applyEvidencePatch();
 
 // Every patch now lives in the single artifact applied above. The behavioural
 // probes below remain the gate: they answer "does pi-subagents behave correctly",
@@ -305,61 +319,83 @@ function verifyTimeoutClassification() {
   }
 }
 
-const verdicts = [verifyFanoutGuard(), verifyV2EvidenceEnvelope(), verifyTimeoutClassification()];
-for (const verdict of verdicts) {
-  if (verdict.status === "ok") {
-    console.log(`[thanos-patch] verified: ${verdict.reason}`);
-  } else if (verdict.status === "skipped") {
-    console.log(`[thanos-patch] verification skipped — ${verdict.reason}`);
-  } else {
-    console.error(`[thanos-patch] BROKEN — ${verdict.reason}`);
-  }
-}
-
 // ADR 0024 tripwire: report, don't fail — a tripwire is a prompt to decide
 // whether to reopen the vendor-vs-patch decision, not a broken build.
 //
-// "Hunks" here means PATCH_MARKERS.length — one entry per distinct patched
-// concern/file, matching how ADR 0024 and this file's own history describe
-// the artifact growing ("a new hunk" == one new PATCH_MARKERS entry). A raw
-// count of `^@@ ` lines in the diff counts every non-contiguous change
-// region per file separately and does not track the ADR's actual intent —
-// confirmed by checking it against this file's real patch artifact, which
-// reports in the double digits by that measure despite the artifact
-// covering the same small number of distinct concerns PATCH_MARKERS lists.
-const HUNK_CEILING = 4;
-if (PATCH_MARKERS.length > HUNK_CEILING) {
-  // console.log, not console.error: every console.error in this file
-  // accompanies a failed++/broken verdict/process.exit(1) — this doesn't,
-  // by design (report, don't fail), and using console.error here would
-  // train a reader who's learned that convention to misread this as one.
-  console.log(
-    `[thanos-patch] patch artifact covers ${PATCH_MARKERS.length} concerns (ceiling ${HUNK_CEILING}) — ` +
-      "ADR 0024 tripwire: reopen the vendor-vs-patch decision.",
+// Counts distinct patched *concerns* (the marker's 4th element), not patched
+// *files*. Earlier this counted `PATCH_MARKERS.length` — one entry per file —
+// which put a single concern spanning three files (the evidence envelope) in
+// three times over and fired the tripwire on every run despite the ADR's own
+// prose describing the artifact in terms of concerns, not files. See
+// docs/adr/0024-pi-subagents-stays-a-dependency-until-these-tripwires-fire.md.
+//
+// A raw count of `^@@ ` lines in the diff was rejected earlier for the same
+// reason one level down: it counts every non-contiguous change region per
+// file separately and does not track the ADR's actual intent — confirmed by
+// checking it against this file's real patch artifact, which reports in the
+// double digits by that measure despite the artifact covering the same small
+// number of distinct concerns PATCH_MARKERS lists.
+export function countConcerns(markers) {
+  return new Set(markers.map((marker) => marker[3])).size;
+}
+
+/** Undefined when at or under the ceiling; the tripwire log line otherwise. */
+export function formatConcernCeilingWarning(markers, ceiling) {
+  const concerns = countConcerns(markers);
+  if (concerns <= ceiling) return undefined;
+  return (
+    `[thanos-patch] patch artifact covers ${concerns} concerns (ceiling ${ceiling}) — ` +
+    "ADR 0024 tripwire: reopen the vendor-vs-patch decision."
   );
 }
 
-console.log(`[thanos-patch] done — ${applied} applied, ${already} already present, ${failed} failed.`);
+export const HUNK_CEILING = 4;
 
-// Behaviour is the gate. A patch that no longer applies but whose protection is
-// now provided upstream is reported for retirement, not treated as a failure.
-if (verdicts.some((verdict) => verdict.status === "broken")) process.exit(1);
-if (failed > 0 && verdicts.every((verdict) => verdict.status === "ok")) {
-  console.log(
-    `[thanos-patch] ${failed} patch(es) no longer apply, but behaviour is correct — ` +
-      `upstream likely absorbed the fix. Candidates for retirement; no action needed.`,
-  );
-  process.exit(0);
+if (isMainModule) {
+  applyEvidencePatch();
+
+  const verdicts = [verifyFanoutGuard(), verifyV2EvidenceEnvelope(), verifyTimeoutClassification()];
+  for (const verdict of verdicts) {
+    if (verdict.status === "ok") {
+      console.log(`[thanos-patch] verified: ${verdict.reason}`);
+    } else if (verdict.status === "skipped") {
+      console.log(`[thanos-patch] verification skipped — ${verdict.reason}`);
+    } else {
+      console.error(`[thanos-patch] BROKEN — ${verdict.reason}`);
+    }
+  }
+
+  const ceilingWarning = formatConcernCeilingWarning(PATCH_MARKERS, HUNK_CEILING);
+  if (ceilingWarning) {
+    // console.log, not console.error: every console.error in this file
+    // accompanies a failed++/broken verdict/process.exit(1) — this doesn't,
+    // by design (report, don't fail), and using console.error here would
+    // train a reader who's learned that convention to misread this as one.
+    console.log(ceilingWarning);
+  }
+
+  console.log(`[thanos-patch] done — ${applied} applied, ${already} already present, ${failed} failed.`);
+
+  // Behaviour is the gate. A patch that no longer applies but whose protection is
+  // now provided upstream is reported for retirement, not treated as a failure.
+  if (verdicts.some((verdict) => verdict.status === "broken")) process.exit(1);
+  if (failed > 0 && verdicts.every((verdict) => verdict.status === "ok")) {
+    console.log(
+      `[thanos-patch] ${failed} patch(es) no longer apply, but behaviour is correct — ` +
+        `upstream likely absorbed the fix. Candidates for retirement; no action needed.`,
+    );
+    process.exit(0);
+  }
+  if (failed > 0 && verdicts.some((verdict) => verdict.status === "skipped")) {
+    // Same exit code the final line would give; spelled out because "couldn't
+    // verify" and "verified broken" are different situations and the operator
+    // should not have to infer which one produced the failure.
+    console.error(
+      `[thanos-patch] ${failed} patch(es) no longer apply and behaviour could not be verified ` +
+        `(${verdicts.filter((verdict) => verdict.status === "skipped").map((verdict) => verdict.reason).join("; ")}) — ` +
+        "treating as failure rather than assuming upstream absorbed it.",
+    );
+    process.exit(1);
+  }
+  process.exit(failed > 0 ? 1 : 0);
 }
-if (failed > 0 && verdicts.some((verdict) => verdict.status === "skipped")) {
-  // Same exit code the final line would give; spelled out because "couldn't
-  // verify" and "verified broken" are different situations and the operator
-  // should not have to infer which one produced the failure.
-  console.error(
-    `[thanos-patch] ${failed} patch(es) no longer apply and behaviour could not be verified ` +
-      `(${verdicts.filter((verdict) => verdict.status === "skipped").map((verdict) => verdict.reason).join("; ")}) — ` +
-      "treating as failure rather than assuming upstream absorbed it.",
-  );
-  process.exit(1);
-}
-process.exit(failed > 0 ? 1 : 0);
