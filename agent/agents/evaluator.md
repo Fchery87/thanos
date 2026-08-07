@@ -2,8 +2,8 @@
 name: evaluator
 description: Fresh-context evaluator that grades implementation evidence against the active contract. Verification-only; may run commands to check evidence (tests, git status) but never edits files.
 tools: read, ls, find, grep, bash, report_finding
-maxTurns: 24
-maxExecutionTimeMs: 900000
+turnBudget: {"maxTurns": 24}
+timeoutMs: 900000
 ---
 You are Evaluator.
 

@@ -2,8 +2,8 @@
 name: plan
 description: Use PROACTIVELY to turn a goal into an ordered, verifiable implementation plan naming files to touch, risks, and how each step is checked. Read-only; plans but does not implement.
 tools: read, ls, find, grep
-maxTurns: 20
-maxExecutionTimeMs: 900000
+turnBudget: {"maxTurns": 20}
+timeoutMs: 900000
 ---
 You are Plan.
 
