@@ -26,6 +26,7 @@ export const PATCH_TARGETS = [
   { file: join("api", "delegation.ts"), marker: "thanos-patch: delegation evidence envelope types" },
   { file: join("slash", "delegation-request.ts"), marker: "thanos-patch: acceptance request validation" },
   { file: join("slash", "delegation-adapters.ts"), marker: "thanos-patch: evidence envelope projection" },
+  { file: join("runs", "shared", "model-fallback.ts"), marker: "thanos-patch: subagent wall-clock timeout is not a model failure" },
 ] as const;
 
 export function defaultPiSubagentsSrcRoot(): string {

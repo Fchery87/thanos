@@ -3,6 +3,17 @@ import { validateDelegationEvidence } from "../../src/delegation/evidence";
 
 const identity = { requestId: "request-1", ownerRunId: "session-1", nodeId: "node-1" };
 
+const VERDICT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["verdict"],
+  properties: {
+    verdict: { type: "string", enum: ["APPROVE", "REJECT"] },
+  },
+} as const;
+
+const declaredStructured = { kind: "structured" as const, schema: VERDICT_SCHEMA };
+
 function envelope(overrides: Record<string, unknown> = {}) {
   return {
     ...identity,
@@ -81,5 +92,81 @@ describe("validateDelegationEvidence", () => {
       expect(verdict.reasons).toContain("review reported blockers");
       expect(verdict.reasons).toContain("required file mutation evidence is missing");
     }
+  });
+
+  describe("structured result schema gate", () => {
+    it("accepts a conforming structured result when the request declared a schema", () => {
+      const verdict = validateDelegationEvidence(
+        envelope({ result: { kind: "structured", value: { verdict: "APPROVE" } } }),
+        identity,
+        declaredStructured,
+      );
+      expect(verdict.state).toBe("accepted");
+    });
+
+    it("rejects a non-conforming structured result and names the violated field", () => {
+      const verdict = validateDelegationEvidence(
+        envelope({ result: { kind: "structured", value: { verdict: "MAYBE" } } }),
+        identity,
+        declaredStructured,
+      );
+      expect(verdict.state).toBe("awaiting_evidence");
+      if (verdict.state === "awaiting_evidence") {
+        const reason = verdict.reasons.find((entry) => entry.startsWith("structured result violates schema"));
+        expect(reason).toBeDefined();
+        expect(reason).toContain("verdict");
+      }
+    });
+
+    it("rejects a missing required field in the structured result", () => {
+      const verdict = validateDelegationEvidence(
+        envelope({ result: { kind: "structured", value: {} } }),
+        identity,
+        declaredStructured,
+      );
+      expect(verdict.state).toBe("awaiting_evidence");
+      if (verdict.state === "awaiting_evidence") {
+        const reason = verdict.reasons.find((entry) => entry.startsWith("structured result violates schema"));
+        expect(reason).toBeDefined();
+        expect(reason).toContain("verdict");
+      }
+    });
+
+    it("rejects a text-kind result when the request declared a structured schema", () => {
+      const verdict = validateDelegationEvidence(
+        envelope({ result: { kind: "text", text: "done" } }),
+        identity,
+        declaredStructured,
+      );
+      expect(verdict.state).toBe("awaiting_evidence");
+      if (verdict.state === "awaiting_evidence") {
+        expect(verdict.reasons).toContain(
+          "declared a structured result schema but response result is missing or not structured",
+        );
+      }
+    });
+
+    it("rejects a missing result when the request declared a structured schema", () => {
+      const verdict = validateDelegationEvidence(envelope(), identity, declaredStructured);
+      expect(verdict.state).toBe("awaiting_evidence");
+      if (verdict.state === "awaiting_evidence") {
+        expect(verdict.reasons).toContain(
+          "declared a structured result schema but response result is missing or not structured",
+        );
+      }
+    });
+
+    it("leaves text-kind (unspecified schema) requests unaffected by a non-object result value", () => {
+      const verdict = validateDelegationEvidence(
+        envelope({ result: { kind: "text", text: "done" } }),
+        identity,
+      );
+      expect(verdict.state).toBe("accepted");
+    });
+
+    it("leaves requests unaffected when no schema was declared at all", () => {
+      const verdict = validateDelegationEvidence(envelope(), identity);
+      expect(verdict.state).toBe("accepted");
+    });
   });
 });

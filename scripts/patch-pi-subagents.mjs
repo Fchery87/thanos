@@ -84,6 +84,7 @@ const PATCH_MARKERS = [
   ["slash", "delegation-request.ts", "thanos-patch: acceptance request validation"],
   ["slash", "delegation-adapters.ts", "thanos-patch: evidence envelope projection"],
   ["extension", "fanout-child.ts", "thanos-patch: process-global fanout tool guard"],
+  ["runs/shared", "model-fallback.ts", "thanos-patch: subagent wall-clock timeout is not a model failure"],
 ];
 
 let applied = 0, already = 0, failed = 0;
@@ -249,7 +250,62 @@ function verifyV2EvidenceEnvelope() {
   }
 }
 
-const verdicts = [verifyFanoutGuard(), verifyV2EvidenceEnvelope()];
+function verifyTimeoutClassification() {
+  const target = join(ROOT, "runs", "shared", "model-fallback.ts");
+  if (!existsSync(target)) return { status: "skipped", reason: "model-fallback.ts not installed" };
+  if (spawnSync("bun", ["--version"], { stdio: "ignore" }).status !== 0) {
+    return { status: "skipped", reason: "bun not on PATH" };
+  }
+  const dir = mkdtempSync(join(tmpdir(), "thanos-timeout-verify-"));
+  try {
+    const probe = join(dir, "probe.mjs");
+    writeFileSync(
+      probe,
+      `const mod = await import(${JSON.stringify(target)});\n` +
+        // formatTimeoutMessage (runs/foreground/execution.ts) emits exactly this
+        // shape. Unpatched, it matches /timed? out/i in
+        // RETRYABLE_MODEL_FAILURE_PATTERNS and is misclassified as retryable,
+        // which makes execution.ts advance the model fallback ladder and
+        // re-run the whole task instead of accepting that the child exhausted
+        // its own timeoutMs budget.
+        `const timeoutClassifiedRetryable = mod.isRetryableModelFailure("Subagent timed out after 1800000ms.");\n` +
+        // A genuine provider-side timeout must still be retried on the next model.
+        `const providerTimeoutClassifiedRetryable = mod.isRetryableModelFailure("upstream request timeout");\n` +
+        `console.log("THANOS_TIMEOUT_PROBE:" + JSON.stringify({ timeoutClassifiedRetryable, providerTimeoutClassifiedRetryable }));\n`,
+      "utf-8",
+    );
+    const run = spawnSync("bun", ["run", probe], {
+      encoding: "utf-8",
+      timeout: 30_000,
+      env: { ...process.env, HOME: dir },
+    });
+    const match = /THANOS_TIMEOUT_PROBE:([^\n]+)/.exec(run.stdout ?? "");
+    if (!match) {
+      const detail = (run.stderr ?? "").trim().split("\n").slice(-1)[0] || `exit ${run.status}`;
+      return { status: "skipped", reason: `timeout-classification probe did not run (${detail})` };
+    }
+    const { timeoutClassifiedRetryable, providerTimeoutClassifiedRetryable } = JSON.parse(match[1]);
+    if (timeoutClassifiedRetryable) {
+      return {
+        status: "broken",
+        reason: "a subagent wall-clock timeout is still classified as a retryable model failure (would burn the fallback ladder)",
+      };
+    }
+    if (!providerTimeoutClassifiedRetryable) {
+      return {
+        status: "broken",
+        reason: "a genuine provider timeout is no longer classified as retryable (fallback ladder would not engage)",
+      };
+    }
+    return { status: "ok", reason: "subagent wall-clock timeouts are not retried as model failures; provider timeouts still are" };
+  } catch (error) {
+    return { status: "skipped", reason: error instanceof Error ? error.message : String(error) };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const verdicts = [verifyFanoutGuard(), verifyV2EvidenceEnvelope(), verifyTimeoutClassification()];
 for (const verdict of verdicts) {
   if (verdict.status === "ok") {
     console.log(`[thanos-patch] verified: ${verdict.reason}`);

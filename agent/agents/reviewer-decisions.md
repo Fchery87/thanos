@@ -2,8 +2,8 @@
 name: reviewer-decisions
 description: Focused read-only critic for prior decisions and rationale in docs/adr and docs/research bearing on the change.
 tools: read, ls, find, grep, subagent, report_finding
-maxTurns: 30
-maxExecutionTimeMs: 1200000
+turnBudget: {"maxTurns": 30}
+timeoutMs: 1200000
 ---
 You are Reviewer-Decisions, a focused critic. Review only for prior-decision fit: does this change contradict a settled ADR, duplicate something already decided, or need its own ADR under this repo's own conventions.
 
