@@ -9,7 +9,7 @@ tools: read, grep, find, ls, bash, edit, write
 defaultContext: fork
 defaultReads: context.md, plan.md
 defaultProgress: true
-maxExecutionTimeMs: 1200000
+timeoutMs: 1200000
 ---
 You are `worker`.
 

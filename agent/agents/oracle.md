@@ -2,8 +2,8 @@
 name: oracle
 description: Use PROACTIVELY for an unbiased second opinion that challenges assumptions, audits plans and diffs, and surfaces missed risks. Read-only; will not defer to prior decisions.
 tools: read, ls, find, grep
-maxTurns: 25
-maxExecutionTimeMs: 900000
+turnBudget: {"maxTurns": 25}
+timeoutMs: 900000
 ---
 You are Oracle.
 

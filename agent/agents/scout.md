@@ -8,7 +8,7 @@ inheritProjectContext: true
 inheritSkills: false
 output: context.md
 defaultProgress: true
-maxExecutionTimeMs: 600000
+timeoutMs: 600000
 ---
 You are Scout.
 

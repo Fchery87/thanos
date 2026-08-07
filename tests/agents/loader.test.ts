@@ -34,8 +34,8 @@ describe("loadAgent", () => {
         "---",
         'tools: ["read", "write"]',
         'model: "gemini-3-pro"',
-        "maxTurns: 4",
-        "maxExecutionTimeMs: 120000",
+        'turnBudget: {"maxTurns": 4}',
+        "timeoutMs: 120000",
         "---",
         "You are a build specialist.",
       ].join("\n"),
@@ -47,8 +47,92 @@ describe("loadAgent", () => {
     expect(agent.body).toContain("You are a build specialist.");
     expect(agent.tools).toEqual(["read", "write"]);
     expect(agent.model).toBe("gemini-3-pro");
-    expect(agent.maxTurns).toBe(4);
-    expect(agent.maxExecutionTimeMs).toBe(120000);
+    expect(agent.turnBudget).toEqual({ maxTurns: 4 });
+    expect(agent.timeoutMs).toBe(120000);
+  });
+
+  it("rejects the retired maxExecutionTimeMs frontmatter key", async () => {
+    const home = await mkdtemp(join(tmpdir(), "thanos-agent-"));
+    process.env.HOME = home;
+
+    const agentDir = join(home, ".pi", "agent", "agents");
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(
+      join(agentDir, "build.md"),
+      [
+        "---",
+        'tools: ["read", "write"]',
+        "maxExecutionTimeMs: 120000",
+        "---",
+        "You are a build specialist.",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    await expect(loadAgent("build")).rejects.toThrow(/maxExecutionTimeMs is retired; use timeoutMs/);
+  });
+
+  it("rejects the retired maxTurns frontmatter key", async () => {
+    const home = await mkdtemp(join(tmpdir(), "thanos-agent-"));
+    process.env.HOME = home;
+
+    const agentDir = join(home, ".pi", "agent", "agents");
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(
+      join(agentDir, "build.md"),
+      [
+        "---",
+        'tools: ["read", "write"]',
+        "maxTurns: 4",
+        "---",
+        "You are a build specialist.",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    await expect(loadAgent("build")).rejects.toThrow(/maxTurns is retired; use turnBudget/);
+  });
+
+  it("rejects an unparseable turnBudget frontmatter value", async () => {
+    const home = await mkdtemp(join(tmpdir(), "thanos-agent-"));
+    process.env.HOME = home;
+
+    const agentDir = join(home, ".pi", "agent", "agents");
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(
+      join(agentDir, "build.md"),
+      [
+        "---",
+        'tools: ["read", "write"]',
+        "turnBudget: not-json",
+        "---",
+        "You are a build specialist.",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    await expect(loadAgent("build")).rejects.toThrow(/Invalid agent frontmatter value for turnBudget/);
+  });
+
+  it("rejects a turnBudget with a non-numeric graceTurns", async () => {
+    const home = await mkdtemp(join(tmpdir(), "thanos-agent-"));
+    process.env.HOME = home;
+
+    const agentDir = join(home, ".pi", "agent", "agents");
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(
+      join(agentDir, "build.md"),
+      [
+        "---",
+        'tools: ["read", "write"]',
+        'turnBudget: {"maxTurns": 4, "graceTurns": "oops"}',
+        "---",
+        "You are a build specialist.",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    await expect(loadAgent("build")).rejects.toThrow(/Invalid agent frontmatter value for turnBudget/);
   });
 
   it("loads tools from agent markdown frontmatter for explore type", async () => {
