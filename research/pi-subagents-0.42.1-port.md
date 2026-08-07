@@ -25,7 +25,7 @@ Confirmed empirically, not just inferred from the empty diffs: `git apply --chec
 
 ## Why nothing changed, per upstream's own changelog
 
-Cross-checked against `CHANGELOG.md` in the 0.42.1 package. The 0.42.0 and 0.42.1 entries cover: terminal widget/overlay crash fixes in narrow layouts, async scripted-workflow timeout behavior, `workflowScript` chat progress projections, durable schedules and worktree isolation, `@gotgenes/pi-permission-system` compatibility, MCP adapter cache identity matching, Herdr inspector bootstrapping, and install/audit hygiene. None of these entries touch delegation request/response handling, the evidence envelope, fanout child registration, or model-fallback timeout classification — consistent with, and independently corroborating, the empty file diffs above.
+Cross-checked against `CHANGELOG.md` in the 0.42.1 package. The 0.42.0 and 0.42.1 entries cover: terminal widget/overlay crash fixes in narrow layouts, async scripted-workflow timeout behavior, `workflowScript` chat progress projections, managed worktree isolation for scripted workflows, `@gotgenes/pi-permission-system` compatibility, MCP adapter cache identity matching, Herdr inspector bootstrapping, and install/audit hygiene. None of these entries touch delegation request/response handling, the evidence envelope, fanout child registration, or model-fallback timeout classification — consistent with, and independently corroborating, the empty file diffs above. (Durable schedules, mentioned in an earlier draft of this note, is a 0.41.0 feature — the pinned baseline itself, not a 0.42.x change; corrected here after independent review caught the misattribution.)
 
 ## Consequence for Task 1.2
 
