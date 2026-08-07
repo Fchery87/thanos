@@ -79,14 +79,20 @@ export async function planUpdate(deps) {
     return { status: "broken", from: before };
   }
 
-  // `before` is the version that was already installed (and, by the time an
-  // operator runs this wrapper, already successfully patched) prior to `pi
-  // update`. Reinstalling it deterministically restores the same source tree
-  // the patch artifact was last verified against, so the rollback's success
-  // is judged on the reinstall landing, not on re-running the patch script a
-  // second time — that call re-applies the patches for real (this is not a
-  // no-op) but is not itself the gate.
-  await deps.runPatchScript();
+  // Reinstalling `before` restores the source tree the patch artifact was
+  // last verified against, but that is necessary, not sufficient — it does
+  // not by itself prove the patches actually apply to what landed on disk
+  // (a partial install, a corrupted patch artifact, or drift in node_modules
+  // could all make this re-patch fail too). Mirrors the same posture
+  // src/welcome/patch-drift.ts's reapplyPatchesIfVersionMatches takes toward
+  // its own patch script's exit code: re-verify, don't trust. Gating
+  // "rolled-back" on reinstall's exit code alone would let this function
+  // report success while the harness is still unpatched — exactly the state
+  // this whole wrapper exists to make unreachable.
+  const rollbackPatchResult = await deps.runPatchScript();
+  if (rollbackPatchResult.code !== 0) {
+    return { status: "broken", from: before };
+  }
   return { status: "rolled-back", from: before };
 }
 
