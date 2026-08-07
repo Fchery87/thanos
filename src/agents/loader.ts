@@ -139,12 +139,16 @@ function parseFrontmatter(raw: string): Partial<AgentDefinition> & { body: strin
         const message = error instanceof Error ? error.message : String(error);
         throw new Error(`Invalid agent frontmatter value for turnBudget: not valid JSON (${message})`);
       }
+      const graceTurns = (value as { graceTurns?: unknown } | null)?.graceTurns;
       if (
         typeof value !== "object" ||
         value === null ||
-        typeof (value as { maxTurns?: unknown }).maxTurns !== "number"
+        typeof (value as { maxTurns?: unknown }).maxTurns !== "number" ||
+        (graceTurns !== undefined && typeof graceTurns !== "number")
       ) {
-        throw new Error(`Invalid agent frontmatter value for turnBudget: expected an object with a numeric maxTurns`);
+        throw new Error(
+          `Invalid agent frontmatter value for turnBudget: expected an object with a numeric maxTurns and, if present, a numeric graceTurns`,
+        );
       }
       parsed.turnBudget = value as { maxTurns: number; graceTurns?: number };
       continue;

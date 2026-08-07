@@ -44,9 +44,18 @@ describe("validateManifest", () => {
     ).toThrow(/maxTurns is retired; use turnBudget/);
   });
 
-  it("requires timeoutMs to be positive when present", () => {
+  it("requires timeoutMs to be a positive integer when present", () => {
     expect(() => validateManifest("explore", { timeoutMs: 0 })).toThrow(
-      /must declare a positive timeoutMs/,
+      /must declare timeoutMs as a positive integer/,
+    );
+    expect(() => validateManifest("explore", { timeoutMs: Number.NaN })).toThrow(
+      /must declare timeoutMs as a positive integer/,
+    );
+    expect(() => validateManifest("explore", { timeoutMs: Number.POSITIVE_INFINITY })).toThrow(
+      /must declare timeoutMs as a positive integer/,
+    );
+    expect(() => validateManifest("explore", { timeoutMs: 1.5 })).toThrow(
+      /must declare timeoutMs as a positive integer/,
     );
     expect(() => validateManifest("explore", { timeoutMs: 600000 })).not.toThrow();
   });
@@ -59,5 +68,16 @@ describe("validateManifest", () => {
       /must declare turnBudget\.maxTurns as a positive integer/,
     );
     expect(() => validateManifest("explore", { turnBudget: { maxTurns: 20 } })).not.toThrow();
+  });
+
+  it("requires turnBudget.graceTurns to be a non-negative integer when present", () => {
+    expect(() =>
+      validateManifest("explore", { turnBudget: { maxTurns: 20, graceTurns: -1 } }),
+    ).toThrow(/must declare turnBudget\.graceTurns as a non-negative integer/);
+    expect(() =>
+      validateManifest("explore", { turnBudget: { maxTurns: 20, graceTurns: 1.5 } }),
+    ).toThrow(/must declare turnBudget\.graceTurns as a non-negative integer/);
+    expect(() => validateManifest("explore", { turnBudget: { maxTurns: 20, graceTurns: 0 } })).not.toThrow();
+    expect(() => validateManifest("explore", { turnBudget: { maxTurns: 20, graceTurns: 2 } })).not.toThrow();
   });
 });

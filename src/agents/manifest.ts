@@ -54,14 +54,17 @@ export function validateManifest(role: string, manifest: AgentManifest): void {
     }
   }
 
-  if (manifest.timeoutMs !== undefined && manifest.timeoutMs <= 0) {
-    throw new Error(`${role} must declare a positive timeoutMs`);
+  if (manifest.timeoutMs !== undefined && (!Number.isInteger(manifest.timeoutMs) || manifest.timeoutMs <= 0)) {
+    throw new Error(`${role} must declare timeoutMs as a positive integer, got ${manifest.timeoutMs}`);
   }
 
   if (manifest.turnBudget !== undefined) {
-    const { maxTurns } = manifest.turnBudget;
+    const { maxTurns, graceTurns } = manifest.turnBudget;
     if (!Number.isInteger(maxTurns) || maxTurns <= 0) {
       throw new Error(`${role} must declare turnBudget.maxTurns as a positive integer, got ${maxTurns}`);
+    }
+    if (graceTurns !== undefined && (!Number.isInteger(graceTurns) || graceTurns < 0)) {
+      throw new Error(`${role} must declare turnBudget.graceTurns as a non-negative integer, got ${graceTurns}`);
     }
   }
 

@@ -173,12 +173,20 @@ describe("live agent roster contract", () => {
       // turnBudget is optional — 2 of 13 profiles (scout, worker) never declared
       // maxTurns and this task must not fabricate one for them (pi-subagents'
       // own resolveTurnBudgetConfig treats "no turn budget" as valid). Where a
-      // turnBudget IS declared, it must parse as JSON with a positive maxTurns.
+      // turnBudget IS declared, it must parse as JSON with a positive integer
+      // maxTurns — matching validateManifest's actual runtime check
+      // (src/agents/manifest.ts), not just "greater than 0".
       if (agent.turnBudget !== undefined) {
+        let parsed: { maxTurns?: unknown };
+        try {
+          parsed = JSON.parse(agent.turnBudget);
+        } catch (error) {
+          throw new Error(`${agent.file}: turnBudget is not valid JSON (${error instanceof Error ? error.message : String(error)})`);
+        }
         expect(
-          JSON.parse(agent.turnBudget).maxTurns,
-          `${agent.file} turnBudget must be JSON with a positive maxTurns`,
-        ).toBeGreaterThan(0);
+          Number.isInteger(parsed.maxTurns) && (parsed.maxTurns as number) > 0,
+          `${agent.file} turnBudget must be JSON with a positive integer maxTurns, got ${parsed.maxTurns}`,
+        ).toBe(true);
       }
     }
   });

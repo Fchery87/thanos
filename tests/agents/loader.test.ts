@@ -114,6 +114,27 @@ describe("loadAgent", () => {
     await expect(loadAgent("build")).rejects.toThrow(/Invalid agent frontmatter value for turnBudget/);
   });
 
+  it("rejects a turnBudget with a non-numeric graceTurns", async () => {
+    const home = await mkdtemp(join(tmpdir(), "thanos-agent-"));
+    process.env.HOME = home;
+
+    const agentDir = join(home, ".pi", "agent", "agents");
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(
+      join(agentDir, "build.md"),
+      [
+        "---",
+        'tools: ["read", "write"]',
+        'turnBudget: {"maxTurns": 4, "graceTurns": "oops"}',
+        "---",
+        "You are a build specialist.",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    await expect(loadAgent("build")).rejects.toThrow(/Invalid agent frontmatter value for turnBudget/);
+  });
+
   it("loads tools from agent markdown frontmatter for explore type", async () => {
     process.env.HOME = await repoHomeWithRealAgents();
     const def = await loadAgent("explore");
