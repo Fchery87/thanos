@@ -195,7 +195,12 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
       // the patch artifact only applies to the pinned version.
       checkPinDrift().then((spec) => {
         if (spec) ctx.ui.notify(formatUnpinnedPinWarning(spec), "warning");
-      }).catch(() => {});
+      }).catch((err) => {
+        ctx.ui.notify(
+          `pi-subagents pin check failed: ${err instanceof Error ? err.message : String(err)}`,
+          "warning",
+        );
+      });
     }
 
     // Project trust decides whether a repo's own mcp.json may launch its
