@@ -14,6 +14,7 @@ import { renderGoalStatusSegment } from "../goal/command";
 import { renderWelcomeHeader, formatTimeAgo, type WelcomeMcpSummary, type WelcomePolicySummary } from "../welcome/header";
 import { checkForUpdate } from "../welcome/update-check";
 import { formatReapplyNotice, reapplyPatchesIfVersionMatches } from "../welcome/patch-drift";
+import { checkPinDrift, formatUnpinnedPinWarning } from "../welcome/pin-assertion";
 import { formatPanel } from "../ui-utils";
 import { DeliveryRuntime } from "./commands/delivery";
 import type { TodoRuntime } from "./commands/todo";
@@ -185,6 +186,15 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
       reapplyPatchesIfVersionMatches().then((result) => {
         const notice = formatReapplyNotice(result);
         if (notice) ctx.ui.notify(notice.message, notice.level);
+      }).catch(() => {});
+
+      // Warns when the pi-subagents update spec in agent/settings.json has
+      // lost its exact version pin — the one condition that makes the
+      // self-heal above provably safe. An unpinned spec silently walks
+      // pi-subagents to @latest on the next `pi update --extensions`, and
+      // the patch artifact only applies to the pinned version.
+      checkPinDrift().then((spec) => {
+        if (spec) ctx.ui.notify(formatUnpinnedPinWarning(spec), "warning");
       }).catch(() => {});
     }
 
