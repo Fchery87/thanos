@@ -41,7 +41,7 @@ async function patchedPackage(): Promise<string> {
 // verified by running standalone (well under a second outside vitest) vs.
 // inside vitest's transform pipeline (consistently >5000ms). Real, not a
 // logic defect — bumped explicitly rather than raising the global default.
-const HERMETIC_TIMEOUT_MS = 15_000;
+const HERMETIC_TIMEOUT_MS = 30_000;
 
 describe(`pi-subagents ${PINNED} compatibility gate`, () => {
   it("accepts an acceptance request and projects the complete evidence envelope", async () => {

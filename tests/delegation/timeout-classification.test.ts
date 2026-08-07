@@ -54,7 +54,7 @@ async function patchedModelFallback(): Promise<string> {
 // verified by running standalone (well under a second outside vitest) vs.
 // inside vitest's transform pipeline (consistently >5000ms). Real, not a
 // logic defect — bumped explicitly rather than raising the global default.
-const HERMETIC_TIMEOUT_MS = 15_000;
+const HERMETIC_TIMEOUT_MS = 30_000;
 
 describe("timeout classification", () => {
   it("does not treat a subagent wall-clock timeout as a retryable model failure", async () => {
