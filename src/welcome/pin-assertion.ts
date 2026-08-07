@@ -27,12 +27,15 @@ export function findUnpinnedDelegationPackage(packages: readonly unknown[]): str
   return undefined;
 }
 
-export function formatUnpinnedPinWarning(spec: string): string {
+export function formatUnpinnedPinWarning(
+  spec: string,
+  settingsPath: string = defaultSettingsPath(),
+): string {
   return (
     `pi-subagents is not pinned to an exact version (found "${spec}").\n` +
     `pi resolves this as @latest on the next \`pi update --extensions\`, and the ` +
     `patch artifact only applies to the pinned version.\n` +
-    `Fix: set "npm:${DELEGATION_PACKAGE}@<version>" in agent/settings.json.`
+    `Fix: set "npm:${DELEGATION_PACKAGE}@<version>" in ${settingsPath}.`
   );
 }
 
