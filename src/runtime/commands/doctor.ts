@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { MCPManager, ServerStatus } from "../../mcp/manager";
 import type { PolicyLoadState } from "../../policy/state";
 import { checkPatchDrift as defaultCheckPatchDrift, formatPatchDriftWarning, type PatchDriftResult } from "../../welcome/patch-drift";
+import { checkPinDrift as defaultCheckPinDrift, formatUnpinnedPinWarning } from "../../welcome/pin-assertion";
 import type { TUITheme } from "../../ui-utils";
 import { formatPanel } from "../../ui-utils";
 import { buildToolContractSnapshot, type ToolContractSnapshot } from "../../governance/tool-contract";
@@ -30,6 +31,8 @@ export interface DoctorCommandDeps {
   specSettings: SpecExtractionSettings;
   /** Injectable for tests; defaults to the real check (reads pi-subagents' installed source under $HOME). */
   checkPatchDrift?: () => Promise<PatchDriftResult>;
+  /** Injectable for tests; defaults to the real check (reads agent/settings.json's `packages` spec). */
+  checkPinDrift?: () => Promise<string | undefined>;
 }
 
 export type DiagnosticSeverity = "error" | "warning" | "info";
@@ -55,6 +58,7 @@ export interface DoctorInputs {
   mcpStatuses: readonly ServerStatus[];
   delivery: { registered: boolean; mode: string; autonomy?: string } | undefined;
   patchDrift: { warning?: string; error?: string };
+  pinDrift: { warning?: string; error?: string };
   toolContract: ToolContractSnapshot;
   goalStatus: "active" | "paused" | "achieved" | "none";
   workflowPhase: string | undefined;
@@ -179,6 +183,16 @@ export function collectDoctorDiagnostics(inputs: DoctorInputs): readonly Diagnos
       ? { severity: "warning", code: "subagents.patch_drift", subsystem: "subagents", message: inputs.patchDrift.warning.replace(/\s+/g, " ").trim() }
       : { severity: "info", code: "subagents.patch_ok", subsystem: "subagents", message: "pi-subagents patches intact" });
 
+  // ── pi-subagents pin drift ─────────────────────────────────────────
+  // An unpinned spec in agent/settings.json silently resolves to @latest on
+  // the next `pi update --extensions`, which is exactly the condition the
+  // patch check above cannot self-heal across.
+  diagnostics.push(inputs.pinDrift.error
+    ? { severity: "warning", code: "subagents.pin_check_failed", subsystem: "subagents", message: `pin check failed: ${inputs.pinDrift.error}` }
+    : inputs.pinDrift.warning
+      ? { severity: "warning", code: "subagents.pin_drift", subsystem: "subagents", message: inputs.pinDrift.warning.replace(/\s+/g, " ").trim() }
+      : { severity: "info", code: "subagents.pin_ok", subsystem: "subagents", message: "pi-subagents pin exact" });
+
   return diagnostics;
 }
 
@@ -222,7 +236,7 @@ export function renderDoctorDiagnostics(diagnostics: readonly Diagnostic[], them
 export function registerDoctorCommand(pi: ExtensionAPI, deps: DoctorCommandDeps): void {
   const {
     isSubagent, policyStatePromise, mcpManager, deliveryRuntime, goalController, spec, workflowRuntime,
-    specSettings, checkPatchDrift = defaultCheckPatchDrift,
+    specSettings, checkPatchDrift = defaultCheckPatchDrift, checkPinDrift = defaultCheckPinDrift,
   } = deps;
 
   pi.registerCommand("doctor", {
@@ -245,12 +259,21 @@ export function registerDoctorCommand(pi: ExtensionAPI, deps: DoctorCommandDeps)
         patchDrift = { error: err instanceof Error ? err.message : String(err) };
       }
 
+      let pinDrift: DoctorInputs["pinDrift"] = {};
+      try {
+        const spec = await checkPinDrift();
+        if (spec) pinDrift = { warning: formatUnpinnedPinWarning(spec) };
+      } catch (err) {
+        pinDrift = { error: err instanceof Error ? err.message : String(err) };
+      }
+
       const goalSnapshot = goalController.snapshot();
       const inputs: DoctorInputs = {
         policy,
         mcpStatuses: mcpManager?.getStatuses() ?? [],
         delivery,
         patchDrift,
+        pinDrift,
         toolContract: buildToolContractSnapshot({ tools: pi.getAllTools(), activeToolNames: pi.getActiveTools() }),
         goalStatus: goalSnapshot?.status ?? "none",
         workflowPhase: workflowRuntime.current?.phase,

@@ -16,6 +16,7 @@ function baseInputs(overrides: Partial<DoctorInputs> = {}): DoctorInputs {
     mcpStatuses: [],
     delivery: { registered: true, mode: "local-only" },
     patchDrift: {},
+    pinDrift: {},
     toolContract: buildToolContractSnapshot({ tools: [{ name: "read", description: "Read a file", parameters: {} }], activeToolNames: ["read"] }),
     goalStatus: "none",
     workflowPhase: undefined,
@@ -110,6 +111,18 @@ describe("collectDoctorDiagnostics", () => {
       .toMatchObject({ severity: "warning", code: "subagents.patch_check_failed" });
   });
 
+  it("reports intact, drifted, and failed pin-check states", () => {
+    const findPin = (diagnostics: readonly Diagnostic[]) =>
+      diagnostics.filter((d) => d.subsystem === "subagents").find((d) => d.code.startsWith("subagents.pin"));
+
+    expect(findPin(collectDoctorDiagnostics(baseInputs({ pinDrift: {} }))))
+      .toMatchObject({ severity: "info", code: "subagents.pin_ok" });
+    expect(findPin(collectDoctorDiagnostics(baseInputs({ pinDrift: { warning: "pin missing" } }))))
+      .toMatchObject({ severity: "warning", code: "subagents.pin_drift" });
+    expect(findPin(collectDoctorDiagnostics(baseInputs({ pinDrift: { error: "ENOENT" } }))))
+      .toMatchObject({ severity: "warning", code: "subagents.pin_check_failed" });
+  });
+
   it("summarizes the tool contract, flagging unknown tools", () => {
     const okSnapshot = buildToolContractSnapshot({ tools: [{ name: "read", description: "x", parameters: {} }], activeToolNames: ["read"] });
     expect(collectDoctorDiagnostics(baseInputs({ toolContract: okSnapshot })).find((d) => d.subsystem === "tools"))
@@ -138,7 +151,7 @@ describe("collectDoctorDiagnostics", () => {
   it("always collects checks in the same, stable order", () => {
     const order = (inputs: DoctorInputs) => collectDoctorDiagnostics(inputs).map((d) => d.subsystem);
     expect(order(baseInputs())).toEqual(order(baseInputs({ policy: { kind: "error", error: "x" } as never })));
-    expect(order(baseInputs())).toEqual(["policy", "mcp", "delivery", "tools", "state", "extraction", "subagents"]);
+    expect(order(baseInputs())).toEqual(["policy", "mcp", "delivery", "tools", "state", "extraction", "subagents", "subagents"]);
   });
 
   it("completes well under 25ms with in-memory dependencies", () => {
@@ -215,9 +228,9 @@ describe("registerDoctorCommand", () => {
 
   const okPolicy = Promise.resolve({ kind: "ok", policy: { version: 1, preset: "team", rules: [], audit: { enabled: false, path: "x" }, headless: { defaultDecision: "deny" } } } as never);
 
-  // Every test here injects checkPatchDrift and specSettings rather than
-  // letting the handler fall through to the real defaults, which read
-  // $HOME (installed pi-subagents source, ~/.pi/agent/settings.json) —
+  // Every test here injects checkPatchDrift, checkPinDrift, and specSettings
+  // rather than letting the handler fall through to the real defaults, which
+  // read $HOME (installed pi-subagents source, ~/.pi/agent/settings.json) —
   // wrapping these calls in a scratch cwd would not isolate them, since
   // neither is cwd-relative.
   function baseDeps(overrides: Record<string, unknown> = {}) {
@@ -231,6 +244,7 @@ describe("registerDoctorCommand", () => {
       workflowRuntime: new WorkflowRuntime(),
       specSettings: { extraction: true, extractorRole: "evaluator", timeoutMs: 10_000 },
       checkPatchDrift: async () => ({ installed: true, missingMarkers: [] }),
+      checkPinDrift: async () => undefined,
       ...overrides,
     };
   }
