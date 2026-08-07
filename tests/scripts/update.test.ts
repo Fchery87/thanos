@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planUpdate } from "../../scripts/thanos-update.mjs";
+import { planUpdate, spawnRelay } from "../../scripts/thanos-update.mjs";
 
 const ok = { code: 0 };
 const fail = { code: 1 };
@@ -97,5 +97,23 @@ describe("thanos update", () => {
     });
     expect(result.status).toBe("unchanged");
     expect(calls).toEqual(["update", "patch"]);
+  });
+
+  describe("spawnRelay (real subprocess wiring)", () => {
+    it("resolves with a non-zero code rather than rejecting when the command itself can't be spawned", async () => {
+      // planUpdate's contract is that every injected effect resolves to
+      // { code }, never rejects. main()'s real effects (runPiUpdateReal,
+      // reinstallReal, runPatchScriptReal) are all built on this function, so
+      // a bad command (ENOENT) has to look like an ordinary non-zero exit,
+      // not an uncaught rejection that would skip past the "broken" status's
+      // detailed recovery message and land in main()'s generic outer catch.
+      const result = await spawnRelay("definitely-not-a-real-command-xyz123", []);
+      expect(result).toEqual({ code: 1 });
+    });
+
+    it("resolves with the real exit code for a command that runs", async () => {
+      const result = await spawnRelay(process.execPath, ["-e", "process.exit(0)"]);
+      expect(result).toEqual({ code: 0 });
+    });
   });
 });
