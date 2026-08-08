@@ -57,8 +57,12 @@ describe("DelegationRuntime", () => {
   });
 
   it("returns awaiting_evidence for the current incomplete upstream response", async () => {
+    // maxRepairAttempts: 0 — this test exercises the single-round-trip
+    // evidence-validation wiring specifically; the repair loop that would
+    // otherwise re-delegate on awaiting_evidence (default on, see
+    // tests/delegation/repair.test.ts) has its own dedicated coverage.
     const bus = new Bus();
-    const pending = new DelegationRuntime(bus, "session-1").delegate(input());
+    const pending = new DelegationRuntime(bus, "session-1").delegate({ ...input(), maxRepairAttempts: 0 });
     bus.emit(SUBAGENT_DELEGATION_RESPONSE_EVENT, {
       requestId: "request-1",
       ownerRunId: "session-1",

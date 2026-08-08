@@ -15,11 +15,33 @@ type EventBus = ExtensionAPI["events"];
 
 export interface DelegationInput extends Omit<DelegationRequest, "requestId" | "ownerRunId"> {
   requestId?: string;
+  /**
+   * How many times to re-delegate a child that returns `awaiting_evidence`,
+   * with the rejection reasons appended to its task, before giving up.
+   * Default 1 — Thanos's gate rejects on governance grounds too (missing
+   * artifacts, absent acceptance), which do not become true on a retry, so
+   * this stays a single bounded attempt rather than Atomic's three.
+   * `failed` outcomes (timeout, cancellation) are never repaired — nothing
+   * about the request was rejected, so re-asking with the same input would
+   * not change anything.
+   */
+  maxRepairAttempts?: number;
 }
 
 export type DelegationOutcome =
   | DelegationEvidenceVerdict
   | { state: "failed"; reason: string };
+
+function buildRepairTask(originalTask: string, reasons: readonly string[]): string {
+  return [
+    "Your previous attempt was rejected for the following reason(s):",
+    ...reasons.map((reason) => `- ${reason}`),
+    "",
+    "Fix these issues and try again.",
+    "",
+    originalTask,
+  ].join("\n");
+}
 
 export class DelegationRuntime {
   constructor(
@@ -29,15 +51,29 @@ export class DelegationRuntime {
     if (!ownerRunId.trim()) throw new Error("DelegationRuntime requires the live Pi session identity");
   }
 
-  delegate(input: DelegationInput, signal?: AbortSignal): Promise<DelegationOutcome> {
+  async delegate(input: DelegationInput, signal?: AbortSignal): Promise<DelegationOutcome> {
     const requestId = input.requestId ?? randomUUID();
-    const request: DelegationRequest = {
-      ...input,
-      requestId,
-      ownerRunId: this.ownerRunId,
-    };
-    const identity = { requestId, ownerRunId: this.ownerRunId, nodeId: input.nodeId };
-    const timeoutMs = Math.max(1, input.timeoutMs ?? 120_000);
+    const maxRepairAttempts = Math.max(0, input.maxRepairAttempts ?? 1);
+
+    let task = input.task;
+    let repairsUsed = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const request: DelegationRequest = { ...input, task, requestId, ownerRunId: this.ownerRunId };
+      const outcome = await this.attemptOnce(request, signal);
+      if (outcome.state !== "awaiting_evidence" || repairsUsed >= maxRepairAttempts) return outcome;
+      repairsUsed += 1;
+      // Built off the original task each time, not the previous repair's
+      // task, so a second repair (if maxRepairAttempts is ever raised above
+      // its default of 1) carries the latest reasons rather than an
+      // ever-growing nest of "your previous attempt was rejected" preambles.
+      task = buildRepairTask(input.task, outcome.reasons);
+    }
+  }
+
+  private attemptOnce(request: DelegationRequest, signal?: AbortSignal): Promise<DelegationOutcome> {
+    const identity = { requestId: request.requestId, ownerRunId: request.ownerRunId, nodeId: request.nodeId };
+    const timeoutMs = Math.max(1, request.timeoutMs ?? 120_000);
 
     return new Promise((resolve) => {
       let settled = false;
@@ -58,7 +94,7 @@ export class DelegationRuntime {
       };
       const unsubscribe = this.events.on(SUBAGENT_DELEGATION_RESPONSE_EVENT, (raw) => {
         const response = raw as Partial<DelegationEvidenceEnvelopeLike> | undefined;
-        if (!response || response.requestId !== requestId) return;
+        if (!response || response.requestId !== request.requestId) return;
         finish(validateDelegationEvidence(raw, identity, request.result));
       });
       const timer = setTimeout(() => {
