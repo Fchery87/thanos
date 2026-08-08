@@ -749,7 +749,7 @@ export function formatWorkflowStage(snapshot: WorkflowSnapshot | undefined): str
   const stageName = snapshot.phase
     .split("_")
     .map((word) => word[0].toUpperCase() + word.slice(1))
-    .join("");
+    .join(" ");
   return `Active Waves workflow stage: ${stageName}.`;
 }
 
