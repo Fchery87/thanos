@@ -25,9 +25,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assembleSystemPrompt } from "../src/runtime/prompt-assembly.ts";
-import { SKILLS_DIRECTIVE, TRUSTED_INSTRUCTIONS } from "../src/runtime/before-agent-start.ts";
+import { SKILLS_DIRECTIVE, TRUSTED_INSTRUCTIONS, formatPermissionMode } from "../src/runtime/before-agent-start.ts";
 import { formatRoster, loadRoster } from "../src/agents/roster.ts";
 import { buildGoalSystemPrompt } from "../src/goal/prompts.ts";
+import { PermissionManager } from "../src/permissions/manager.ts";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const asJson = process.argv.includes("--json");
@@ -68,6 +69,9 @@ const assembled = assembleSystemPrompt({
   trustedInstructions: TRUSTED_INSTRUCTIONS,
   skillsDirective: SKILLS_DIRECTIVE,
   roster,
+  // Default permission mode (yolo off) — the common case, and what a fresh
+  // PermissionManager() reports without needing a toggle first.
+  permissionMode: formatPermissionMode(new PermissionManager()),
   // An active goal is the worst realistic case for the dynamic tail. Memories
   // are per-project, so they are excluded rather than guessed at.
   goalDirective: buildGoalSystemPrompt("All tests pass"),
