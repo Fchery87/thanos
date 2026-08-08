@@ -20,7 +20,7 @@ function makeDeps(): InvariantTailDeps {
 }
 
 function userMessage(content: string) {
-  return { role: "user" as const, content: [{ type: "text" as const, text: content }] };
+  return { role: "user" as const, content: [{ type: "text" as const, text: content }], timestamp: 0 };
 }
 
 const plan: WavePlan = {
