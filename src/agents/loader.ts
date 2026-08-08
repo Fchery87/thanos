@@ -54,6 +54,30 @@ function parseToolsValue(value: string): string[] {
   return trimmed.split(",").map((item) => parseStringScalar(item)).filter(Boolean);
 }
 
+/**
+ * Unlike parseToolsValue, this does NOT silently filter out blank or
+ * non-string entries — a `fallbackModels` list with one bad entry among
+ * good ones should fail loudly, not quietly lose the bad entry. Preserving
+ * every entry as-is (including non-strings from the JSON-array form) lets
+ * validateManifest's per-entry check catch what's actually wrong, matching
+ * the same "store it, let validation reject it" posture the `model` key
+ * uses. `tools` keeps its own lenient behavior unchanged — that's an
+ * established, separate precedent this deliberately doesn't disturb.
+ */
+function parseFallbackModelsValue(value: string): unknown[] {
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // fall through to comma-separated parsing
+    }
+  }
+  return trimmed.split(",").map((item) => parseStringScalar(item));
+}
+
 function parsePositiveInteger(value: string, key: string): number {
   const parsed = Number(value.trim());
   if (!Number.isInteger(parsed) || parsed < 0) {
@@ -117,12 +141,15 @@ function parseFrontmatter(raw: string): Partial<AgentDefinition> & { body: strin
         while (i + 1 < frontmatter.length && /^\s*-\s+/.test(frontmatter[i + 1]!)) {
           i += 1;
           const item = frontmatter[i]!.replace(/^\s*-\s+/, "").trim();
-          if (item) models.push(parseStringScalar(item));
+          // Preserved even when blank (not `if (item)`) — a blank list item
+          // should reach validateManifest and be rejected loudly, the same
+          // posture the flat-value form below takes.
+          models.push(parseStringScalar(item));
         }
         if (models.length > 0) parsed.fallbackModels = models;
         continue;
       }
-      parsed.fallbackModels = parseToolsValue(rawValue);
+      parsed.fallbackModels = parseFallbackModelsValue(rawValue) as string[];
       continue;
     }
 

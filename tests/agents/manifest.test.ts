@@ -97,14 +97,17 @@ describe("validateManifest", () => {
       /must declare fallbackModels as a non-empty array/,
     );
     expect(() => validateManifest("explore", { fallbackModels: [""] })).toThrow(
-      /declares an invalid fallbackModels entry/,
+      /must declare every fallbackModels entry as a non-empty string/,
     );
     expect(() => validateManifest("explore", { fallbackModels: ["  "] })).toThrow(
-      /declares an invalid fallbackModels entry/,
+      /must declare every fallbackModels entry as a non-empty string/,
     );
     expect(() => validateManifest("explore", { fallbackModels: [123 as unknown as string] })).toThrow(
-      /declares an invalid fallbackModels entry/,
+      /must declare every fallbackModels entry as a non-empty string/,
     );
+    expect(() =>
+      validateManifest("explore", { fallbackModels: ["openai/gpt-5:medium", "" as string] }),
+    ).toThrow(/must declare every fallbackModels entry as a non-empty string/);
     expect(() =>
       validateManifest("explore", { fallbackModels: ["openai/gpt-5:medium", "anthropic/claude-haiku-4-5:off"] }),
     ).not.toThrow();
