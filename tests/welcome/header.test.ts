@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { noopTheme, stripAnsi } from "../../src/ui-utils";
 import { renderWelcomeHeader } from "../../src/welcome/header";
 
@@ -95,5 +96,79 @@ describe("renderWelcomeHeader", () => {
     expect(failed).toContain("MCP init error");
     expect(failed).toContain("0/3 connected · 3 failed");
     expect(failed).not.toContain("No MCP servers");
+  });
+
+  // MCP connects asynchronously, well after the header component is built —
+  // pi calls the header factory exactly once, so without this the welcome
+  // screen is frozen at the pre-init summary and always claims zero servers.
+  it("re-renders from the latest summary after MCP finishes connecting", () => {
+    const header = renderWelcomeHeader(noopTheme, {
+      modelStr: "model",
+      thinkingStr: "high",
+      mcp: { configured: 0, connected: 0, failed: 0, initFailed: false },
+      policy: { kind: "loaded", preset: "team", rules: 1, auditEnabled: false },
+      recentRows: [],
+    });
+
+    expect(header.render(80).join("\n")).toContain("No MCP servers");
+
+    header.update({ mcp: { configured: 4, connected: 3, failed: 1, initFailed: false } });
+
+    const after = header.render(80).join("\n");
+    expect(after).toContain("3/4 connected · 1 failed");
+    expect(after).not.toContain("No MCP servers");
+  });
+
+  // Session labels come from the user's own first message, so they carry
+  // whatever they carry. Measuring them by code unit lands the right border
+  // short by one column per wide grapheme.
+  it("keeps box borders aligned when a session label has wide characters", () => {
+    const lines = renderWelcomeHeader(noopTheme, {
+      modelStr: "model",
+      thinkingStr: "high",
+      mcp: { configured: 1, connected: 1, failed: 0, initFailed: false },
+      policy: { kind: "loaded", preset: "team", rules: 1, auditEnabled: false },
+      recentRows: [
+        { label: "重构治理交互原语", age: "2h ago" },
+        { label: "ship the 🚀 release", age: "1d ago" },
+      ],
+    }).render(40);
+
+    // Single-column layout at 40 columns: every framed row is exactly 40 wide.
+    const framed = lines.filter((line) => /^[╭│╰]/.test(stripAnsi(line)));
+    expect(framed.length).toBeGreaterThan(0);
+    for (const line of framed) {
+      expect(visibleWidth(line)).toBe(40);
+    }
+  });
+
+  it("removes terminal controls from recent-session labels", () => {
+    const label = "safe\u001b]52;c;clipboard\u0007\u001b]8;;https://example.test\u001b\\link\u001b]8;;\u001b\\\nnext";
+    const output = renderWelcomeHeader(noopTheme, {
+      modelStr: "model",
+      thinkingStr: "high",
+      mcp: { configured: 1, connected: 1, failed: 0, initFailed: false },
+      policy: { kind: "loaded", preset: "team", rules: 1, auditEnabled: false },
+      recentRows: [{ label, age: "now" }],
+    }).render(80).join("\n");
+
+    const plain = stripAnsi(output);
+    const recent = plain.split("Recent work").at(-1) ?? "";
+    const recentLabel = recent.split("(now)")[0] ?? "";
+    expect(recentLabel).toContain("safelinknext");
+    expect(recentLabel).not.toContain("\u001b");
+    expect(recentLabel).not.toContain("\u0007");
+  });
+  it("does not stretch the right column across a very wide terminal", () => {
+    const lines = renderWelcomeHeader(noopTheme, {
+      modelStr: "model",
+      thinkingStr: "high",
+      mcp: { configured: 1, connected: 1, failed: 0, initFailed: false },
+      policy: { kind: "loaded", preset: "team", rules: 1, auditEnabled: false },
+      recentRows: [{ label: "Wide terminal", age: "2h ago" }],
+    }).render(240);
+
+    const widest = Math.max(...lines.map((line) => visibleWidth(line)));
+    expect(widest).toBeLessThanOrEqual(68 + 3 + 54);
   });
 });

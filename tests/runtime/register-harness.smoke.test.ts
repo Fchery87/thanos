@@ -76,8 +76,8 @@ function shortcutNames(api: ReturnType<typeof createFakePi>): string[] {
 }
 
 // Every command registered directly in register-harness.ts (11), plus those
-// delegated to registerGoalCommand (1: goal), registerSlashCommands (11), and
-// registerLensLiteCommand (1: lens) — 24 total. remember/memory are the only
+// delegated to registerGoalCommand (1: goal), registerSlashCommands (12), and
+// registerLensLiteCommand (1: lens) — 25 total. remember/memory are the only
 // two gated on isSubagentProcess; they are included here (parent surface).
 //
 // `modes` was removed on 2026-07-27: it set a defaultTaskType that only ever
@@ -91,7 +91,7 @@ const PARENT_COMMANDS = [
   "todo", "remember", "memory", "yolo", "delivery", "ship", "mcp",
   "thinking", "models", "designer", "doctor",
   "goal",
-  "skills", "context", "policy", "tools", "spec", "waves",
+  "skills", "context", "policy", "tools", "spec", "run", "waves",
   "subagents-models",
   "audit", "rename", "status",
   "lens",
