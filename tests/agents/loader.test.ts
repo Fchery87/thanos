@@ -281,6 +281,49 @@ describe("loadAgent", () => {
     await expect(loadAgent("build")).rejects.toThrow(/must declare every fallbackModels entry as a non-empty string/);
   });
 
+  it("rejects a fallbackModels YAML list block with a bare '-' item (no trailing whitespace) between good ones", async () => {
+    // A bare `-` fails `/^\s*-\s+/` (requires whitespace after the dash), so
+    // an earlier version of this parser stopped collecting list items right
+    // there — silently dropping this entry AND every one after it, instead
+    // of preserving it for validateManifest to reject.
+    const home = await mkdtemp(join(tmpdir(), "thanos-agent-"));
+    process.env.HOME = home;
+
+    const agentDir = join(home, ".pi", "agent", "agents");
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(
+      join(agentDir, "build.md"),
+      [
+        "---",
+        'tools: ["read", "write"]',
+        "fallbackModels:",
+        "  - openai/gpt-5:medium",
+        "  -",
+        "  - anthropic/claude-haiku-4-5:off",
+        "---",
+        "You are a build specialist.",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    await expect(loadAgent("build")).rejects.toThrow(/must declare every fallbackModels entry as a non-empty string/);
+  });
+
+  it("rejects fallbackModels declared with no list items following it, the same as an empty array", async () => {
+    const home = await mkdtemp(join(tmpdir(), "thanos-agent-"));
+    process.env.HOME = home;
+
+    const agentDir = join(home, ".pi", "agent", "agents");
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(
+      join(agentDir, "build.md"),
+      ["---", 'tools: ["read", "write"]', "fallbackModels:", "---", "You are a build specialist."].join("\n"),
+      "utf-8",
+    );
+
+    await expect(loadAgent("build")).rejects.toThrow(/must declare fallbackModels as a non-empty array/);
+  });
+
   it("loads tools from agent markdown frontmatter for explore type", async () => {
     process.env.HOME = await repoHomeWithRealAgents();
     const def = await loadAgent("explore");

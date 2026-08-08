@@ -21,7 +21,10 @@ export function findUnpinnedDelegationPackage(packages: readonly unknown[]): str
     // Guard against a longer name that merely shares the prefix.
     const tail = spec.slice(`npm:${DELEGATION_PACKAGE}`.length);
     if (tail !== "" && !tail.startsWith("@")) continue;
-    if (EXACT_VERSION.test(spec)) return undefined;
+    // Keep scanning past an exact match — a malformed settings.json could
+    // carry a second, unpinned entry for the same package, and returning
+    // here on the first match would hide it.
+    if (EXACT_VERSION.test(spec)) continue;
     return spec;
   }
   return undefined;

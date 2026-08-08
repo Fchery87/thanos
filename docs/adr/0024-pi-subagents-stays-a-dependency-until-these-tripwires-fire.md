@@ -84,7 +84,7 @@ array entries. Three points, verified, established this was a calibration
 fix rather than goalpost-moving:
 
 1. **The script already rejected a lower-level count for this exact
-   reason.** Its own comment explains why raw `^@@ ` counting was
+   reason.** Its own comment explains why raw `^@@` counting was
    discarded: it "counts every non-contiguous change region per file
    separately and does not track the ADR's actual intent." That argument
    applies one level up unchanged — file-level markers also fail to track

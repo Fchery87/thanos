@@ -140,6 +140,32 @@ describe("reconcileInvariantTail", () => {
     expect(result).toBeUndefined();
   });
 
+  it("clears a stale own copy left over from before compaction once the turn-start message starts covering the same content", () => {
+    const deps = makeDeps();
+    deps.goalController.set("Ship the feature", 0);
+
+    // A stale invariant-tail copy from earlier (e.g. injected mid-turn after
+    // a compaction, on some prior state) plus a fresh turn-start message
+    // that now covers the CURRENT content on its own — the stale copy must
+    // not be left sitting alongside it forever, even though no new envelope
+    // needs to be appended.
+    const turnStartTail = {
+      role: "custom" as const,
+      customType: INVARIANT_TAIL_CUSTOM_TYPE,
+      content: buildInvariantContent(deps),
+      display: false,
+      timestamp: 0,
+    };
+    const messages = [userMessage("hi"), invariantCopy("stale leftover"), turnStartTail];
+
+    const result = reconcileInvariantTail(messages, deps);
+
+    expect(result).toBeDefined();
+    expect(countInvariantCopies(result!)).toBe(0);
+    expect(result).toHaveLength(2);
+    expect(result).toContainEqual(turnStartTail);
+  });
+
   it("is idempotent: firing again with the exact same state and the already-restored block returns undefined (no churn)", () => {
     const deps = makeDeps();
     deps.goalController.set("Ship the feature", 0);

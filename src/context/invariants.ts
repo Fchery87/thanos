@@ -72,27 +72,24 @@ function isInvariantTailMessage(
 }
 
 /**
- * True when the current, up-to-date text is already conveyed by some
- * existing harness-authored message, so no (re)injection is needed:
- *
- *  - `content` (the raw, pre-envelope goal/spec/workflow text) appears
- *    verbatim inside before_agent_start's own turn-start `harness-context`
- *    message, which bundles the same text alongside memories and is never
- *    JSON-escaped. Without this check, the very first `context` hook call of
- *    an ordinary turn would inject a second, redundant copy right next to
- *    the one before_agent_start just sent — not just once, but for every
- *    remaining LLM call in that turn, since neither message would ever
- *    again look "missing."
- *  - OR `rendered` (the JSON-escaped envelope form) exactly matches a prior
- *    invariant-tail copy this function itself appended — the idempotence
- *    case. `content` alone can't detect this: escaping a multi-line string
- *    means it is never a raw substring of its own escaped form.
+ * True when `content` (the raw, pre-envelope goal/spec/workflow text)
+ * appears verbatim inside some OTHER harness-context message — in practice,
+ * before_agent_start's own turn-start message, which bundles the same text
+ * alongside memories and is never JSON-escaped. Deliberately excludes our
+ * own prior invariant-tail copies (see `isInvariantTailMessage`): whether
+ * one of those is stale or current is a separate question, answered by the
+ * caller, not folded in here.
  */
-function isAlreadyConveyed(messages: readonly AgentMessageLike[], content: string, rendered: string): boolean {
+function isConveyedByTurnStart(messages: readonly AgentMessageLike[], content: string): boolean {
   return messages.some((message) => {
     if (!isCustomTextMessage(message) || message.customType !== INVARIANT_TAIL_CUSTOM_TYPE) return false;
+    // Inlined rather than calling isInvariantTailMessage(message): TS narrows
+    // the negative branch of a type-predicate call to `never` when applied to
+    // a value already narrowed to that predicate's exact target type by
+    // isCustomTextMessage above — see the same fix in reconcileInvariantTail's
+    // predecessor, isAlreadyConveyed, from the prior review round.
     const isOwnCopy = message.content.startsWith(`id:${INVARIANT_TAIL_ID}\n`);
-    return isOwnCopy ? message.content === rendered : message.content.includes(content);
+    return !isOwnCopy && message.content.includes(content);
   });
 }
 
@@ -102,8 +99,8 @@ function isAlreadyConveyed(messages: readonly AgentMessageLike[], content: strin
  * after a compaction that `before_agent_start` (once per user turn) never
  * sees. Returns undefined whenever nothing needs to change, so an ordinary
  * turn with no active goal/spec/workflow — and a turn where the text is
- * already present, whether via a prior invariant-tail copy or via
- * before_agent_start's own turn-start message — pays nothing.
+ * already present and no stale copy of our own needs clearing — pays
+ * nothing.
  */
 export function reconcileInvariantTail(
   messages: readonly AgentMessageLike[],
@@ -123,7 +120,20 @@ export function reconcileInvariantTail(
     maxBytes: 16_000,
   }));
   if (!rendered) return undefined;
-  if (isAlreadyConveyed(messages, content, rendered)) return undefined;
+
+  const ownCopies = messages.filter(isInvariantTailMessage);
+
+  if (isConveyedByTurnStart(messages, content)) {
+    // before_agent_start's own message already carries the current text —
+    // no new envelope needed. But any own copies left over from earlier in
+    // this turn (or from before a compaction) are now redundant duplicates
+    // of what the turn-start message conveys, and must be cleared here —
+    // otherwise they accumulate turn after turn, since this branch would
+    // keep returning early without ever reaching the strip step below.
+    return ownCopies.length === 0 ? undefined : messages.filter((message) => !isInvariantTailMessage(message));
+  }
+
+  if (ownCopies.length === 1 && ownCopies[0]!.content === rendered) return undefined;
 
   const kept = messages.filter((message) => !isInvariantTailMessage(message));
   const restored: AgentMessageLike = {
