@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { planUpdate, reassertExactManifestPin, spawnRelay } from "../../scripts/thanos-update.mjs";
+import { planUpdate, reassertExactManifestPin, spawnRelay } from "../../scripts/thanos-update-lib.mjs";
 
 const ok = { code: 0 };
 const fail = { code: 1 };
