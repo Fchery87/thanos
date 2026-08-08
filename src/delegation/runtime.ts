@@ -69,7 +69,6 @@ export class DelegationRuntime {
 
     let task = input.task;
     let repairsUsed = 0;
-    // eslint-disable-next-line no-constant-condition
     while (true) {
       const request: DelegationRequest = { ...delegationFields, task, requestId, ownerRunId: this.ownerRunId };
       const outcome = await this.attemptOnce(request, signal);
