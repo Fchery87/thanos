@@ -115,6 +115,7 @@ describe("StdioMCPClient", () => {
     const { fakeProc } = makeFakeProcess();
     mockSpawn.mockReturnValue(fakeProc);
 
+    const priorSecret = process.env.THANOS_TEST_SECRET;
     process.env.THANOS_TEST_SECRET = "super-secret-value";
     try {
       const config = { command: "srv", args: [], env: { MY_VAR: "hello" } };
@@ -134,7 +135,10 @@ describe("StdioMCPClient", () => {
 
       client.disconnect();
     } finally {
-      delete process.env.THANOS_TEST_SECRET;
+      // Restore rather than delete: if the runner supplied this variable, a
+      // blind delete would strip it for every later test in the process.
+      if (priorSecret === undefined) delete process.env.THANOS_TEST_SECRET;
+      else process.env.THANOS_TEST_SECRET = priorSecret;
     }
   });
 

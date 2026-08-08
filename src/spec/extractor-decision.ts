@@ -159,7 +159,37 @@ interface RowClassification {
   dedupeKey?: string;
 }
 
-function classifyRow(row: unknown, window: ObservationWindow): RowClassification {
+/** Window bounds resolved to instants once, so no row re-parses them. */
+interface WindowBounds {
+  startMs: number;
+  endMs: number;
+}
+
+/**
+ * Refuse to compute a verdict from bounds nobody validated. `classifyRow` used
+ * to compare `createdAt` against `window.start`/`end` as raw strings, so an
+ * unparseable bound (`--since yesterday`) or an inverted range silently
+ * admitted or dropped rows and still returned a confident-looking record —
+ * the precise failure this decision procedure exists to prevent. Throwing
+ * beats returning `inconclusive`: an invalid window is a caller bug, not a
+ * finding about the extractor.
+ */
+function resolveWindowBounds(window: ObservationWindow): WindowBounds {
+  const startMs = Date.parse(window.start);
+  const endMs = Date.parse(window.end);
+  if (Number.isNaN(startMs)) {
+    throw new Error(`observation window has an unparseable start bound: ${JSON.stringify(window.start)}`);
+  }
+  if (Number.isNaN(endMs)) {
+    throw new Error(`observation window has an unparseable end bound: ${JSON.stringify(window.end)}`);
+  }
+  if (endMs < startMs) {
+    throw new Error(`observation window ends before it starts: ${window.start} → ${window.end}`);
+  }
+  return { startMs, endMs };
+}
+
+function classifyRow(row: unknown, window: ObservationWindow, bounds: WindowBounds): RowClassification {
   if (typeof row !== "object" || row === null) return { reason: "malformed" };
   const candidate = row as ExtractionLedgerRow;
 
@@ -187,7 +217,10 @@ function classifyRow(row: unknown, window: ObservationWindow): RowClassification
     return { reason: "future_schema" };
   }
 
-  if (createdAt < window.start || createdAt > window.end) {
+  // Instants, not strings: a row stamped "2026-07-01T00:30:00+02:00" sorts
+  // after a "…T00:00:00.000Z" start lexically while actually preceding it.
+  const createdAtMs = Date.parse(createdAt);
+  if (createdAtMs < bounds.startMs || createdAtMs > bounds.endMs) {
     return { reason: "stale_window" };
   }
 
@@ -203,6 +236,7 @@ export function decideExtractorFate(
   input: ExtractorDecisionInput,
   options: { decidedAt?: string } = {},
 ): ExtractorDecisionRecord {
+  const bounds = resolveWindowBounds(input.window);
   const outcomeCounts: Partial<Record<ExtractionOutcome, number>> = {};
   const rejectionReasons: Partial<Record<RowRejectionReason, number>> = {};
   const seen = new Set<string>();
@@ -211,7 +245,7 @@ export function decideExtractorFate(
   let rejectedRowCount = 0;
 
   for (const row of input.rows) {
-    const classification = classifyRow(row, input.window);
+    const classification = classifyRow(row, input.window, bounds);
     if (classification.reason) {
       rejectedRowCount += 1;
       rejectionReasons[classification.reason] = (rejectionReasons[classification.reason] ?? 0) + 1;

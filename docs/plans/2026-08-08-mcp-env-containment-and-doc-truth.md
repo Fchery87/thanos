@@ -1,9 +1,11 @@
-# MCP Env Containment and Harness Truth Repair Implementation Plan
+**Status:** Complete — all five tasks executed 2026-08-08 (PR #71). Kept only
+until its "What this plan deliberately does not do" decisions are folded into an
+ADR, per the plan-document lifecycle rule; delete it then. Derived from a
+2026-08-08 audit of the six live plan documents, then re-verified line-by-line
+against the codebase (three of the audit's own headline findings did not survive
+that re-verification and were corrected or dropped).
 
-**Status:** Proposed — not started. Derived from a 2026-08-08 audit of the six
-live plan documents, then re-verified line-by-line against the codebase (three
-of the audit's own headline findings did not survive that re-verification and
-were corrected or dropped; see "What this plan deliberately does not do").
+# MCP Env Containment and Harness Truth Repair Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
@@ -562,11 +564,17 @@ Add `"extractor-decision": "bun scripts/extractor-decision.mjs"` to
 **Step 4: Investigate the timeout rate — this is the real finding**
 
 Across all ledgers the outcome counts are `timeout: 125`, `accepted: 23`,
-`schema_rejected: 10`, `provider_error: 2`. **The extractor times out on roughly
-78% of the invocations it logs.** Timeouts are excluded from the qualifying
-denominator by design (`QUALIFYING_OUTCOMES`, `:15`), so the accept rate is
-computed over the ~22% of calls that returned anything at all — which is why
-optimising for accept rate is the wrong instinct here.
+`schema_rejected: 10`, `provider_error: 2` — 160 rows. **The extractor times out
+on roughly 78% of the invocations it logs.** Timeouts are excluded from the
+qualifying denominator by design (`QUALIFYING_OUTCOMES`, `:15`), so the accept
+rate is computed over the ~22% of calls that returned anything at all — which is
+why optimising for accept rate is the wrong instinct here.
+
+> **Superseded sample.** These are the figures as measured when this plan was
+> written. The ledgers kept accruing during execution; ADR 0006's 2026-08-08
+> amendment records the figures the task actually landed on — 150 timeouts of
+> 185 rows (81.1%) — and that is the number to cite. The two are the same
+> population sampled hours apart, not a disagreement.
 
 `DEFAULT_TIMEOUT_MS = 10_000` (`src/spec/extractor.ts:17`), overridable via
 `spec.timeoutMs` in `agent/settings.json` (`:49`). Determine, and record:

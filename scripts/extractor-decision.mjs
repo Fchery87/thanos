@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { execSync } from "node:child_process";
 import {
@@ -66,6 +66,20 @@ Options:
 
   if (!options.revision) {
     options.revision = getGitRevision(options.repository);
+  }
+
+  // Fail here rather than letting decideExtractorFate throw mid-run: a bad
+  // --since/--until is a usage error and deserves a usage error's message.
+  for (const [flag, value] of [["--since", options.since], ["--until", options.until]]) {
+    if (Number.isNaN(Date.parse(value))) {
+      console.error(`${flag} is not a parseable timestamp: ${JSON.stringify(value)}`);
+      console.error("Use an ISO-8601 instant, e.g. 2026-07-27T00:00:00.000Z");
+      process.exit(1);
+    }
+  }
+  if (Date.parse(options.until) < Date.parse(options.since)) {
+    console.error(`--until (${options.until}) precedes --since (${options.since}).`);
+    process.exit(1);
   }
 
   return options;
