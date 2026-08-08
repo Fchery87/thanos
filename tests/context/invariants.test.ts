@@ -23,6 +23,23 @@ function userMessage(content: string) {
   return { role: "user" as const, content: [{ type: "text" as const, text: content }], timestamp: 0 };
 }
 
+function invariantCopy(content: string) {
+  return {
+    role: "custom" as const,
+    customType: INVARIANT_TAIL_CUSTOM_TYPE,
+    content: `id:${INVARIANT_TAIL_ID}\norigin:harness\nauthority:instruction\nscope:session\nsource:context-invariants\ntrusted:true\ncontent:"${content}"`,
+    display: false,
+    timestamp: 0,
+  };
+}
+
+function countInvariantCopies(messages: readonly unknown[]): number {
+  return messages.filter((m) => {
+    const c = m as { role?: unknown; content?: unknown };
+    return c.role === "custom" && typeof c.content === "string" && c.content.startsWith(`id:${INVARIANT_TAIL_ID}\n`);
+  }).length;
+}
+
 const plan: WavePlan = {
   id: "wave",
   goal: "implement",
@@ -49,16 +66,9 @@ describe("reconcileInvariantTail", () => {
 
   it("leaves messages untouched even if a stale invariant block from an earlier active state remains — ordinary chat pays nothing", () => {
     const deps = makeDeps();
-    const staleBlock = {
-      role: "custom" as const,
-      customType: INVARIANT_TAIL_CUSTOM_TYPE,
-      content: `id:${INVARIANT_TAIL_ID}\norigin:harness\nauthority:instruction\nscope:session\nsource:context-invariants\ntrusted:true\ncontent:"stale"`,
-      display: false,
-      timestamp: 0,
-    };
     // Nothing active now (fresh deps) — the hook must not even look at, let
     // alone strip, a pre-existing block.
-    expect(reconcileInvariantTail([userMessage("hi"), staleBlock], deps)).toBeUndefined();
+    expect(reconcileInvariantTail([userMessage("hi"), invariantCopy("stale")], deps)).toBeUndefined();
   });
 
   it("appends exactly one block when messages are missing it, with an active goal", () => {
@@ -80,24 +90,54 @@ describe("reconcileInvariantTail", () => {
   it("ends with exactly one block, stripping a stale copy first, when the active state has moved on", () => {
     const deps = makeDeps();
     deps.goalController.set("Ship the feature A", 0);
-    const staleButSameId = {
+
+    const result = reconcileInvariantTail([userMessage("hi"), invariantCopy("outdated goal text")], deps);
+
+    expect(result).toBeDefined();
+    expect(countInvariantCopies(result!)).toBe(1);
+    const added = result!.at(-1) as { content: string };
+    expect(added.content).toContain("Ship the feature A");
+    expect(added.content).not.toContain("outdated goal text");
+  });
+
+  it("collapses two or more pre-existing stale copies down to exactly one", () => {
+    const deps = makeDeps();
+    deps.goalController.set("Ship the feature A", 0);
+    const messages = [
+      userMessage("hi"),
+      invariantCopy("outdated goal text 1"),
+      userMessage("hi again"),
+      invariantCopy("outdated goal text 2"),
+      invariantCopy("outdated goal text 3"),
+    ];
+
+    const result = reconcileInvariantTail(messages, deps);
+
+    expect(result).toBeDefined();
+    expect(countInvariantCopies(result!)).toBe(1);
+    const added = result!.at(-1) as { content: string };
+    expect(added.content).toContain("Ship the feature A");
+  });
+
+  it("does not inject a redundant copy when before_agent_start's own turn-start message already conveys the same content", () => {
+    const deps = makeDeps();
+    deps.goalController.set("Ship the feature", 0);
+
+    // Mirrors what before-agent-start.ts's assembleSystemPrompt call actually
+    // sends as the turn-start tail when there are no memories this turn: the
+    // exact same goal/spec/workflow text, under the same customType, but
+    // never wrapped in our envelope (no `id:` prefix).
+    const turnStartTail = {
       role: "custom" as const,
       customType: INVARIANT_TAIL_CUSTOM_TYPE,
-      content: `id:${INVARIANT_TAIL_ID}\norigin:harness\nauthority:instruction\nscope:session\nsource:context-invariants\ntrusted:true\ncontent:"outdated goal text"`,
+      content: buildInvariantContent(deps),
       display: false,
       timestamp: 0,
     };
 
-    const result = reconcileInvariantTail([userMessage("hi"), staleButSameId], deps);
+    const result = reconcileInvariantTail([userMessage("hi"), turnStartTail], deps);
 
-    expect(result).toBeDefined();
-    const invariantCopies = result!.filter((m) => {
-      const c = m as { role?: unknown; content?: unknown };
-      return c.role === "custom" && typeof c.content === "string" && c.content.startsWith(`id:${INVARIANT_TAIL_ID}\n`);
-    });
-    expect(invariantCopies).toHaveLength(1);
-    expect((invariantCopies[0] as { content: string }).content).toContain("Ship the feature A");
-    expect((invariantCopies[0] as { content: string }).content).not.toContain("outdated goal text");
+    expect(result).toBeUndefined();
   });
 
   it("is idempotent: firing again with the exact same state and the already-restored block returns undefined (no churn)", () => {
@@ -152,13 +192,10 @@ describe("reconcileInvariantTail", () => {
 
     deps.workflowRuntime.bindPlan(plan);
     const afterApproval = reconcileInvariantTail(afterPlanning, deps)!;
-    const copies = afterApproval.filter((m) => {
-      const c = m as { role?: unknown; content?: unknown };
-      return c.role === "custom" && typeof c.content === "string" && c.content.startsWith(`id:${INVARIANT_TAIL_ID}\n`);
-    });
-    expect(copies).toHaveLength(1);
-    expect((copies[0] as { content: string }).content).toContain("Awaiting Approval");
-    expect((copies[0] as { content: string }).content).not.toContain("Active Waves workflow stage: Planning.");
+    expect(countInvariantCopies(afterApproval)).toBe(1);
+    const added = afterApproval.at(-1) as { content: string };
+    expect(added.content).toContain("Awaiting Approval");
+    expect(added.content).not.toContain("Active Waves workflow stage: Planning.");
   });
 });
 

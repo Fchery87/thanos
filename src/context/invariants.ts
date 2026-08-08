@@ -21,7 +21,12 @@ type AgentMessageLike = ContextEvent["messages"][number];
  */
 export const INVARIANT_TAIL_ID = "harness-invariant-tail";
 
-/** Reuses before_agent_start's customType — both are hidden harness-authored context. */
+/**
+ * Reuses before_agent_start's customType — both are hidden harness-authored
+ * context, and sharing it is what lets `isAlreadyConveyed` recognize
+ * before_agent_start's own turn-start message as already covering the same
+ * ground, instead of injecting a redundant second copy beside it.
+ */
 export const INVARIANT_TAIL_CUSTOM_TYPE = "harness-context";
 
 export interface InvariantTailDeps {
@@ -54,13 +59,41 @@ export function buildInvariantContent(deps: InvariantTailDeps): string | undefin
   }).dynamicMessage;
 }
 
-function isInvariantTailMessage(message: AgentMessageLike): boolean {
-  const candidate = message as { role?: unknown; content?: unknown };
-  return (
-    candidate.role === "custom"
-    && typeof candidate.content === "string"
-    && candidate.content.startsWith(`id:${INVARIANT_TAIL_ID}\n`)
-  );
+function isCustomTextMessage(
+  message: AgentMessageLike,
+): message is AgentMessageLike & { role: "custom"; content: string } {
+  return message.role === "custom" && typeof message.content === "string";
+}
+
+function isInvariantTailMessage(
+  message: AgentMessageLike,
+): message is AgentMessageLike & { role: "custom"; content: string } {
+  return isCustomTextMessage(message) && message.content.startsWith(`id:${INVARIANT_TAIL_ID}\n`);
+}
+
+/**
+ * True when the current, up-to-date text is already conveyed by some
+ * existing harness-authored message, so no (re)injection is needed:
+ *
+ *  - `content` (the raw, pre-envelope goal/spec/workflow text) appears
+ *    verbatim inside before_agent_start's own turn-start `harness-context`
+ *    message, which bundles the same text alongside memories and is never
+ *    JSON-escaped. Without this check, the very first `context` hook call of
+ *    an ordinary turn would inject a second, redundant copy right next to
+ *    the one before_agent_start just sent — not just once, but for every
+ *    remaining LLM call in that turn, since neither message would ever
+ *    again look "missing."
+ *  - OR `rendered` (the JSON-escaped envelope form) exactly matches a prior
+ *    invariant-tail copy this function itself appended — the idempotence
+ *    case. `content` alone can't detect this: escaping a multi-line string
+ *    means it is never a raw substring of its own escaped form.
+ */
+function isAlreadyConveyed(messages: readonly AgentMessageLike[], content: string, rendered: string): boolean {
+  return messages.some((message) => {
+    if (!isCustomTextMessage(message) || message.customType !== INVARIANT_TAIL_CUSTOM_TYPE) return false;
+    const isOwnCopy = message.content.startsWith(`id:${INVARIANT_TAIL_ID}\n`);
+    return isOwnCopy ? message.content === rendered : message.content.includes(content);
+  });
 }
 
 /**
@@ -68,8 +101,9 @@ function isInvariantTailMessage(message: AgentMessageLike): boolean {
  * `context` hook, which fires before every LLM call — including mid-turn,
  * after a compaction that `before_agent_start` (once per user turn) never
  * sees. Returns undefined whenever nothing needs to change, so an ordinary
- * turn with no active goal/spec/workflow — and a turn where the block is
- * already present and current — pays nothing.
+ * turn with no active goal/spec/workflow — and a turn where the text is
+ * already present, whether via a prior invariant-tail copy or via
+ * before_agent_start's own turn-start message — pays nothing.
  */
 export function reconcileInvariantTail(
   messages: readonly AgentMessageLike[],
@@ -89,11 +123,7 @@ export function reconcileInvariantTail(
     maxBytes: 16_000,
   }));
   if (!rendered) return undefined;
-
-  const existing = messages.filter(isInvariantTailMessage);
-  const alreadyCurrent = existing.length === 1
-    && (existing[0] as { content: string }).content === rendered;
-  if (alreadyCurrent) return undefined;
+  if (isAlreadyConveyed(messages, content, rendered)) return undefined;
 
   const kept = messages.filter((message) => !isInvariantTailMessage(message));
   const restored: AgentMessageLike = {
@@ -102,6 +132,6 @@ export function reconcileInvariantTail(
     content: rendered,
     display: false,
     timestamp: Date.now(),
-  } as AgentMessageLike;
+  };
   return [...kept, restored];
 }
