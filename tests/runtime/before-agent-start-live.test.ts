@@ -120,6 +120,36 @@ describe("before_agent_start, live (scratch repo)", () => {
     expect(resultA.message?.content).not.toContain("all tests pass");
   });
 
+  it("names the active permission mode in the static systemPrompt, driven by the live permissions dep", async () => {
+    const project = repo.split("/").pop() as string;
+    writeMemory(repo, project, "irrelevant to this test");
+
+    const pi = makeFakePi();
+    const permissions = new PermissionManager();
+    const deps: BeforeAgentStartDeps = {
+      sessionId: "session-yolo",
+      isSubagent: false,
+      permissions,
+      spec: new SpecEngine(),
+      lens: new LensLite("session-yolo"),
+      goalController: new GoalController(),
+    };
+    const handler = await registerAndCapture(pi, deps);
+
+    const before = await handler({ prompt: "do task", systemPrompt: "BASE" }, makeFakeCtx());
+    expect(before.systemPrompt).toContain("Permission mode: default");
+
+    // Same PermissionManager instance, mutated between turns — proves the
+    // block reads live state from deps.permissions, not a value captured
+    // once at registration time.
+    permissions.setYolo(true);
+    const after = await handler({ prompt: "do task", systemPrompt: "BASE" }, makeFakeCtx());
+    expect(after.systemPrompt).toContain("Permission mode: yolo");
+
+    // Lives in the cached static prompt, not the per-turn dynamic tail.
+    expect(after.message?.content ?? "").not.toContain("Permission mode");
+  });
+
   it("does not inject parent-only memory or roster into a subagent session, but still delivers an active goal", async () => {
     const project = repo.split("/").pop() as string;
     writeMemory(repo, project, "Parent-only preference — must not reach the child");
