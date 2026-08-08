@@ -87,7 +87,7 @@ A **delivery mode** decides how far a repo's work is allowed to travel and how a
 |------|------|---------------|
 | `local-only` | Deny rules for `git push` and `gh pr/release/repo create` | Work never leaves the machine. `git push` is denied; `/ship` performs a fast-forward-only local merge into the default branch. |
 | `direct-PR` | None (preset ceiling applies unchanged) | Team flow; lands via PR. `/ship` is informational (Thanos does not push in v1). |
-| `no-mistakes` | None (preset ceiling applies unchanged) | Strictest preset for high-stakes repos. `/ship` is informational in v1. |
+| `no-mistakes` | None (preset ceiling applies unchanged) | Marks a high-stakes repo; pair it with a strict preset in `harness.policy.json`, which the mode does not set for you. `/ship` is informational in v1. |
 
 An unknown repo falls back to the safe default `local-only` / `attended` — Thanos never defaults to something more permissive.
 
