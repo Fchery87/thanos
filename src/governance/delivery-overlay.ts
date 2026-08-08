@@ -105,7 +105,13 @@ export function deliveryPolicyOverlay(mode: DeliveryMode): PolicyRule[] {
   ];
 }
 
-/** Map a delivery mode to the base policy preset it should run under. */
+/**
+ * Map a delivery mode to the base policy preset it should run under.
+ *
+ * NOTE: This mapping is a documented intention that is deliberately NOT wired
+ * into the live load path (see docs/plans/2026-08-08-mcp-env-containment-and-doc-truth.md Task 3).
+ * Presets remain user-configured via harness.policy.json or default to "personal".
+ */
 export function presetForMode(mode: DeliveryMode): PolicyPreset {
   switch (mode) {
     case "no-mistakes":
