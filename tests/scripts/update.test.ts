@@ -1,8 +1,25 @@
-import { describe, expect, it } from "vitest";
-import { planUpdate, spawnRelay } from "../../scripts/thanos-update.mjs";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { planUpdate, reassertExactManifestPin, spawnRelay } from "../../scripts/thanos-update.mjs";
 
 const ok = { code: 0 };
 const fail = { code: 1 };
+
+const dirs: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+});
+
+async function manifestFile(content: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "thanos-update-manifest-"));
+  dirs.push(dir);
+  const path = join(dir, "package.json");
+  await writeFile(path, content, "utf-8");
+  return path;
+}
 
 describe("thanos update", () => {
   it("moves to the pinned target when it differs and the patch succeeds", async () => {
@@ -101,6 +118,44 @@ describe("thanos update", () => {
     expect(result.status).toBe("broken");
     expect(result.from).toBe("0.41.0");
     expect(installCalls).toEqual(["0.42.1", "0.41.0"]);
+  });
+
+  describe("reassertExactManifestPin (real file I/O)", () => {
+    it("writes the exact version when dependencies is missing entirely", async () => {
+      const path = await manifestFile(JSON.stringify({ name: "pi-extensions" }));
+      await reassertExactManifestPin("0.42.1", path);
+      const manifest = JSON.parse(await readFile(path, "utf-8"));
+      expect(manifest.dependencies["pi-subagents"]).toBe("0.42.1");
+    });
+
+    it("replaces a caret range with the exact version", async () => {
+      const path = await manifestFile(JSON.stringify({ dependencies: { "pi-subagents": "^0.42.1" } }));
+      await reassertExactManifestPin("0.42.1", path);
+      const manifest = JSON.parse(await readFile(path, "utf-8"));
+      expect(manifest.dependencies["pi-subagents"]).toBe("0.42.1");
+    });
+
+    it("is a no-op when the pin is already exact", async () => {
+      const path = await manifestFile(JSON.stringify({ dependencies: { "pi-subagents": "0.42.1" } }));
+      const before = await readFile(path, "utf-8");
+      await reassertExactManifestPin("0.42.1", path);
+      expect(await readFile(path, "utf-8")).toBe(before);
+    });
+
+    it("preserves other dependencies untouched", async () => {
+      const path = await manifestFile(JSON.stringify({ dependencies: { "pi-web-access": "^0.18.0" } }));
+      await reassertExactManifestPin("0.42.1", path);
+      const manifest = JSON.parse(await readFile(path, "utf-8"));
+      expect(manifest.dependencies["pi-web-access"]).toBe("^0.18.0");
+      expect(manifest.dependencies["pi-subagents"]).toBe("0.42.1");
+    });
+
+    it("throws rather than silently reindexing a malformed (array) dependencies field", async () => {
+      const path = await manifestFile(JSON.stringify({ dependencies: ["not", "an", "object"] }));
+      await expect(reassertExactManifestPin("0.42.1", path)).rejects.toThrow(/malformed/);
+      const manifest = JSON.parse(await readFile(path, "utf-8"));
+      expect(manifest.dependencies).toEqual(["not", "an", "object"]);
+    });
   });
 
   describe("spawnRelay (real subprocess wiring)", () => {
