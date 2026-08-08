@@ -314,6 +314,57 @@ git commit -m "feat(scripts): roll back a pi-subagents update whose patches fail
 
 ---
 
+### Task 0.4: Correct the mechanism — `pi install`, not `pi update --extensions`
+
+**Discovered during the real Task 1.2 live cutover, not anticipated when this plan was written.** `runPiUpdate` in Task 0.3 was built around `pi update --extensions`, on the assumption that editing `agent/settings.json`'s pin sets a target that `pi update` reconciles toward. Running the actual cutover against this machine's live install disproved that: `pi update --extensions`'s own `updateConfiguredSources` filters out any package where `parsed.pinned` is true — *"Pinned npm versions are fixed"*, verbatim from that function's own comment — **before** the package is ever considered for update, regardless of what version it's pinned to. Confirmed byte-identical between the repo's pinned `@earendil-works/pi-coding-agent@0.80.6` devDependency and the live `0.83.0` binary actually running on this machine, so this is not a version-skew artifact — it is what `pi update --extensions` has always done for an exact-pinned package, by design.
+
+This is not a bug in what Task 0.3 shipped — the wrapper correctly reflects what `pi update --extensions` does. But since `pi-subagents` is *deliberately* always exact-pinned (the entire point of Task 0.1/0.2), `runPiUpdate` can never perform the one operation this whole plan exists for: moving the pin forward on purpose.
+
+The correct mechanism, verified by tracing `PackageManager.install()` → `installNpm()` → a direct `bun install <spec>` with no pinned-skip check, and by running it for real: `pi install npm:pi-subagents@<version>`. `addSourceToSettings` matches the existing `agent/settings.json` entry by package identity (not full spec string) and replaces it in place — confirmed no duplicate entries result. One further empirical finding from the same live run: `pi install` writes a caret range into `agent/npm/package.json` (`"^0.42.1"`) even though a raw `bun install <pkg>@<version>` reliably writes exact — traced but not root-caused (reproducing it in isolated scratch directories with identical argv did not reproduce the caret; something about the real environment differs). The fix does not depend on understanding why — it defensively re-asserts the exact pin after every install, forward or rollback, rather than trusting either tool's default.
+
+**Files:**
+- Modify: `scripts/thanos-update.mjs`
+- Modify: `tests/scripts/update.test.ts`
+
+**Step 1: Redesign the effect shape**
+
+Replace `runPiUpdate` and `reinstall` with a single `installPinned(version)` effect, used for both the forward path and the rollback path — this is what keeps `agent/settings.json`'s pin and the actual installed version from ever drifting apart at any step, including mid-rollback. Add `readPinnedTarget()`, reading the exact version currently declared for `pi-subagents` in `agent/settings.json`'s `packages` array (mirror the parsing already established in `src/welcome/pin-assertion.ts`, adapted for `.mjs` — do not attempt a cross-module-type import from a plain script).
+
+```
+readVersion: () => Promise<string>            // currently installed
+readPinnedTarget: () => Promise<string>        // currently pinned in agent/settings.json
+installPinned: (version: string) => Promise<{ code: number }>   // pi install + defensive exact re-pin
+runPatchScript: () => Promise<{ code: number }>
+```
+
+**Step 2: Redesign the decision logic**
+
+- Read `before` (installed) and `target` (pinned). If they differ, call `installPinned(target)`. If that fails, return `install-failed` — nothing was touched beyond `installPinned`'s own attempt, so there is nothing to roll back.
+- Run the patch script regardless (this is also the self-heal path when `before === target` but patches drifted).
+- Patch succeeds: `updated` (version moved) or `unchanged` (it didn't).
+- Patch fails: call `installPinned(before)` to restore both the previous version and the previous pin together. If that fails, `broken`. If it succeeds, re-run the patch script; if that fails too, `broken`; otherwise `rolled-back`.
+
+**Step 3: Tests**
+
+Full TDD via injected deps, no real subprocess spawning — same discipline as Task 0.3. Cover: version differs, install succeeds, patch succeeds → `updated`; install fails → `install-failed`, `installPinned` called once, nothing else; install succeeds, patch fails, rollback's `installPinned` and re-patch both succeed → `rolled-back`, and confirm `installPinned` was called with `before` on rollback (proving the pin, not just the binary, gets restored); rollback's `installPinned` fails → `broken`; rollback's `installPinned` succeeds but the re-patch fails → `broken` (same "don't trust reinstall alone" property Task 0.3's own fix established); version already matches target → `installPinned` is never called, only the patch script runs.
+
+**Step 4: Real wiring**
+
+`installPinnedReal(version)`: spawn `pi install npm:pi-subagents@${version}`, then unconditionally rewrite `agent/npm/package.json`'s `pi-subagents` entry to the bare exact version string (no caret), regardless of what `pi install` wrote. `readPinnedTargetReal()`: parse `agent/settings.json`'s `packages` array for the `pi-subagents` entry's version.
+
+**Step 5: Verification**
+
+`bun run typecheck && bun run test`, full suite green. **Do not exercise the real wiring against the live install again** — Task 1.2's manual walkthrough already validated the underlying `pi install` → re-pin → patch → verify sequence works correctly for real; re-running it here would touch live state for no new information the decision-logic tests don't already cover.
+
+**Step 6: Commit**
+
+```bash
+git add scripts/thanos-update.mjs tests/scripts/update.test.ts
+git commit -m "fix(scripts): use pi install instead of pi update --extensions for pinned packages"
+```
+
+---
+
 ## Phase 1 — The ceiling counts concerns, then pi-subagents runs 0.42.1 with every patched behaviour proven
 
 Executed **through** the Phase 0 wrapper, so a failed port rolls itself back.
