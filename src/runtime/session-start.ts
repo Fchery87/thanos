@@ -19,6 +19,8 @@ import { formatPanel } from "../ui-utils";
 import { DeliveryRuntime } from "./commands/delivery";
 import type { TodoRuntime } from "./commands/todo";
 import { workflowStatusSegment, type WorkflowRuntime } from "../workflows/state";
+import type { SpecEngine } from "../spec/engine";
+import { reconcileInvariantTail } from "../context/invariants";
 
 export interface SessionStartDeps {
   todoRuntime: TodoRuntime;
@@ -31,6 +33,7 @@ export interface SessionStartDeps {
   goalController: GoalController;
   goalSettings: GoalSettings;
   workflowRuntime: WorkflowRuntime;
+  spec: SpecEngine;
 }
 
 /**
@@ -44,7 +47,7 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
   const {
     todoRuntime, mcpManager, deliveryRuntime, permissions, lens,
     policyStatePromise, clearReviewFindings,
-    goalController, goalSettings, workflowRuntime,
+    goalController, goalSettings, workflowRuntime, spec,
   } = deps;
 
   pi.on("session_start", async (event, ctx) => {
@@ -242,6 +245,17 @@ export function registerSessionStart(pi: ExtensionAPI, deps: SessionStartDeps): 
     ctx.ui.setStatus("harness-todo", todoRuntime.statusSegment(ctx));
     workflowRuntime.reconstruct(ctx.sessionManager.getBranch());
     ctx.ui.setStatus("harness-waves", workflowStatusSegment(workflowRuntime.current));
+  });
+
+  // ── Re-assert the goal/spec/workflow invariant tail before every LLM call ──
+  // before_agent_start (above) fires once per user turn; a compaction
+  // triggered mid-run — inside a single agentic turn — can delete whatever it
+  // injected before the turn ever ends, and nothing restores it until the
+  // user speaks again. The `context` hook fires before every LLM call
+  // instead, so it can put the block back the moment it goes missing.
+  pi.on("context", (event) => {
+    const messages = reconcileInvariantTail(event.messages, { goalController, spec, workflowRuntime });
+    return messages ? { messages } : undefined;
   });
 
   // ── MCP cleanup on shutdown ────────────────────────────────────────

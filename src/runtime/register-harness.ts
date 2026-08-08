@@ -133,6 +133,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
     goalController,
     goalSettings,
     workflowRuntime,
+    spec,
   });
   if (!isSubagent) registerWorkflowSessionGuards(pi, workflowRuntime);
 
