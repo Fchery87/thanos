@@ -22,7 +22,7 @@ import register from "../../src/index";
  *   - subagent session: the reverse.
  * Everything else (11 direct commands minus the two above, the delegated
  * /goal + 13 registerSlashCommands commands + /lens, the "spec" flag, all
- * 9 event hooks, and all 8 keyboard shortcuts) is registered unconditionally
+ * 10 event hooks, and all 8 keyboard shortcuts) is registered unconditionally
  * in both scenarios — verified by reading every registerShortcut call site:
  * the isSubagent checks that exist (e.g. ctrl+shift+r's code-review shortcut)
  * live INSIDE the handler body, not around the registration call, so the
@@ -101,7 +101,7 @@ const SUBAGENT_COMMANDS = PARENT_COMMANDS.filter((name) => name !== "remember" &
 
 const ALL_EVENT_HOOKS = [
   "session_start", "session_tree", "model_select", "thinking_level_select",
-  "session_shutdown", "before_agent_start", "tool_call", "tool_result", "agent_end",
+  "session_shutdown", "before_agent_start", "context", "tool_call", "tool_result", "agent_end",
 ].sort();
 const PARENT_EVENT_HOOKS = [
   ...ALL_EVENT_HOOKS,
