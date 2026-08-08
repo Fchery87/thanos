@@ -80,4 +80,33 @@ describe("validateManifest", () => {
     expect(() => validateManifest("explore", { turnBudget: { maxTurns: 20, graceTurns: 0 } })).not.toThrow();
     expect(() => validateManifest("explore", { turnBudget: { maxTurns: 20, graceTurns: 2 } })).not.toThrow();
   });
+
+  it("requires model to be a non-empty string when present", () => {
+    expect(() => validateManifest("explore", { model: "" })).toThrow(
+      /must declare a non-empty model/,
+    );
+    expect(() => validateManifest("explore", { model: "   " })).toThrow(
+      /must declare a non-empty model/,
+    );
+    expect(() => validateManifest("explore", { model: "theclawbay/gpt-5.4-mini" })).not.toThrow();
+    expect(() => validateManifest("explore", {})).not.toThrow();
+  });
+
+  it("requires fallbackModels to be a non-empty array of non-empty strings when present", () => {
+    expect(() => validateManifest("explore", { fallbackModels: [] })).toThrow(
+      /must declare fallbackModels as a non-empty array/,
+    );
+    expect(() => validateManifest("explore", { fallbackModels: [""] })).toThrow(
+      /declares an invalid fallbackModels entry/,
+    );
+    expect(() => validateManifest("explore", { fallbackModels: ["  "] })).toThrow(
+      /declares an invalid fallbackModels entry/,
+    );
+    expect(() => validateManifest("explore", { fallbackModels: [123 as unknown as string] })).toThrow(
+      /declares an invalid fallbackModels entry/,
+    );
+    expect(() =>
+      validateManifest("explore", { fallbackModels: ["openai/gpt-5:medium", "anthropic/claude-haiku-4-5:off"] }),
+    ).not.toThrow();
+  });
 });

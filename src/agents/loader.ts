@@ -7,6 +7,7 @@ export interface AgentDefinition {
   body: string;
   tools?: string[];
   model?: string;
+  fallbackModels?: string[];
   /** @deprecated Retired — parsed only so validateManifest can reject it loudly. Use turnBudget. */
   maxTurns?: number;
   /** @deprecated Retired — parsed only so validateManifest can reject it loudly. Use timeoutMs. */
@@ -103,8 +104,25 @@ function parseFrontmatter(raw: string): Partial<AgentDefinition> & { body: strin
     }
 
     if (key === "model") {
-      const model = parseStringScalar(rawValue);
-      if (model) parsed.model = model;
+      // Store even an empty value (rather than silently omitting it) so
+      // validateManifest can reject "model:" with nothing after it loudly,
+      // the same posture the rest of this parser takes toward invalid input.
+      parsed.model = parseStringScalar(rawValue);
+      continue;
+    }
+
+    if (key === "fallbackModels") {
+      if (!rawValue.trim()) {
+        const models: string[] = [];
+        while (i + 1 < frontmatter.length && /^\s*-\s+/.test(frontmatter[i + 1]!)) {
+          i += 1;
+          const item = frontmatter[i]!.replace(/^\s*-\s+/, "").trim();
+          if (item) models.push(parseStringScalar(item));
+        }
+        if (models.length > 0) parsed.fallbackModels = models;
+        continue;
+      }
+      parsed.fallbackModels = parseToolsValue(rawValue);
       continue;
     }
 
