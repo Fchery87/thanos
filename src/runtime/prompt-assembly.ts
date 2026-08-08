@@ -4,7 +4,7 @@ export interface SystemPromptInput {
   trustedInstructions: readonly string[];
   skillsDirective: string;
   roster: string; // session-static (roster.ts already freezes it)
-  permissionMode?: string; // session-static (stable within a session) → static block, not the tail
+  permissionMode?: string; // yolo is toggled explicitly, not per-turn → static block, not the tail
   memoriesBlock?: string; // per-turn dynamic → tail message
   goalDirective?: string; // per-turn dynamic → tail message
 }

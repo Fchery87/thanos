@@ -25,10 +25,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assembleSystemPrompt } from "../src/runtime/prompt-assembly.ts";
-import { SKILLS_DIRECTIVE, TRUSTED_INSTRUCTIONS, formatPermissionMode } from "../src/runtime/before-agent-start.ts";
+import { SKILLS_DIRECTIVE, TRUSTED_INSTRUCTIONS } from "../src/runtime/before-agent-start.ts";
 import { formatRoster, loadRoster } from "../src/agents/roster.ts";
 import { buildGoalSystemPrompt } from "../src/goal/prompts.ts";
-import { PermissionManager } from "../src/permissions/manager.ts";
+import { PermissionManager, formatPermissionMode } from "../src/permissions/manager.ts";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const asJson = process.argv.includes("--json");

@@ -5,7 +5,7 @@ import { snapshotWorkingTree } from "../spec/diff-evidence";
 import type { ContractExtractor } from "../spec/extractor";
 import type { LensLite } from "../lens/lite";
 import type { MemoryRecord } from "../memory/types";
-import type { PermissionManager } from "../permissions/manager";
+import { formatPermissionMode, type PermissionManager } from "../permissions/manager";
 import { computeThinkingEscalation, NO_ESCALATION, type ThinkingEscalationState } from "./thinking-escalation";
 import { getSupportedLevels, setThinkingStatus, type ThinkingLevel } from "./thinking-levels";
 import { buildGoalSystemPrompt } from "../goal/prompts";
@@ -43,21 +43,6 @@ export const TRUSTED_INSTRUCTIONS: readonly string[] = [
 //
 // Exported alongside TRUSTED_INSTRUCTIONS so scripts/measure-harness.mjs weighs
 // the real per-turn prompt rather than a copy that drifts out of date.
-// ── Auto-invoke: tell the model which permission mode is active ──
-// Stable within a session (yolo is toggled explicitly, not per-turn), so
-// this belongs in the cached static prefix alongside the roster — putting
-// it in the per-turn dynamic tail instead would bust the prompt cache on
-// every call for a value that essentially never changes turn to turn.
-//
-// Exported alongside TRUSTED_INSTRUCTIONS/SKILLS_DIRECTIVE so
-// scripts/measure-harness.mjs weighs the real per-turn prompt rather than a
-// copy that drifts out of date.
-export function formatPermissionMode(permissions: PermissionManager): string {
-  return permissions.isYolo
-    ? "Permission mode: yolo — all permission prompts and policy checks are bypassed."
-    : "Permission mode: default — edits and commands require approval per policy.";
-}
-
 export const SKILLS_DIRECTIVE =
   "Specialized skills are listed in the <available_skills> block of this " +
   "system prompt. Before doing non-trivial work, scan that block: if any " +

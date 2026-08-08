@@ -54,3 +54,11 @@ export class PermissionManager {
     this.rules = this.rules.filter((r) => r.source !== "session");
   }
 }
+
+// Stable within a session (yolo is toggled explicitly, not per-turn), so
+// callers fold this into a cached prompt prefix rather than a per-turn tail.
+export function formatPermissionMode(permissions: PermissionManager): string {
+  return permissions.isYolo
+    ? "Permission mode: yolo — all permission prompts and policy checks are bypassed."
+    : "Permission mode: default — edits and commands require approval per policy.";
+}
