@@ -130,4 +130,12 @@ describe("writingAgentIds and readOnlyAgentIds", () => {
     const combined = new Set([...writers, ...readers]);
     expect(combined.size).toBe(allSpecialists().length);
   });
+
+  it("no agent offers subagent in its ceiling while forbidden from delegating", () => {
+    for (const profile of allSpecialists()) {
+      if (profile.mayDelegate.length === 0) {
+        expect(profile.toolCeiling).not.toContain("subagent");
+      }
+    }
+  });
 });

@@ -134,7 +134,7 @@ When asked for app prototypes, iOS mockups, mobile flows, or clickable demos:
   - **Flow demo**: one device with a stateful `AppPhone`/router for a clickable path.
 - Default to single-file inline React/HTML for lightweight prototypes unless the project already has an app framework. Inline JSX/data/styles in one `<script type="text/babel">`; base64-embed local images (no `file://` cross-origin loads).
 - Use real images when they are content-bearing. Do not add decorative stock images just because you can.
-- Interactions must actually work. The Playwright click-test (enter detail / key annotation / tab switch, `pageerror === 0`) is a **required gate**, run via the delegated subagent — not optional.
+- Interactions must actually work. For interactive prototypes, specify the exact verification checks (enter detail / key annotation / tab switch, `pageerror === 0`). When visual/interaction execution cannot be run in this context (no-exec boundary), follow the graceful degradation rule: emit the exact verification commands and explicitly flag `visual verification NOT performed`.
 
 ### D. Slide / deck / infographic / animation mode
 - For slides/decks, HTML is the source artifact by default; PDF/PPTX/video are exports.
