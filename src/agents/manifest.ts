@@ -80,7 +80,7 @@ export function validateManifest(role: string, manifest: AgentManifest): void {
     }
     for (const entry of manifest.fallbackModels) {
       if (typeof entry !== "string" || entry.trim() === "") {
-        throw new Error(`${role} declares an invalid fallbackModels entry, got ${JSON.stringify(entry)}`);
+        throw new Error(`${role} must declare every fallbackModels entry as a non-empty string, got ${JSON.stringify(entry)}`);
       }
     }
   }
