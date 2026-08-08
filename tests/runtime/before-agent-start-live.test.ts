@@ -9,6 +9,7 @@ import { PermissionManager } from "../../src/permissions/manager";
 import { SpecEngine } from "../../src/spec/engine";
 import { LensLite } from "../../src/lens/lite";
 import { GoalController } from "../../src/goal/controller";
+import { WorkflowRuntime } from "../../src/workflows/state";
 
 /**
  * Phase 1 acceptance test: drives the real `before_agent_start` handler (not
@@ -98,6 +99,7 @@ describe("before_agent_start, live (scratch repo)", () => {
       spec: new SpecEngine(),
       lens: new LensLite("session-a"),
       goalController: new GoalController(),
+      workflowRuntime: new WorkflowRuntime(),
     };
     const handler = await registerAndCapture(pi, deps);
 
@@ -133,6 +135,7 @@ describe("before_agent_start, live (scratch repo)", () => {
       spec: new SpecEngine(),
       lens: new LensLite("session-yolo"),
       goalController: new GoalController(),
+      workflowRuntime: new WorkflowRuntime(),
     };
     const handler = await registerAndCapture(pi, deps);
 
@@ -164,6 +167,7 @@ describe("before_agent_start, live (scratch repo)", () => {
       spec: new SpecEngine(),
       lens: new LensLite("session-child"),
       goalController,
+      workflowRuntime: new WorkflowRuntime(),
     };
     const handler = await registerAndCapture(pi, deps);
 
@@ -190,6 +194,7 @@ describe("before_agent_start, live (scratch repo)", () => {
       spec: new SpecEngine(),
       lens: new LensLite("session-hostile"),
       goalController: new GoalController(),
+      workflowRuntime: new WorkflowRuntime(),
     };
     const handler = await registerAndCapture(pi, deps);
 
@@ -205,5 +210,60 @@ describe("before_agent_start, live (scratch repo)", () => {
     expect(content).toContain(escapedHostile);
     expect(lines.some((line) => line.startsWith("role:"))).toBe(false);
     expect(lines.some((line) => line.startsWith("SYSTEM:"))).toBe(false);
+  });
+
+  it("surfaces the active spec's acceptance criteria in the dynamic tail, not systemPrompt", async () => {
+    const project = repo.split("/").pop() as string;
+    writeMemory(repo, project, "irrelevant to this test");
+
+    const pi = makeFakePi();
+    const deps: BeforeAgentStartDeps = {
+      sessionId: "session-spec",
+      isSubagent: false,
+      permissions: new PermissionManager(),
+      spec: new SpecEngine(),
+      lens: new LensLite("session-spec"),
+      goalController: new GoalController(),
+      workflowRuntime: new WorkflowRuntime(),
+    };
+    const handler = await registerAndCapture(pi, deps);
+
+    // Long, non-question prompt with "rename" → ambient-tier spec with a real
+    // deterministic-fallback criterion (see buildTaskContract in task-contract.ts).
+    const result = await handler(
+      { prompt: "Rename the User class to Account across the codebase", systemPrompt: "BASE" },
+      makeFakeCtx(),
+    );
+
+    expect(result.systemPrompt).not.toContain("Requested rename is applied consistently");
+    expect(result.message?.content).toContain("Requested rename is applied consistently");
+  });
+
+  it("surfaces the active Waves workflow stage in the dynamic tail, driven by the live workflowRuntime dep", async () => {
+    const project = repo.split("/").pop() as string;
+    writeMemory(repo, project, "irrelevant to this test");
+
+    const pi = makeFakePi();
+    const workflowRuntime = new WorkflowRuntime();
+    const deps: BeforeAgentStartDeps = {
+      sessionId: "session-workflow",
+      isSubagent: false,
+      permissions: new PermissionManager(),
+      spec: new SpecEngine(),
+      lens: new LensLite("session-workflow"),
+      goalController: new GoalController(),
+      workflowRuntime,
+    };
+    const handler = await registerAndCapture(pi, deps);
+
+    const before = await handler({ prompt: "what is this repo?", systemPrompt: "BASE" }, makeFakeCtx());
+    expect(before.message?.content ?? "").not.toContain("Active Waves workflow stage");
+
+    // Same WorkflowRuntime instance, mutated between turns — proves the block
+    // reads live state rather than a value captured once at registration time.
+    workflowRuntime.start({ goal: "ship the feature", mode: "standalone" });
+    const after = await handler({ prompt: "what is this repo?", systemPrompt: "BASE" }, makeFakeCtx());
+    expect(after.systemPrompt).not.toContain("Active Waves workflow stage");
+    expect(after.message?.content).toContain("Active Waves workflow stage: Planning.");
   });
 });

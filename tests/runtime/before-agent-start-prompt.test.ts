@@ -100,4 +100,46 @@ describe("assembleSystemPrompt", () => {
     expect(turnA.systemPrompt).toBe(turnB.systemPrompt);
     expect(turnA.systemPrompt).toContain("Permission mode: default");
   });
+
+  it("puts spec acceptance criteria and workflow stage in the dynamic tail, not systemPrompt", () => {
+    const out = assembleSystemPrompt({
+      baseSystemPrompt: "BASE",
+      isSubagent: false,
+      trustedInstructions: ["T"],
+      skillsDirective: "S",
+      roster: "R",
+      specCriteria: "Completion criteria:\n- Requested rename is applied consistently",
+      workflowStage: "Active Waves workflow stage: Investigating.",
+    });
+    expect(out.systemPrompt).not.toContain("Requested rename is applied consistently");
+    expect(out.systemPrompt).not.toContain("Active Waves workflow stage");
+    expect(out.dynamicMessage).toContain("Requested rename is applied consistently");
+    expect(out.dynamicMessage).toContain("Active Waves workflow stage: Investigating.");
+  });
+
+  it("adds no scaffolding for specCriteria/workflowStage when neither is active (matches goalDirective's empty behavior)", () => {
+    const out = assembleSystemPrompt({
+      baseSystemPrompt: "BASE",
+      isSubagent: false,
+      trustedInstructions: ["T"],
+      skillsDirective: "S",
+      roster: "R",
+    });
+    expect(out.dynamicMessage).toBeUndefined();
+  });
+
+  it("still delivers a directly-set spec/workflow block for subagents (no systemPrompt, but a tail message)", () => {
+    const out = assembleSystemPrompt({
+      baseSystemPrompt: "BASE",
+      isSubagent: true,
+      trustedInstructions: [],
+      skillsDirective: "",
+      roster: "",
+      specCriteria: "Completion criteria:\n- Subagent-visible criterion",
+      workflowStage: "Active Waves workflow stage: Planning.",
+    });
+    expect(out.systemPrompt).toBeUndefined();
+    expect(out.dynamicMessage).toContain("Subagent-visible criterion");
+    expect(out.dynamicMessage).toContain("Active Waves workflow stage: Planning.");
+  });
 });

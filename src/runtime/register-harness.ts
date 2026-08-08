@@ -254,7 +254,7 @@ export function registerHarness(pi: ExtensionAPI, deps?: { initialYolo?: boolean
   registerYoloShortcut(pi, permissions);
 
   // ── Spec classification + session reset on each prompt ─────────────
-  registerBeforeAgentStart(pi, { sessionId, isSubagent, permissions, spec, lens, goalController, contractExtractor });
+  registerBeforeAgentStart(pi, { sessionId, isSubagent, permissions, spec, lens, goalController, workflowRuntime, contractExtractor });
 
   // ── Governed execution gate: tool_call (GovernanceRuntime.authorize()),
   // tool_result (spec output collection), agent_end (spec verification gate

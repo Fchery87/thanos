@@ -284,7 +284,7 @@ function parseSnapshot(value: unknown): WorkflowSnapshot | undefined {
   return undefined;
 }
 
-function isActive(snapshot: WorkflowSnapshot): snapshot is ActiveWorkflow {
+export function isActive(snapshot: WorkflowSnapshot): snapshot is ActiveWorkflow {
   return [
     "planning",
     "awaiting_approval",
@@ -735,6 +735,22 @@ export function workflowStatusSegment(snapshot: WorkflowSnapshot | undefined): s
     return `≋ waves:${snapshot.phase}·${snapshot.integrationTurns}t·${snapshot.juryRounds}j`;
   }
   return `≋ waves:${snapshot.phase}`;
+}
+
+/**
+ * Model-facing counterpart to {@link workflowStatusSegment}: that one is a
+ * terse UI status-bar segment, this names the stage in full for the dynamic
+ * prompt tail (before-agent-start.ts). `paused` and terminal phases are
+ * deliberately excluded — only a workflow the model can currently act on
+ * belongs in its context.
+ */
+export function formatWorkflowStage(snapshot: WorkflowSnapshot | undefined): string | undefined {
+  if (!snapshot || !isActive(snapshot)) return undefined;
+  const stageName = snapshot.phase
+    .split("_")
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join("");
+  return `Active Waves workflow stage: ${stageName}.`;
 }
 
 export function workflowAllowsGoalCompletion(snapshot: WorkflowSnapshot | undefined): boolean {

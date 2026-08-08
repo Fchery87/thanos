@@ -7,6 +7,8 @@ export interface SystemPromptInput {
   permissionMode?: string; // yolo is toggled explicitly, not per-turn → static block, not the tail
   memoriesBlock?: string; // per-turn dynamic → tail message
   goalDirective?: string; // per-turn dynamic → tail message
+  specCriteria?: string; // changes every turn a spec is (re)classified → tail message
+  workflowStage?: string; // changes as a Waves workflow progresses → tail message
 }
 
 export interface AssembledPrompt {
@@ -17,7 +19,7 @@ export interface AssembledPrompt {
 }
 
 export function assembleSystemPrompt(input: SystemPromptInput): AssembledPrompt {
-  const dynamicBlocks = [input.memoriesBlock, input.goalDirective].filter(Boolean) as string[];
+  const dynamicBlocks = [input.memoriesBlock, input.goalDirective, input.specCriteria, input.workflowStage].filter(Boolean) as string[];
   const dynamicMessage = dynamicBlocks.length ? dynamicBlocks.join("\n\n") : undefined;
 
   // Subagents keep Pi's base prompt untouched (no systemPrompt override), but a

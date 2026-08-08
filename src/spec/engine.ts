@@ -8,6 +8,7 @@ import { buildContractFromTaskContract } from "./contract";
 import type { TaskContract } from "./task-contract";
 import type { WorkingTreeSnapshot } from "./diff-evidence";
 import type { FormalSpec, SpecTier } from "./types";
+import { renderCompletionCriteria } from "../prompts/style";
 import { contractRevision, targetRoots } from "./work-contract";
 import { issueRunGrant, type RunGrant } from "../governance/run-grant";
 import type { WavePlan, WorkflowPlan } from "../workflows/types";
@@ -289,4 +290,15 @@ export class SpecEngine {
     if (!this.activeSpec) return [];
     return verifyCriteria(this.activeSpec, this.evidence);
   }
+}
+
+/**
+ * Model-facing rendering of the active spec's acceptance criteria, for the
+ * dynamic prompt tail (before-agent-start.ts). Undefined for an "instant"-tier
+ * turn (no spec generated at all) and for the rare case of a spec with no
+ * criteria — no empty scaffolding on ordinary chat, matching goalDirective.
+ */
+export function formatSpecCriteria(spec: FormalSpec | undefined): string | undefined {
+  if (!spec || spec.acceptanceCriteria.length === 0) return undefined;
+  return renderCompletionCriteria(spec.acceptanceCriteria.map((criterion) => criterion.statement));
 }

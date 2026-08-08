@@ -1,11 +1,12 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { GoalController } from "../goal/controller";
-import type { SpecEngine } from "../spec/engine";
+import { formatSpecCriteria, type SpecEngine } from "../spec/engine";
 import { snapshotWorkingTree } from "../spec/diff-evidence";
 import type { ContractExtractor } from "../spec/extractor";
 import type { LensLite } from "../lens/lite";
 import type { MemoryRecord } from "../memory/types";
 import { formatPermissionMode, type PermissionManager } from "../permissions/manager";
+import { formatWorkflowStage, type WorkflowRuntime } from "../workflows/state";
 import { computeThinkingEscalation, NO_ESCALATION, type ThinkingEscalationState } from "./thinking-escalation";
 import { getSupportedLevels, setThinkingStatus, type ThinkingLevel } from "./thinking-levels";
 import { buildGoalSystemPrompt } from "../goal/prompts";
@@ -59,6 +60,7 @@ export interface BeforeAgentStartDeps {
   spec: SpecEngine;
   lens: LensLite;
   goalController: GoalController;
+  workflowRuntime: WorkflowRuntime;
   /** Receives the live ExtensionContext each turn; omitted in tests. */
   contractExtractor?: ContractExtractor;
 }
@@ -72,7 +74,7 @@ export interface BeforeAgentStartDeps {
  * tail).
  */
 export function registerBeforeAgentStart(pi: ExtensionAPI, deps: BeforeAgentStartDeps): void {
-  const { sessionId, isSubagent, permissions, spec, lens, goalController, contractExtractor } = deps;
+  const { sessionId, isSubagent, permissions, spec, lens, goalController, workflowRuntime, contractExtractor } = deps;
 
   // Thinking escape hatch: /goal and --spec run at the model's max, restored when
   // neither is active. State persists across turns (parent session only) — this
@@ -174,6 +176,17 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: BeforeAgentStar
       ? buildGoalSystemPrompt(goalSnap.condition)
       : "";
 
+    // ── Spec criteria + workflow stage: volatile, so they ride the tail ──
+    // Both change during a session (a new turn reclassifies the spec; a
+    // workflow advances phase-by-phase), so — unlike the roster or
+    // permission mode — they cannot sit in the cached static prefix without
+    // busting it on every change. Computed unconditionally, like
+    // goalDirective above: a subagent doesn't drive spec/workflow state
+    // itself, but a directly-set one should still reach it rather than be
+    // silently dropped.
+    const specCriteria = formatSpecCriteria(spec.activeSpec);
+    const workflowStage = formatWorkflowStage(workflowRuntime.current);
+
     // event.systemPrompt is Pi's base prompt (skills block, AGENTS.md, tool
     // snippets) — folding it in here is the fix: it was previously dropped
     // on the floor every parent turn. Static blocks (base prompt, trusted
@@ -189,6 +202,8 @@ export function registerBeforeAgentStart(pi: ExtensionAPI, deps: BeforeAgentStar
       permissionMode: isSubagent ? undefined : formatPermissionMode(permissions),
       memoriesBlock: rendered.memoriesMessage,
       goalDirective,
+      specCriteria,
+      workflowStage,
     });
 
     return {
