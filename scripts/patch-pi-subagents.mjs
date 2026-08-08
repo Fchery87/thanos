@@ -1,5 +1,11 @@
-#!/usr/bin/env node
 // Thanos patches for pi-subagents. Idempotent; safe to run repeatedly.
+// No shebang: never executable (chmod 644, no package.json "bin" entry) and
+// always invoked as `node scripts/patch-pi-subagents.mjs` — a shebang here
+// was purely decorative, and tests/scripts/patch-concerns.test.ts ESM-imports
+// this file directly, which fails to parse on Windows CI when a shebang is
+// present (esbuild/vite-node's shebang handling chokes there; confirmed
+// working once removed). See scripts/thanos-update.mjs's split into a lib
+// module for the sibling case where the shebang IS load-bearing.
 //
 // Rewritten for 0.41.0 (2026-08-05). 0.41.0 collapsed the parallel V1/V2
 // delegation protocols into one unnumbered protocol: the `SubagentDelegationV2*`
