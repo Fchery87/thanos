@@ -2,6 +2,8 @@ import { getSpecialist, type SpecialistId } from "./catalog";
 
 export interface AgentManifest {
   tools?: string[];
+  model?: string;
+  fallbackModels?: string[];
   context?: "fresh" | "forked";
   /** @deprecated Retired — pi-subagents 0.41.0 does not read this key. Kept typed so a manifest that still declares it is rejected loudly instead of silently ignored. Use turnBudget. */
   maxTurns?: number;
@@ -65,6 +67,21 @@ export function validateManifest(role: string, manifest: AgentManifest): void {
     }
     if (graceTurns !== undefined && (!Number.isInteger(graceTurns) || graceTurns < 0)) {
       throw new Error(`${role} must declare turnBudget.graceTurns as a non-negative integer, got ${graceTurns}`);
+    }
+  }
+
+  if (manifest.model !== undefined && manifest.model.trim() === "") {
+    throw new Error(`${role} must declare a non-empty model when present, got ${JSON.stringify(manifest.model)}`);
+  }
+
+  if (manifest.fallbackModels !== undefined) {
+    if (!Array.isArray(manifest.fallbackModels) || manifest.fallbackModels.length === 0) {
+      throw new Error(`${role} must declare fallbackModels as a non-empty array, got ${JSON.stringify(manifest.fallbackModels)}`);
+    }
+    for (const entry of manifest.fallbackModels) {
+      if (typeof entry !== "string" || entry.trim() === "") {
+        throw new Error(`${role} declares an invalid fallbackModels entry, got ${JSON.stringify(entry)}`);
+      }
     }
   }
 
