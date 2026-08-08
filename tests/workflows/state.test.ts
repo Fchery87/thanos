@@ -3,6 +3,7 @@ import {
   WorkflowRuntime,
   WORKFLOW_JOURNAL_ENTRY,
   workflowAllowsGoalCompletion,
+  formatWorkflowStage,
 } from "../../src/workflows/state";
 import type { WavePlan } from "../../src/workflows/types";
 
@@ -292,5 +293,43 @@ describe("WorkflowRuntime journaled state", () => {
     expect(workflowAllowsGoalCompletion(runtime.current)).toBe(true);
     runtime.pause("yield_revision_stale");
     expect(workflowAllowsGoalCompletion(runtime.current)).toBe(false);
+  });
+});
+
+describe("formatWorkflowStage", () => {
+  it("returns undefined for no snapshot", () => {
+    expect(formatWorkflowStage(undefined)).toBeUndefined();
+  });
+
+  it("names every active phase in full, space-separated, driven by the real transition chain", () => {
+    const runtime = new WorkflowRuntime({ createId: () => "stage", now: () => 42 });
+
+    expect(formatWorkflowStage(runtime.start({ goal: "implement", mode: "standalone" })))
+      .toBe("Active Waves workflow stage: Planning.");
+    expect(formatWorkflowStage(runtime.bindPlan(plan)))
+      .toBe("Active Waves workflow stage: Awaiting Approval.");
+    expect(formatWorkflowStage(runtime.approve()))
+      .toBe("Active Waves workflow stage: Investigating.");
+    expect(formatWorkflowStage(runtime.completeInvestigation([])))
+      .toBe("Active Waves workflow stage: Integrating.");
+
+    const revision = { head: "a".repeat(40), workingTree: [] as Array<[string, string]> };
+    expect(formatWorkflowStage(runtime.yieldForReview(revision)))
+      .toBe("Active Waves workflow stage: Reviewing.");
+    expect(formatWorkflowStage(runtime.approveReview([])))
+      .toBe("Active Waves workflow stage: Awaiting Acceptance.");
+  });
+
+  it("omits paused and terminal snapshots — only a workflow the model can act on belongs in its context", () => {
+    const runtime = new WorkflowRuntime({ createId: () => "stage-inactive", now: () => 42 });
+    integrating(runtime);
+    expect(formatWorkflowStage(runtime.pause("operator_paused"))).toBeUndefined();
+
+    const completedRuntime = new WorkflowRuntime({ createId: () => "stage-done", now: () => 42 });
+    integrating(completedRuntime);
+    const revision = { head: "b".repeat(40), workingTree: [] as Array<[string, string]> };
+    completedRuntime.yieldForReview(revision);
+    completedRuntime.approveReview([]);
+    expect(formatWorkflowStage(completedRuntime.complete("done"))).toBeUndefined();
   });
 });
