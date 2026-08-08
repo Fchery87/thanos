@@ -59,8 +59,9 @@ tripwire and start the vendoring work:
       its behaviour verifier (see `scripts/patch-pi-subagents.mjs`'s
       `verifyFanoutGuard`/`verifyV2EvidenceEnvelope`/`verifyTimeoutClassification`
       pattern) reports `broken` rather than "candidate for retirement."
-- [ ] The patch artifact exceeds **4** hunks. Enforced mechanically — see
-      Task 4.2.
+- [ ] The patch artifact exceeds **4** distinct concerns (not patched files
+      or hunks — see "Recalibration" below). Enforced mechanically in
+      `scripts/patch-pi-subagents.mjs`.
 - [ ] Upstream declines, or leaves unmerged for two minor releases, the
       evidence-projection PR that ADR 0019 depends on.
 - [ ] A defect is found that cannot be expressed as a patch hunk at all —
