@@ -1,5 +1,13 @@
 # Update Safety and Atomic Adoptions Implementation Plan
 
+**Status:** Complete — all phases (0, 1, 2, 3, 4a, 4b) plus Task 0.4 implemented,
+reviewed, and merged via PR #69. Per this repo's own plan-doc convention
+(`docs/plans/2026-07-27-harness-simplification-plan.md:471-473`, "a completed
+plan is deleted on completion... its durable content belongs in an ADR"), this
+file should be deleted and its durable content folded into
+`docs/adr/0024-pi-subagents-stays-a-dependency-until-these-tripwires-fire.md`
+as a follow-up — left as a separate decision rather than done as part of this fix.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Make a `pi-subagents` update structurally unable to leave the harness unpatched, move to 0.42.1 with every patched behaviour proven, and adopt the two Atomic subagent capabilities the engine already supports but Thanos does not use.
@@ -460,7 +468,7 @@ Exit code 0. A `broken` verdict exits 1 (`:346`) — that is a tripwire, not a r
 
 **Step 4: Confirm the hunk ceiling still holds**
 
-`HUNK_CEILING = 4` against `PATCH_MARKERS.length` (`:330`). If the port needs a sixth concern, that is **ADR 0024 tripwire #2** — stop and record.
+`HUNK_CEILING = 4` against `countConcerns(PATCH_MARKERS)` (`:330`) — Task 1.0 changed this to count distinct concerns, not `PATCH_MARKERS.length`. If the port needs a fifth concern, that is **ADR 0024 tripwire #2** — stop and record.
 
 **Step 5: Full suite**
 
