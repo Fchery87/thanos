@@ -193,24 +193,45 @@ async function readPinnedTargetReal() {
  * with identical argv didn't reproduce it), so this re-asserts the pin
  * unconditionally afterward rather than trusting either tool's default.
  */
-async function reassertExactManifestPin(version) {
-  const manifest = JSON.parse(await readFile(PI_SUBAGENTS_MANIFEST, "utf-8"));
+function isPlainObject(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export async function reassertExactManifestPin(version, manifestPath = PI_SUBAGENTS_MANIFEST) {
+  const manifest = JSON.parse(await readFile(manifestPath, "utf-8"));
   if (manifest.dependencies?.[DELEGATION_PACKAGE] === version) return;
+  // Missing entirely (undefined/null) is a legitimate "add the first
+  // dependency" case. Present but not a plain object (an array, a string —
+  // malformed package.json) is not something to silently coerce and spread
+  // over; that would reindex an array into {0: ..., 1: ...} and write the
+  // corruption to disk instead of failing loudly, the same defensive
+  // posture the rest of this file already takes toward malformed input.
+  if (manifest.dependencies !== undefined && manifest.dependencies !== null && !isPlainObject(manifest.dependencies)) {
+    throw new Error(`${manifestPath} has a malformed "dependencies" field (expected an object)`);
+  }
   manifest.dependencies = { ...manifest.dependencies, [DELEGATION_PACKAGE]: version };
-  await writeFile(PI_SUBAGENTS_MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`, "utf-8");
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf-8");
 }
 
 async function installPinnedReal(version) {
   const result = await spawnRelay("pi", ["install", `npm:${DELEGATION_PACKAGE}@${version}`]);
   if (result.code !== 0) return result;
+  // A failure here is a distinct, lesser problem than `pi install` itself
+  // failing: the package and agent/settings.json's pin have already moved
+  // to `version` — only the agent/npm/package.json caret-vs-exact touch-up
+  // didn't land. Returning { code: 1 } here (as an earlier version of this
+  // function did) would make the caller treat this exactly like "nothing
+  // moved" — skipping both the patch step and any rollback — and leave an
+  // actually-installed, unpatched version on disk while reporting "nothing
+  // was rolled back". Report loudly but let the caller proceed to patch
+  // what is genuinely now installed.
   try {
     await reassertExactManifestPin(version);
   } catch (err) {
     console.error(
-      `[thanos-update] pi install succeeded but re-pinning ${PI_SUBAGENTS_MANIFEST} failed: ` +
-        `${err instanceof Error ? err.message : String(err)}`,
+      `[thanos-update] pi install succeeded but re-pinning ${PI_SUBAGENTS_MANIFEST} failed ` +
+        `(it may still carry a caret range): ${err instanceof Error ? err.message : String(err)}`,
     );
-    return { code: 1 };
   }
   return { code: 0 };
 }
