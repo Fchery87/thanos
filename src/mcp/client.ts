@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import type { MCPServerConfig, MCPTool, MCPToolResult } from "./types";
 import { validateFrameSize, validateResultSize } from "./validation";
+import { environmentAllowlist, normalizeIdentity } from "./trust";
 
 export interface MCPClient {
   connect(): Promise<void>;
@@ -34,6 +35,33 @@ const PROTOCOL_VERSION = "2024-11-05";
 // StdioMCPClient
 // ══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * The ambient environment a spawned stdio MCP server inherits, reduced to the
+ * allowlist.
+ *
+ * Two env channels reach a server and only one of them is consent. `config.env`
+ * is explicit and per-server — it is where `applySecrets` (manager.ts) puts that
+ * server's own credentials — so the caller spreads it over this result and it is
+ * deliberately NOT filtered here. `process.env` is ambient: it carries this
+ * machine's unrelated API keys, which an approved server has no claim to.
+ * Approving a binary to run is not the same act as handing it every credential
+ * the operator happens to hold.
+ */
+function inheritedEnv(config: MCPServerConfig): Record<string, string> {
+  const allowed = environmentAllowlist(normalizeIdentity({
+    type: config.type ?? "stdio",
+    command: config.command,
+    args: config.args,
+    url: config.url,
+  }));
+  const inherited: Record<string, string> = {};
+  for (const key of allowed) {
+    const value = process.env[key];
+    if (value !== undefined) inherited[key] = value;
+  }
+  return inherited;
+}
+
 export class StdioMCPClient implements MCPClient {
   private proc: ChildProcess | null = null;
   private nextId = 1;
@@ -52,7 +80,7 @@ export class StdioMCPClient implements MCPClient {
     await new Promise<void>((resolve, reject) => {
       const proc = spawn(command, args, {
         stdio: ["pipe", "pipe", "ignore"],
-        env: { ...process.env, ...env },
+        env: { ...inheritedEnv(this.config), ...env },
       });
 
       proc.on("error", (err: Error) => {

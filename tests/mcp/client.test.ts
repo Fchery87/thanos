@@ -111,6 +111,37 @@ describe("StdioMCPClient", () => {
     client.disconnect();
   });
 
+  it("does not leak ambient secrets from process.env into the spawned server", async () => {
+    const { fakeProc } = makeFakeProcess();
+    mockSpawn.mockReturnValue(fakeProc);
+
+    const priorSecret = process.env.THANOS_TEST_SECRET;
+    process.env.THANOS_TEST_SECRET = "super-secret-value";
+    try {
+      const config = { command: "srv", args: [], env: { MY_VAR: "hello" } };
+      const client = new StdioMCPClient(config, opts);
+      await client.connect();
+
+      const [, , spawnOpts] = mockSpawn.mock.calls[0]!;
+      const env = spawnOpts.env as Record<string, string>;
+
+      // The explicit per-server value still arrives — this is the consent channel
+      // applySecrets() uses for credentials, and it must not be filtered.
+      expect(env.MY_VAR).toBe("hello");
+      // The allowlisted ambient value still arrives — servers need to find binaries.
+      expect(env.PATH).toBe(process.env.PATH);
+      // The ambient secret does NOT.
+      expect(env.THANOS_TEST_SECRET).toBeUndefined();
+
+      client.disconnect();
+    } finally {
+      // Restore rather than delete: if the runner supplied this variable, a
+      // blind delete would strip it for every later test in the process.
+      if (priorSecret === undefined) delete process.env.THANOS_TEST_SECRET;
+      else process.env.THANOS_TEST_SECRET = priorSecret;
+    }
+  });
+
   it("initialize() sends the initialize request then the initialized notification", async () => {
     const { fakeProc, writtenLines, emitLine } = makeFakeProcess();
     mockSpawn.mockReturnValue(fakeProc);

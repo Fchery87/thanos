@@ -30,11 +30,15 @@ export function validateManifest(role: string, manifest: AgentManifest): void {
   if (!profile) throw new Error(`Unknown specialist: ${role}`);
 
   for (const tool of manifest.tools ?? []) {
-    if (!profile.toolCeiling.includes(tool)) {
-      throw new Error(`${role} declares unsupported tool "${tool}"`);
-    }
+    // Delegation is checked before the ceiling on purpose. Now that a
+    // non-delegating profile never carries "subagent" in its ceiling, the
+    // generic check would otherwise swallow the case and report a plain
+    // "unsupported tool" — losing the reason that actually matters.
     if (tool === "subagent" && profile.mayDelegate.length === 0) {
       throw new Error(`${role} declares unsupported delegation tool "subagent"`);
+    }
+    if (!profile.toolCeiling.includes(tool)) {
+      throw new Error(`${role} declares unsupported tool "${tool}"`);
     }
   }
 

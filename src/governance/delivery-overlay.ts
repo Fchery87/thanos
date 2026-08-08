@@ -105,7 +105,17 @@ export function deliveryPolicyOverlay(mode: DeliveryMode): PolicyRule[] {
   ];
 }
 
-/** Map a delivery mode to the base policy preset it should run under. */
+/**
+ * Map a delivery mode to the base policy preset it should run under.
+ *
+ * NOTE: this mapping is an intention, deliberately NOT wired into the live load
+ * path. Wiring it would silently change the effective ceiling for every
+ * already-registered repo that has no `harness.policy.json`. Presets stay
+ * user-configured there, defaulting to "personal"; a delivery mode contributes
+ * deny rules via `deliveryPolicyOverlay` above and nothing else. See
+ * `docs/governance.md` ("Delivery modes"), which states the same thing.
+ * Only caller today is `tests/governance/delivery-overlay.test.ts`.
+ */
 export function presetForMode(mode: DeliveryMode): PolicyPreset {
   switch (mode) {
     case "no-mistakes":

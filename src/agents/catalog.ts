@@ -97,7 +97,7 @@ const CATALOG: ReadonlyMap<SpecialistId, SpecialistProfile> = new Map([
       mayDelegate: NO_DELEGATION,
       maxSubagentDepth: 2,
       modelRoutable: true,
-      toolCeiling: ["read", "ls", "find", "grep", "write", "edit", "web_search", "fetch_content", "subagent"],
+      toolCeiling: ["read", "ls", "find", "grep", "write", "edit", "web_search", "fetch_content"],
       requiredTools: ["read", "write", "edit"],
       outputContractVersion: 1,
       promptTemplateId: "designer",

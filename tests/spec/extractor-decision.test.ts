@@ -38,6 +38,8 @@ function makeRow(
     summary: `semantic extraction: ${outcome}`,
     outcome: outcome === "accepted" ? "ok" : "fell_back",
     createdAt: "2026-07-15T00:00:00.000Z",
+    repository: window.repository,
+    revision: window.revision,
     ...overrides,
   };
 }
@@ -130,6 +132,49 @@ describe("decideExtractorFate", () => {
     const decision = decideExtractorFate({ window, rows: [wrongRepo, wrongRevision] });
     expect(decision.acceptedRowCount).toBe(0);
     expect(decision.rejectionReasons.scope_mismatch).toBe(2);
+  });
+
+  // A verdict computed from bounds the caller never validated is exactly the
+  // failure mode this decision procedure exists to prevent: `--since yesterday`
+  // parses as NaN and an inverted range admits nothing, and in both cases the
+  // old code returned a confident-looking `inconclusive` instead of refusing.
+  it("refuses to decide when a window bound is not a parseable timestamp", () => {
+    for (const bad of ["yesterday", "2026-13-45", ""]) {
+      expect(() =>
+        decideExtractorFate({ window: { ...window, start: bad }, rows: [] }),
+      ).toThrow(/observation window/i);
+      expect(() =>
+        decideExtractorFate({ window: { ...window, end: bad }, rows: [] }),
+      ).toThrow(/observation window/i);
+    }
+  });
+
+  it("refuses to decide when the window ends before it starts", () => {
+    expect(() =>
+      decideExtractorFate({
+        window: { ...window, start: "2026-07-31T00:00:00.000Z", end: "2026-07-01T00:00:00.000Z" },
+        rows: [],
+      }),
+    ).toThrow(/ends before it starts/i);
+  });
+
+  it("compares window bounds as instants, not as strings", () => {
+    // 2026-07-01T00:30:00+02:00 is 2026-06-30T22:30:00Z — before the window
+    // opens — but sorts *after* "2026-07-01T00:00:00.000Z" lexically, so a raw
+    // string comparison would have admitted it.
+    const row = makeRow("accepted", { createdAt: "2026-07-01T00:30:00+02:00" });
+    const decision = decideExtractorFate({ window, rows: [row] });
+    expect(decision.rejectionReasons.stale_window).toBe(1);
+    expect(decision.qualifyingTotal).toBe(0);
+  });
+
+  it("does not count a row with no repository toward a scoped window", () => {
+    const unscopedRow = makeRow("accepted", { repository: undefined });
+    const emptyRepoRow = makeRow("accepted", { repository: "" });
+    const decision = decideExtractorFate({ window, rows: [unscopedRow, emptyRepoRow] });
+    expect(decision.qualifyingTotal).toBe(0);
+    expect(decision.acceptedRowCount).toBe(0);
+    expect(decision.rejectionReasons.unscoped).toBe(2);
   });
 
   it("rejects rows created outside the observation window", () => {

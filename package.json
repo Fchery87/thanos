@@ -21,6 +21,7 @@
     "test:installer": "vitest run tests/scripts",
     "test:perf": "vitest run tests/performance",
     "measure": "bun scripts/measure-harness.mjs",
+    "extractor-decision": "bun scripts/extractor-decision.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src tests",
     "ci": "bun run typecheck && bun run lint && bun run test"
