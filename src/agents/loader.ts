@@ -138,15 +138,23 @@ function parseFrontmatter(raw: string): Partial<AgentDefinition> & { body: strin
     if (key === "fallbackModels") {
       if (!rawValue.trim()) {
         const models: string[] = [];
-        while (i + 1 < frontmatter.length && /^\s*-\s+/.test(frontmatter[i + 1]!)) {
+        // `-\s*` (not `-\s+`) so a bare `-` with no trailing whitespace —
+        // e.g. someone truncated a line while editing — still counts as a
+        // (blank) list item rather than silently terminating the loop and
+        // dropping every entry after it.
+        while (i + 1 < frontmatter.length && /^\s*-\s*/.test(frontmatter[i + 1]!)) {
           i += 1;
-          const item = frontmatter[i]!.replace(/^\s*-\s+/, "").trim();
+          const item = frontmatter[i]!.replace(/^\s*-\s*/, "").trim();
           // Preserved even when blank (not `if (item)`) — a blank list item
           // should reach validateManifest and be rejected loudly, the same
           // posture the flat-value form below takes.
           models.push(parseStringScalar(item));
         }
-        if (models.length > 0) parsed.fallbackModels = models;
+        // Stored even when empty (not `if (models.length > 0)`) — `fallbackModels:`
+        // declared with zero items must reach validateManifest and be
+        // rejected loudly too, the same posture `model:` above already takes
+        // toward an empty value.
+        parsed.fallbackModels = models;
         continue;
       }
       parsed.fallbackModels = parseFallbackModelsValue(rawValue) as string[];

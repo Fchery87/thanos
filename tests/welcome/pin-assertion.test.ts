@@ -39,6 +39,10 @@ describe("pi-subagents pin assertion", () => {
     expect(findUnpinnedDelegationPackage(["npm:pi-web-access", "npm:@npm-ken/pi-bar"])).toBeUndefined();
   });
 
+  it("keeps scanning past an exact match to catch a later unpinned duplicate entry", () => {
+    expect(findUnpinnedDelegationPackage(["npm:pi-subagents@0.42.1", "npm:pi-subagents"])).toBe("npm:pi-subagents");
+  });
+
   it("names the file to edit in the warning", () => {
     const warning = formatUnpinnedPinWarning("npm:pi-subagents");
     expect(warning).toContain("agent/settings.json");

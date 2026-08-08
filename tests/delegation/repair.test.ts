@@ -168,4 +168,22 @@ describe("DelegationRuntime repair loop", () => {
     expect(requests.length).toBe(1);
     expect(requests[0]).not.toHaveProperty("maxRepairAttempts");
   });
+
+  it.each([
+    ["NaN", Number.NaN],
+    ["Infinity", Number.POSITIVE_INFINITY],
+    ["a negative integer", -1],
+    ["a fractional value", 1.5],
+  ])("rejects a maxRepairAttempts of %s rather than looping unbounded", async (_label, value) => {
+    // Math.max(0, NaN) is NaN and Math.max(0, Infinity) is Infinity — a mere
+    // clamp lets both through, and `repairsUsed >= maxRepairAttempts` is
+    // never true against either, so an earlier version of this check let a
+    // schema-rejected child repair-loop unboundedly instead of stopping.
+    const bus = new Bus();
+    autoRespond(bus, [incompleteResponse(), incompleteResponse(), incompleteResponse()]);
+
+    await expect(
+      new DelegationRuntime(bus, "session-1").delegate({ ...input(), maxRepairAttempts: value }),
+    ).rejects.toThrow(/maxRepairAttempts must be a non-negative integer/);
+  });
 });

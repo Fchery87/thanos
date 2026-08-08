@@ -53,7 +53,16 @@ export class DelegationRuntime {
 
   async delegate(input: DelegationInput, signal?: AbortSignal): Promise<DelegationOutcome> {
     const requestId = input.requestId ?? randomUUID();
-    const maxRepairAttempts = Math.max(0, input.maxRepairAttempts ?? 1);
+    const maxRepairAttempts = input.maxRepairAttempts ?? 1;
+    // Math.max(0, NaN) is NaN, and Math.max(0, Infinity) is Infinity — both
+    // would silently pass through a mere clamp, and `repairsUsed >= maxRepairAttempts`
+    // is never true against either (NaN comparisons are always false, and
+    // repairsUsed realistically never reaches Infinity), so the repair loop
+    // below would run unbounded against a schema-rejected child that keeps
+    // returning awaiting_evidence.
+    if (!Number.isInteger(maxRepairAttempts) || maxRepairAttempts < 0) {
+      throw new Error(`maxRepairAttempts must be a non-negative integer, got ${maxRepairAttempts}`);
+    }
 
     // DelegationInput carries two fields DelegationRequest doesn't have
     // (requestId, maxRepairAttempts). requestId is overwritten below
