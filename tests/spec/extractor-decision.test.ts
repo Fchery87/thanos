@@ -38,6 +38,8 @@ function makeRow(
     summary: `semantic extraction: ${outcome}`,
     outcome: outcome === "accepted" ? "ok" : "fell_back",
     createdAt: "2026-07-15T00:00:00.000Z",
+    repository: window.repository,
+    revision: window.revision,
     ...overrides,
   };
 }
@@ -130,6 +132,15 @@ describe("decideExtractorFate", () => {
     const decision = decideExtractorFate({ window, rows: [wrongRepo, wrongRevision] });
     expect(decision.acceptedRowCount).toBe(0);
     expect(decision.rejectionReasons.scope_mismatch).toBe(2);
+  });
+
+  it("does not count a row with no repository toward a scoped window", () => {
+    const unscopedRow = makeRow("accepted", { repository: undefined });
+    const emptyRepoRow = makeRow("accepted", { repository: "" });
+    const decision = decideExtractorFate({ window, rows: [unscopedRow, emptyRepoRow] });
+    expect(decision.qualifyingTotal).toBe(0);
+    expect(decision.acceptedRowCount).toBe(0);
+    expect(decision.rejectionReasons.unscoped).toBe(2);
   });
 
   it("rejects rows created outside the observation window", () => {

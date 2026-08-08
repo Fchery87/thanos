@@ -52,7 +52,8 @@ export type RowRejectionReason =
   | "stale_window"
   | "future_schema"
   | "provenance_missing"
-  | "scope_mismatch";
+  | "scope_mismatch"
+  | "unscoped";
 
 /**
  * The row shape `createLedgerExtractionReporter` writes today, plus optional
@@ -79,6 +80,27 @@ export interface ExtractionLedgerRow {
  * time range of rows it admits, and enough context to reproduce the same
  * verdict later from the same recorded rows. Supplied by the caller — this
  * module never touches the filesystem, network, or a clock to discover it.
+ *
+ * ### Window Semantics & Legitimacy:
+ * 1. **Per-Repository Scoping:** An observation window is strictly scoped to
+ *    one repository (`window.repository`). Legacy ledger rows that predate
+ *    scoped emission (i.e. missing the `repository` field or empty string)
+ *    are rejected with `RowRejectionReason = "unscoped"` rather than counted
+ *    toward every repository simultaneously.
+ * 2. **Revision & Schema Digest — declared, not yet enforced.** These are
+ *    *intended* to pin the prompt/engine logic (`revision`: a git commit SHA,
+ *    e.g. from `git rev-parse HEAD`) and the `TaskContract` JSON schema
+ *    (`contractSchemaDigest`, from `src/spec/contract.ts`) an evaluation ran
+ *    against. Today no emitted row carries either field, so the equality checks
+ *    below (`:180`) never reject on them and neither value narrows the admitted
+ *    set — they record the provenance of the *report*, not of the rows. Treat a
+ *    window's claim here as a label until the reporter emits both per row; see
+ *    `docs/adr/0006-completion-verification-gate.md`, amendment 2026-08-08.
+ * 3. **Time Bounds (`start` / `end`):**
+ *    - `start` and `end` must be ISO-8601 timestamps bracketing a cohesive
+ *      measurement epoch (e.g. after a specific repair or prompt revision).
+ *      An unbounded window is invalid because it conflates pre- and post-repair
+ *      extractor configurations.
  */
 export interface ObservationWindow {
   id: string;
@@ -151,7 +173,10 @@ function classifyRow(row: unknown, window: ObservationWindow): RowClassification
   if (!isValidTimestamp(candidate.createdAt)) return { reason: "provenance_missing" };
   const createdAt = candidate.createdAt as string;
 
-  if (candidate.repository !== undefined && candidate.repository !== window.repository) {
+  if (typeof candidate.repository !== "string" || candidate.repository.trim() === "") {
+    return { reason: "unscoped" };
+  }
+  if (candidate.repository !== window.repository) {
     return { reason: "scope_mismatch" };
   }
   if (candidate.revision !== undefined && candidate.revision !== window.revision) {
