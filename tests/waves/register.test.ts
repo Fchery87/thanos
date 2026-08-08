@@ -88,12 +88,24 @@ describe("/waves command", () => {
       ui: { notify, setStatus: vi.fn(), theme: { fg: (_kind: string, text: string) => text } },
     });
 
-    expect(requests).toHaveLength(1);
+    // The fake bus always responds with the same incomplete envelope, so
+    // DelegationRuntime's bounded repair loop (default maxRepairAttempts: 1)
+    // fires once here: attempt 1 is rejected, attempt 2 re-asks with the
+    // rejection reasons appended and is rejected too, and the workflow still
+    // correctly fails closed afterward — repair gives the child one more
+    // chance, it does not weaken the fail-closed guarantee.
+    expect(requests).toHaveLength(2);
     expect(requests[0]).toMatchObject({ nodeId: "wave_plan", task: expect.stringContaining("audit this repo") });
     // toMatchObject is a partial match, so it would still pass if `version` crept
     // back in. pi-subagents 0.41.0 rejects the whole request as an unsupported
     // field, so assert its absence explicitly.
     expect(requests[0]).not.toHaveProperty("version");
+    expect(requests[1]).toMatchObject({
+      nodeId: "wave_plan",
+      requestId: (requests[0] as { requestId: string }).requestId,
+      task: expect.stringContaining("Your previous attempt was rejected"),
+    });
+    expect((requests[1] as { task: string }).task).toContain("audit this repo");
     expect(sendUserMessage).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledWith(expect.stringContaining("awaiting_evidence"), "warning");
   });
