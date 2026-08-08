@@ -73,16 +73,17 @@ describe("assembleSystemPrompt", () => {
     expect(out.dynamicMessage).not.toContain("Permission mode");
   });
 
-  it("omits the permission block entirely when none is given (subagents pass none)", () => {
+  it("omits the permission block entirely when none is given (parent turn, no mode passed)", () => {
     const out = assembleSystemPrompt({
       baseSystemPrompt: "BASE",
-      isSubagent: true,
-      trustedInstructions: [],
-      skillsDirective: "",
-      roster: "",
+      isSubagent: false,
+      trustedInstructions: ["T"],
+      skillsDirective: "S",
+      roster: "R",
       permissionMode: undefined,
     });
-    expect(out.systemPrompt).toBeUndefined();
+    expect(out.systemPrompt).toBeDefined();
+    expect(out.systemPrompt).not.toContain("Permission mode");
   });
 
   it("permissionMode participates in cache stability the same as the other static blocks", () => {
