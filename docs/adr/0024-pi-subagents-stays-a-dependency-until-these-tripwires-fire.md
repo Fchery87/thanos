@@ -9,7 +9,7 @@ mechanism entirely. Atomic did exactly this with its own fork of the same
 upstream project, and it bought them things this harness cannot currently
 have — most visibly, deleting an entire watchdog subsystem that this
 harness has instead had to work around one hunk at a time (see the timeout
-misclassification patch this same effort added, `scripts/patches/pi-subagents-0.41.0-evidence.patch`).
+misclassification patch this same effort added, `scripts/patches/pi-subagents-0.42.1-evidence.patch`).
 
 **Decision: stay on the dependency.** Continue patching `pi-subagents` in
 place via `scripts/patch-pi-subagents.mjs` rather than vendoring it.
@@ -107,9 +107,20 @@ change cannot quietly relabel two concerns as one to duck the ceiling
 without that relabeling being visible in the same diff.
 
 See `tests/scripts/patch-concerns.test.ts` for the coverage that pins the
-ceiling at 4 and proves the tripwire still fires at 5 distinct concerns,
-and `docs/plans/2026-08-07-update-safety-and-atomic-adoptions.md`
-("Decision A") for the fuller reasoning this note summarizes.
+ceiling at 4 and proves the tripwire still fires at 5 distinct concerns.
+
+The same effort also forward-ported the pinned version from 0.41.0 to
+0.42.1 (`PINNED_VERSION` in `scripts/patch-pi-subagents.mjs`, the patch
+artifact renamed to `pi-subagents-0.42.1-evidence.patch`), replaced
+`pi update --extensions` with `pi install npm:pi-subagents@<version>` as
+the update mechanism (`scripts/thanos-update.mjs` — `pi update --extensions`
+structurally skips any exact-pinned package, so it could never move this
+one on purpose), and added `scripts/thanos-update.mjs`'s rollback wrapper
+plus a startup pin-drift warning (`src/welcome/pin-assertion.ts`) so an
+unpinned spec in `agent/settings.json` is caught before it silently walks
+this package to `@latest`. None of that changes the decision or the
+tripwires above — it is the update-safety scaffolding the "stay on the
+dependency" choice depends on actually being safe to exercise.
 
 ## Cost if triggered
 

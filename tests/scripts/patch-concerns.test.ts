@@ -13,7 +13,7 @@ import {
 // artifact at 5 against a ceiling of 4 and fired on every run; counting
 // concerns puts it at 3, with one concern of headroom. See
 // docs/adr/0024-pi-subagents-stays-a-dependency-until-these-tripwires-fire.md
-// and docs/plans/2026-08-07-update-safety-and-atomic-adoptions.md ("Decision A").
+// ("Recalibration (2026-08-07)").
 
 describe("ADR 0024 concern ceiling", () => {
   it("derives exactly 3 distinct concerns from today's real PATCH_MARKERS", () => {
