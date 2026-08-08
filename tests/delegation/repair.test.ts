@@ -153,4 +153,19 @@ describe("DelegationRuntime repair loop", () => {
     expect(requests.length).toBe(1);
     expect(outcome.state).toBe("awaiting_evidence");
   });
+
+  it("never puts maxRepairAttempts on the emitted request — pi-subagents rejects any field outside its strict allowlist", async () => {
+    // The fake Bus here doesn't validate the payload the way real
+    // pi-subagents does (delegation-request.ts's supportedFields check), so
+    // this has to assert the field's absence directly rather than relying
+    // on a rejection to surface the bug — mirrors the existing `version`
+    // assertion in tests/delegation/runtime.test.ts.
+    const bus = new Bus();
+    const requests = autoRespond(bus, [completeResponse()]);
+
+    await new DelegationRuntime(bus, "session-1").delegate({ ...input(), maxRepairAttempts: 2 });
+
+    expect(requests.length).toBe(1);
+    expect(requests[0]).not.toHaveProperty("maxRepairAttempts");
+  });
 });

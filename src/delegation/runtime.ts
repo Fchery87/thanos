@@ -55,11 +55,23 @@ export class DelegationRuntime {
     const requestId = input.requestId ?? randomUUID();
     const maxRepairAttempts = Math.max(0, input.maxRepairAttempts ?? 1);
 
+    // DelegationInput carries two fields DelegationRequest doesn't have
+    // (requestId, maxRepairAttempts). requestId is overwritten below
+    // regardless, but a blind `...input` spread would let maxRepairAttempts
+    // survive onto the wire payload unfixed — TypeScript's excess-property
+    // check doesn't fire on a spread from a variable, only on object-literal
+    // arguments, so this wouldn't be caught at compile time. pi-subagents
+    // validates against a strict field allowlist and rejects the whole
+    // request outright on anything outside it (the same failure mode already
+    // guarded against for `version`, see attemptOnce below) — stripped here
+    // rather than relying on that rejection as the safety net.
+    const { requestId: _inputRequestId, maxRepairAttempts: _maxRepairAttempts, ...delegationFields } = input;
+
     let task = input.task;
     let repairsUsed = 0;
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      const request: DelegationRequest = { ...input, task, requestId, ownerRunId: this.ownerRunId };
+      const request: DelegationRequest = { ...delegationFields, task, requestId, ownerRunId: this.ownerRunId };
       const outcome = await this.attemptOnce(request, signal);
       if (outcome.state !== "awaiting_evidence" || repairsUsed >= maxRepairAttempts) return outcome;
       repairsUsed += 1;
